@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>VISION — AI Assistant</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; font-family: 'Consolas', monospace;
+    background: radial-gradient(circle at 50% 15%, #1a1030 0%, #05070c 65%);
+    color: #e6d9ff; padding: 24px;
+  }
+  h1 { text-align: center; letter-spacing: 8px; color: #b98dff; text-shadow: 0 0 14px rgba(180,100,255,0.6); }
+  .subtitle { text-align: center; color: #8a6fb3; font-size: 12px; margin-bottom: 20px; }
+  #setupBox { max-width: 500px; margin: 0 auto 20px; padding: 14px; background: rgba(180,100,255,0.06);
+    border: 1px solid rgba(180,100,255,0.3); border-radius: 10px; display: none; }
+  #setupBox.show { display: block; }
+  #setupBox input { width: 100%; padding: 8px; background: rgba(0,0,0,0.3); border: 1px solid rgba(180,100,255,0.4);
+    color: #e6d9ff; border-radius: 6px; margin-top: 6px; }
+  #setupBox button { margin-top: 8px; padding: 8px 18px; background: rgba(180,100,255,0.2);
+    border: 1px solid rgba(180,100,255,0.5); color: #e6d9ff; border-radius: 16px; cursor: pointer; }
+  .tabs { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+  .tab-btn { padding: 8px 20px; background: rgba(180,100,255,0.06); border: 1px solid rgba(180,100,255,0.3);
+    color: #c9b3f0; cursor: pointer; border-radius: 16px; font-size: 12px; letter-spacing: 1px; }
+  .tab-btn.active { background: rgba(180,100,255,0.25); border-color: #b98dff; color: #e6d9ff; }
+  .panel { display: none; max-width: 750px; margin: 0 auto; }
+  .panel.active { display: block; }
+  #chatLog { min-height: 300px; max-height: 420px; overflow-y: auto; background: rgba(10,5,20,0.5);
+    border: 1px solid rgba(180,100,255,0.25); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+  .msg { margin-bottom: 10px; padding: 8px 12px; border-radius: 8px; white-space: pre-wrap; }
+  .msg.user { background: rgba(180,100,255,0.12); text-align: right; }
+  .msg.bot { background: rgba(0,230,255,0.08); }
+  .msg.memhint { background: rgba(255,200,60,0.08); font-size: 11px; color: #ffd166; }
+  input, textarea {
+    width: 100%; padding: 10px; background: rgba(10,5,20,0.6); border: 1px solid rgba(180,100,255,0.3);
+    color: #e6d9ff; border-radius: 8px; font-family: inherit; margin-bottom: 10px;
+  }
+  button.action { padding: 10px 24px; background: rgba(180,100,255,0.18); border: 1px solid rgba(180,100,255,0.5);
+    color: #e6d9ff; border-radius: 20px; cursor: pointer; letter-spacing: 1px; }
+  button.action:hover { background: rgba(180,100,255,0.32); }
+  #status, #imgStatus, #frameStatus, #gameStatus, #memStatus { font-size: 12px; color: #a892d9; margin-top: 8px; min-height: 16px; }
+  img.result { max-width: 100%; border-radius: 10px; margin-top: 12px; border: 1px solid rgba(180,100,255,0.3); }
+  #framesRow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  #framesRow img { width: 90px; height: 90px; border-radius: 6px; border: 1px solid rgba(180,100,255,0.3); }
+  pre#gameCode { background: rgba(10,5,20,0.6); padding: 12px; border-radius: 8px; overflow-x: auto;
+    max-height: 340px; font-size: 11px; border: 1px solid rgba(180,100,255,0.2); white-space: pre-wrap; }
+  #downloadGameBtn { margin-top: 8px; display: none; }
+  .memItem { background: rgba(10,5,20,0.5); border: 1px solid rgba(180,100,255,0.2); border-radius: 8px;
+    padding: 10px; margin-bottom: 8px; font-size: 12px; position: relative; }
+  .memItem .delBtn { position: absolute; top: 8px; right: 10px; cursor: pointer; color: #ff6b6b; font-size: 14px; }
+  .memItem .memSource { color: #8a6fb3; font-size: 10px; margin-top: 4px; }
+  label.toggle { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #a892d9; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+
+<h1>VISION</h1>
+<div class="subtitle">AI Assistant — free, with persistent memory</div>
+
+<div id="setupBox">
+  <label>Enter your free Groq API key (from console.groq.com):</label>
+  <input id="apiKeyInput" type="password" placeholder="gsk_..." />
+  <button id="saveKeyBtn">Save</button>
+</div>
+
+<div class="tabs">
+  <div class="tab-btn active" data-tab="chat">Chat / Coding</div>
+  <div class="tab-btn" data-tab="image">Image</div>
+  <div class="tab-btn" data-tab="frames">Frame Sequence</div>
+  <div class="tab-btn" data-tab="game">Game Builder</div>
+  <div class="tab-btn" data-tab="memory">Memory</div>
+  <div class="tab-btn" data-tab="settings">Settings</div>
+</div>
+
+<div class="panel active" id="panel-chat">
+  <label class="toggle"><input type="checkbox" id="autoRememberToggle" checked /> Automatically remember this conversation</label>
+  <div id="chatLog"></div>
+  <input id="chatInput" placeholder="Ask VISION anything — questions, coding help..." />
+  <button class="action" id="chatSend">Send</button>
+  <div id="status"></div>
+</div>
+
+<div class="panel" id="panel-image">
+  <input id="imgPrompt" placeholder="Describe the image..." />
+  <button class="action" id="imgBtn">Generate Image</button>
+  <div id="imgStatus"></div>
+  <img class="result" id="imgResult" style="display:none;" />
+</div>
+
+<div class="panel" id="panel-frames">
+  <input id="framePrompt" placeholder="Describe the action..." />
+  <button class="action" id="frameBtn">Generate Frame Sequence</button>
+  <div id="frameStatus"></div>
+  <div id="framesRow"></div>
+</div>
+
+<div class="panel" id="panel-game">
+  <input id="gamePrompt" placeholder="Describe the game or page..." />
+  <button class="action" id="gameBtn">Generate</button>
+  <div id="gameStatus"></div>
+  <pre id="gameCode"></pre>
+  <button class="action" id="downloadGameBtn">Download as HTML file</button>
+</div>
+
+<div class="panel" id="panel-memory">
+  <p style="color:#a892d9; font-size:13px;">Teach VISION something directly:</p>
+  <input id="teachInput" placeholder="e.g. My favorite programming language is Python" />
+  <button class="action" id="teachBtn">Save to Memory</button>
+  <div id="memStatus"></div>
+  <p style="color:#a892d9; font-size:13px; margin-top:20px;">Stored memories:</p>
+  <button class="action" id="refreshMemBtn" style="margin-bottom:10px;">Refresh List</button>
+  <button class="action" id="clearMemBtn" style="margin-bottom:10px; background:rgba(255,60,60,0.15); border-color:rgba(255,60,60,0.5);">Clear All Memory</button>
+  <div id="memList"></div>
+</div>
+
+<div class="panel" id="panel-settings">
+  <p style="color:#a892d9; font-size:13px;">Change your Groq API key:</p>
+  <input id="apiKeyInputSettings" type="password" placeholder="gsk_..." />
+  <button class="action" id="saveKeySettingsBtn">Save Key</button>
+
+  <p style="color:#a892d9; font-size:13px; margin-top:20px;">VISION server URL:</p>
+  <input id="serverUrlInput" placeholder="https://vision-server-xxxx.onrender.com" />
+  <button class="action" id="saveServerBtn">Save Server URL</button>
+  <p style="color:#8a6fb3; font-size:11px; margin-top:16px;">Your Groq key is stored only in this browser. Memory is stored on your own server/database.</p>
+</div>
+
+<script>
+const ASSISTANT_NAME = "VISION";
+let chatHistory = [];
+let currentGameHtml = "";
+
+function getApiKey() { return localStorage.getItem("vision_groq_key") || ""; }
+function setApiKey(key) { localStorage.setItem("vision_groq_key", key); }
+function getServerUrl() { return localStorage.getItem("vision_server_url") || ""; }
+function setServerUrl(url) { localStorage.setItem("vision_server_url", url.replace(/\/$/, "")); }
+
+function checkSetup() {
+  const key = getApiKey();
+  const setupBox = document.getElementById("setupBox");
+  if (!key) { setupBox.classList.add("show"); } else { setupBox.classList.remove("show"); }
+  document.getElementById("serverUrlInput").value = getServerUrl();
+}
+checkSetup();
+
+document.getElementById("saveKeyBtn").addEventListener("click", () => {
+  const val = document.getElementById("apiKeyInput").value.trim();
+  if (val) { setApiKey(val); checkSetup(); document.getElementById("status").textContent = "API key saved."; }
+});
+document.getElementById("saveKeySettingsBtn").addEventListener("click", () => {
+  const val = document.getElementById("apiKeyInputSettings").value.trim();
+  if (val) { setApiKey(val); checkSetup(); alert("API key saved."); }
+});
+document.getElementById("saveServerBtn").addEventListener("click", () => {
+  const val = document.getElementById("serverUrlInput").value.trim();
+  if (val) { setServerUrl(val); alert("Server URL saved."); }
+});
+
+// ---------------- Chat (routed through the memory server) ----------------
+
+const chatLogEl = document.getElementById("chatLog");
+const chatInputEl = document.getElementById("chatInput");
+const statusEl = document.getElementById("status");
+
+function addMessage(role, text) {
+  const div = document.createElement("div");
+  div.className = "msg " + role;
+  div.textContent = text;
+  chatLogEl.appendChild(div);
+  chatLogEl.scrollTop = chatLogEl.scrollHeight;
+}
+
+async function sendChat() {
+  const message = chatInputEl.value.trim();
+  const serverUrl = getServerUrl();
+  const apiKey = getApiKey();
+  if (!message) return;
+  if (!serverUrl) { statusEl.textContent = "Please set your VISION server URL in Settings first."; return; }
+  if (!apiKey) { statusEl.textContent = "Please enter your Groq API key first."; return; }
+
+  chatInputEl.value = "";
+  addMessage("user", message);
+  statusEl.textContent = "Thinking...";
+
+  try {
+    const res = await fetch(serverUrl + "/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message,
+        groq_api_key: apiKey,
+        history: chatHistory,
+        auto_remember: document.getElementById("autoRememberToggle").checked,
+      }),
+    });
+    const data = await res.json();
+    if (data.error) { statusEl.textContent = "Error: " + data.error; return; }
+
+    chatHistory.push({ role: "user", content: message });
+    chatHistory.push({ role: "assistant", content: data.reply });
+    addMessage("bot", data.reply);
+
+    if (data.used_memories && data.used_memories.length > 0) {
+      addMessage("memhint", "Used memory: " + data.used_memories[0]);
+    }
+    statusEl.textContent = "";
+  } catch (e) {
+    statusEl.textContent = "Could not reach the server. Check the server URL in Settings.";
+  }
+}
+
+document.getElementById("chatSend").addEventListener("click", sendChat);
+chatInputEl.addEventListener("keydown", (e) => { if (e.key === "Enter") sendChat(); });
+
+// ---------------- Image generation ----------------
+
+document.getElementById("imgBtn").addEventListener("click", async () => {
+  const prompt = document.getElementById("imgPrompt").value.trim();
+  if (!prompt) return;
+  const statusEl2 = document.getElementById("imgStatus");
+  const imgEl = document.getElementById("imgResult");
+  statusEl2.textContent = "Generating...";
+  imgEl.style.display = "none";
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=768&height=768&nologo=true`;
+  imgEl.onload = () => { statusEl2.textContent = "Done."; imgEl.style.display = "block"; };
+  imgEl.onerror = () => { statusEl2.textContent = "Image generation failed. Try again."; };
+  imgEl.src = url;
+});
+
+// ---------------- Frame sequence ----------------
+
+document.getElementById("frameBtn").addEventListener("click", async () => {
+  const prompt = document.getElementById("framePrompt").value.trim();
+  if (!prompt) return;
+  const statusEl2 = document.getElementById("frameStatus");
+  const rowEl = document.getElementById("framesRow");
+  rowEl.innerHTML = "";
+  statusEl2.textContent = "Generating frames...";
+  const phrases = ["at the very start of the action", "a moment into the action", "partway through the action",
+    "past the midpoint", "nearing the end", "at the very end of the action"];
+  const seed = Math.floor(Math.random() * 100000);
+  for (let i = 0; i < phrases.length; i++) {
+    statusEl2.textContent = `Generating frame ${i + 1} of ${phrases.length}...`;
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt + ", " + phrases[i])}?width=220&height=220&seed=${seed}&nologo=true`;
+    const img = document.createElement("img");
+    img.src = url;
+    rowEl.appendChild(img);
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  statusEl2.textContent = "Frame sequence ready.";
+});
+
+// ---------------- Game builder (still calls Groq directly, no memory needed here) ----------------
+
+document.getElementById("gameBtn").addEventListener("click", async () => {
+  const description = document.getElementById("gamePrompt").value.trim();
+  const apiKey = getApiKey();
+  if (!description || !apiKey) return;
+  const statusEl2 = document.getElementById("gameStatus");
+  const codeEl = document.getElementById("gameCode");
+  const downloadBtn = document.getElementById("downloadGameBtn");
+  statusEl2.textContent = "Generating...";
+  downloadBtn.style.display = "none";
+
+  try {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: "openai/gpt-oss-120b",
+        temperature: 0.4,
+        max_tokens: 2000,
+        messages: [
+          { role: "system", content: `You are ${ASSISTANT_NAME}. Generate a COMPLETE self-contained HTML file for the requested game or page. Put all CSS in a <style> tag and all JavaScript in ONE <script> tag at the end of <body>, using element.addEventListener only, never inline onclick attributes. Respond with ONLY the raw HTML starting with <!DOCTYPE html>, no explanation, no markdown fences.` },
+          { role: "user", content: `Build this: ${description}` },
+        ],
+      }),
+    });
+    const data = await res.json();
+    let html = data.choices?.[0]?.message?.content?.trim() || "";
+    const fenceMatch = html.match(/```(?:html)?\s*([\s\S]*?)```/i);
+    if (fenceMatch) html = fenceMatch[1].trim();
+    currentGameHtml = html;
+    codeEl.textContent = html;
+    statusEl2.textContent = "Done.";
+    downloadBtn.style.display = "inline-block";
+  } catch (e) {
+    statusEl2.textContent = "Generation failed.";
+  }
+});
+
+document.getElementById("downloadGameBtn").addEventListener("click", () => {
+  const blob = new Blob([currentGameHtml], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "vision-game.html";
+  a.click();
+});
+
+// ---------------- Memory tab ----------------
+
+document.getElementById("teachBtn").addEventListener("click", async () => {
+  const text = document.getElementById("teachInput").value.trim();
+  const serverUrl = getServerUrl();
+  const memStatusEl = document.getElementById("memStatus");
+  if (!text) return;
+  if (!serverUrl) { memStatusEl.textContent = "Set your server URL in Settings first."; return; }
+
+  memStatusEl.textContent = "Saving...";
+  try {
+    const res = await fetch(serverUrl + "/remember", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, source: "manual" }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      memStatusEl.textContent = "Saved.";
+      document.getElementById("teachInput").value = "";
+      loadMemories();
+    } else {
+      memStatusEl.textContent = "Failed to save.";
+    }
+  } catch (e) {
+    memStatusEl.textContent = "Could not reach the server.";
+  }
+});
+
+async function loadMemories() {
+  const serverUrl = getServerUrl();
+  const listEl = document.getElementById("memList");
+  if (!serverUrl) return;
+  listEl.innerHTML = "Loading...";
+  try {
+    const res = await fetch(serverUrl + "/memories");
+    const data = await res.json();
+    listEl.innerHTML = "";
+    (data.memories || []).forEach((m) => {
+      const div = document.createElement("div");
+      div.className = "memItem";
+      div.innerHTML = `${m.text}<div class="memSource">source: ${m.source}</div><span class="delBtn" data-id="${m.id}">Delete</span>`;
+      listEl.appendChild(div);
+    });
+    listEl.querySelectorAll(".delBtn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await fetch(serverUrl + "/memories/" + btn.dataset.id, { method: "DELETE" });
+        loadMemories();
+      });
+    });
+  } catch (e) {
+    listEl.innerHTML = "Could not load memories.";
+  }
+}
+
+document.getElementById("refreshMemBtn").addEventListener("click", loadMemories);
+document.getElementById("clearMemBtn").addEventListener("click", async () => {
+  const serverUrl = getServerUrl();
+  if (!serverUrl) return;
+  if (!confirm("Delete ALL stored memories? This cannot be undone.")) return;
+  await fetch(serverUrl + "/memories/clear", { method: "POST" });
+  loadMemories();
+});
+
+// ---------------- Tabs ----------------
+
+document.querySelectorAll(".tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
+    if (btn.dataset.tab === "memory") loadMemories();
+  });
+});
+</script>
+
+</body>
+</html>
