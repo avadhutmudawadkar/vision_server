@@ -15,6 +15,8 @@ client = MongoClient(MONGODB_URI)
 db = client["vision_db"]
 memories = db["memories"]
 
+FINETUNED_URL = os.environ.get("FINETUNED_URL")
+
 STOPWORDS = set("the a an is are was were be been being to of and or but in on at for with as by from this that it its i you your my me he she they we".split())
 
 def tokenize(text):
@@ -137,6 +139,28 @@ def chat():
         })
 
     return jsonify({"reply": reply, "used_memories": [m["text"] for m in relevant]})
+
+@app.route("/chat-finetuned", methods=["POST"])
+def chat_finetuned():
+    data = request.get_json()
+    message = (data or {}).get("message", "").strip()
+
+    if not message:
+        return jsonify({"error": "No message provided"}), 400
+    if not FINETUNED_URL:
+        return jsonify({"error": "FINETUNED_URL not set on the server"}), 500
+
+    try:
+        res = http.post(
+            f"{FINETUNED_URL}/chat",
+            json={"message": message, "auto_remember": True},
+            timeout=120,
+        )
+        result = res.json()
+    except Exception as e:
+        return jsonify({"error": f"Request to fine-tuned model failed: {str(e)}"}), 500
+
+    return jsonify(result)
 
 @app.route("/", methods=["GET"])
 def health():
