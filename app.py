@@ -154,6 +154,7 @@ def chat_finetuned():
         res = http.post(
             f"{FINETUNED_URL}/chat",
             json={"message": message, "auto_remember": True},
+            headers={"ngrok-skip-browser-warning": "true"},
             timeout=120,
         )
         result = res.json()
