@@ -1,404 +1,613 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0508">
 <title>VISION</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  * { box-sizing: border-box; }
-  @keyframes pulse {
-    0%, 100% { box-shadow: 0 0 20px 4px rgba(255,90,60,0.5), inset 0 0 20px rgba(255,200,100,0.3); }
-    50% { box-shadow: 0 0 40px 10px rgba(255,90,60,0.8), inset 0 0 30px rgba(255,200,100,0.5); }
-  }
-  @keyframes scan {
-    0% { background-position: 0 0; }
-    100% { background-position: 0 40px; }
-  }
-  body {
-    margin: 0; min-height: 100vh; font-family: 'Segoe UI', 'Consolas', monospace;
-    background:
-      repeating-linear-gradient(0deg, rgba(255,120,60,0.02) 0px, rgba(255,120,60,0.02) 1px, transparent 1px, transparent 40px),
-      radial-gradient(circle at 50% 10%, #2a0f08 0%, #0a0503 60%, #050302 100%);
-    animation: scan 4s linear infinite;
-    color: #ffe0c2; padding: 24px;
-  }
-  .core {
-    width: 70px; height: 70px; margin: 0 auto 10px;
-    border-radius: 50%;
-    background: radial-gradient(circle, #ffdca0 0%, #ff7b3d 45%, #7a1d0a 100%);
-    animation: pulse 2.4s ease-in-out infinite;
-    border: 2px solid rgba(255,220,160,0.6);
-  }
-  h1 {
-    text-align: center; letter-spacing: 10px; margin: 4px 0 0;
-    background: linear-gradient(90deg, #ffcf8a, #ff6a3d, #ffcf8a);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    text-shadow: 0 0 30px rgba(255,120,60,0.5);
-    font-size: 34px;
-  }
-  .subtitle { text-align: center; color: #d99a6c; font-size: 12px; margin-bottom: 24px; letter-spacing: 2px; text-transform: uppercase; }
-  #setupBox { max-width: 500px; margin: 0 auto 20px; padding: 16px; background: rgba(255,120,60,0.05);
-    border: 1px solid rgba(255,150,80,0.35); border-radius: 12px; display: none; }
-  #setupBox.show { display: block; }
-  #setupBox input { width: 100%; padding: 10px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,150,80,0.4);
-    color: #ffe0c2; border-radius: 8px; margin-top: 6px; }
-  #setupBox button { margin-top: 10px; padding: 8px 20px; background: linear-gradient(90deg,#ff7b3d,#c23d0f);
-    border: none; color: #10060030; color: #1a0800; font-weight: 600; border-radius: 18px; cursor: pointer; }
-  .tabs { display: flex; justify-content: center; gap: 8px; margin-bottom: 22px; flex-wrap: wrap; }
-  .tab-btn { padding: 9px 18px; background: rgba(255,120,60,0.05); border: 1px solid rgba(255,150,80,0.3);
-    color: #e8b48a; cursor: pointer; border-radius: 18px; font-size: 12px; letter-spacing: 1px; transition: all .2s; }
-  .tab-btn:hover { background: rgba(255,120,60,0.15); }
-  .tab-btn.active { background: linear-gradient(90deg,#ff7b3d,#c23d0f); border-color: #ffcf8a; color: #1a0800; font-weight: 600; }
-  .panel { display: none; max-width: 780px; margin: 0 auto; }
-  .panel.active { display: block; }
-  #chatLog { min-height: 320px; max-height: 440px; overflow-y: auto; background: rgba(10,4,2,0.6);
-    border: 1px solid rgba(255,150,80,0.25); border-radius: 12px; padding: 16px; margin-bottom: 14px;
-    box-shadow: inset 0 0 30px rgba(255,90,30,0.08); }
-  .msg { margin-bottom: 12px; padding: 10px 14px; border-radius: 10px; white-space: pre-wrap; line-height: 1.4; }
-  .msg.user { background: rgba(255,120,60,0.15); text-align: right; border: 1px solid rgba(255,150,80,0.2); }
-  .msg.bot { background: rgba(255,200,120,0.06); border: 1px solid rgba(255,200,120,0.15); }
-  .msg.memhint { background: rgba(255,220,120,0.08); font-size: 11px; color: #ffd166; border: none; padding: 6px 12px; }
-  input, textarea {
-    width: 100%; padding: 11px; background: rgba(10,4,2,0.6); border: 1px solid rgba(255,150,80,0.3);
-    color: #ffe0c2; border-radius: 10px; font-family: inherit; margin-bottom: 10px;
-  }
-  input:focus, textarea:focus { outline: none; border-color: #ff9a5c; box-shadow: 0 0 10px rgba(255,120,60,0.4); }
-  button.action { padding: 11px 26px; background: linear-gradient(90deg,#ff7b3d,#c23d0f);
-    border: none; color: #1a0800; font-weight: 600; border-radius: 22px; cursor: pointer; letter-spacing: 1px; transition: transform .15s; }
-  button.action:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(255,120,60,0.4); }
-  #status, #imgStatus, #frameStatus, #gameStatus, #memStatus { font-size: 12px; color: #d99a6c; margin-top: 8px; min-height: 16px; }
-  img.result { max-width: 100%; border-radius: 12px; margin-top: 12px; border: 1px solid rgba(255,150,80,0.3); }
-  #framesRow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-  #framesRow img { width: 90px; height: 90px; border-radius: 8px; border: 1px solid rgba(255,150,80,0.3); }
-  pre#gameCode { background: rgba(10,4,2,0.6); padding: 14px; border-radius: 10px; overflow-x: auto;
-    max-height: 340px; font-size: 11px; border: 1px solid rgba(255,150,80,0.2); white-space: pre-wrap; }
-  #downloadGameBtn { margin-top: 8px; display: none; }
-  .memItem { background: rgba(10,4,2,0.5); border: 1px solid rgba(255,150,80,0.2); border-radius: 10px;
-    padding: 12px; margin-bottom: 8px; font-size: 12px; position: relative; }
-  .memItem .delBtn { position: absolute; top: 10px; right: 12px; cursor: pointer; color: #ff6b6b; font-size: 14px; }
-  .memItem .memSource { color: #d99a6c; font-size: 10px; margin-top: 4px; }
-  label.toggle { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #d99a6c; margin-bottom: 14px; }
-  select.modeSelect { width: auto; display: inline-block; padding: 8px 14px; margin-bottom: 14px; }
+:root{--bg:#0b0508;--panel:rgba(32,10,17,.72);--line:rgba(245,197,24,.22);--gold:#f5c518;--red:#e0313f;--green:#39d98a;--text:#ffecc9;--muted:#b98f5e}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0}
+body{font-family:'Rajdhani','Segoe UI',system-ui,sans-serif;font-size:17px;color:var(--text);min-height:100vh;min-height:100dvh;overflow-x:hidden;
+background:radial-gradient(1100px 560px at 50% -10%,#4d0f1b 0%,transparent 62%),radial-gradient(800px 500px at 100% 100%,#1d0a2a 0%,transparent 55%),var(--bg);background-attachment:fixed}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.5;background-image:linear-gradient(rgba(245,197,24,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(245,197,24,.045) 1px,transparent 1px);background-size:38px 38px}
+header{text-align:center;padding:calc(14px + env(safe-area-inset-top)) 12px 4px;position:relative}
+.stone{width:30px;height:30px;margin:0 auto 12px;transform:rotate(45deg);border-radius:6px;background:linear-gradient(135deg,#fff3b0,var(--gold) 45%,#ff9f1c);box-shadow:0 0 18px 4px rgba(245,197,24,.7),0 0 60px 14px rgba(245,197,24,.25);animation:pulse 3s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 26px 8px rgba(245,197,24,.95),0 0 90px 24px rgba(245,197,24,.35)}}
+h1.logo{font-family:Orbitron,sans-serif;font-weight:900;letter-spacing:.5em;margin:0 0 0 .5em;font-size:clamp(26px,8vw,44px);background:linear-gradient(180deg,#fff2b8,var(--gold) 50%,#c1121f);-webkit-background-clip:text;background-clip:text;color:transparent}
+.tag{font-size:11px;letter-spacing:.28em;color:var(--muted);text-transform:uppercase}
+.conn{display:inline-flex;gap:6px;align-items:center;font-size:12px;color:var(--muted);margin-top:6px}
+.dot{width:8px;height:8px;border-radius:50%;background:#777}.dot.ok{background:var(--green);box-shadow:0 0 8px var(--green)}.dot.bad{background:var(--red);box-shadow:0 0 8px var(--red)}.dot.wait{background:var(--gold);animation:pulse 1.2s infinite}
+nav{display:flex;justify-content:center;gap:8px;padding:10px 12px;flex-wrap:wrap;position:relative;z-index:2}
+nav button{font:inherit;font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:#e9c98d;background:rgba(245,197,24,.05);border:1px solid var(--line);border-radius:999px;padding:7px 16px;cursor:pointer;display:flex;gap:6px;align-items:center}
+nav button.on{background:linear-gradient(135deg,rgba(224,49,63,.55),rgba(245,197,24,.28));border-color:var(--gold);color:#fff}
+main{position:relative;z-index:1}
+.panel{display:none;max-width:880px;margin:0 auto;padding:6px 14px 28px}.panel.on{display:block}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;backdrop-filter:blur(6px)}
+.card h3{margin:0 0 10px;font-family:Orbitron,sans-serif;font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold)}
+input,select,textarea{width:100%;font:inherit;font-size:16px;color:var(--text);background:rgba(0,0,0,.35);border:1px solid rgba(245,197,24,.28);border-radius:10px;padding:10px 12px;margin-bottom:8px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 0 2px rgba(245,197,24,.15)}
+select option{background:#1a0a10}
+.btn{font:inherit;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#fff;background:linear-gradient(135deg,#b3121f,var(--red) 55%,#ff8a3d);border:none;border-radius:999px;padding:10px 22px;cursor:pointer;box-shadow:0 0 16px rgba(224,49,63,.35)}
+.btn.sm{padding:7px 16px;font-size:14px}.btn:disabled{opacity:.5}
+.ghost{font:inherit;color:var(--gold);background:transparent;border:1px solid var(--line);border-radius:999px;padding:7px 14px;cursor:pointer}
+.icon{font-size:20px;width:46px;height:46px;flex:none;border-radius:50%;border:1px solid var(--line);background:rgba(245,197,24,.06);color:var(--gold);cursor:pointer}
+.icon.live{background:var(--red);color:#fff;animation:pulse 1s infinite}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{flex:1 1 140px}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:4px 0 10px;scrollbar-width:none}.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;font:inherit;font-size:14px;color:#f0d08a;background:rgba(245,197,24,.06);border:1px solid var(--line);border-radius:999px;padding:6px 14px;cursor:pointer;white-space:nowrap}
+.seg{display:flex;gap:8px;margin-bottom:12px}.seg button{flex:1;font:inherit;text-transform:uppercase;letter-spacing:.1em;padding:9px;color:#e9c98d;background:rgba(245,197,24,.05);border:1px solid var(--line);border-radius:10px;cursor:pointer}.seg button.on{background:rgba(224,49,63,.4);border-color:var(--gold);color:#fff}
+.subp{display:none}.subp.on{display:block}
+#log{height:calc(100vh - 350px);height:calc(100dvh - 350px);min-height:230px;max-height:640px;overflow-y:auto;padding:12px;margin-bottom:10px;border:1px solid var(--line);border-radius:14px;background:rgba(0,0,0,.28)}
+.msg{max-width:92%;margin-bottom:10px;padding:9px 13px;border-radius:12px;line-height:1.4;word-wrap:break-word;overflow-wrap:anywhere}
+.msg.user{margin-left:auto;background:linear-gradient(135deg,rgba(224,49,63,.45),rgba(122,15,28,.5));border:1px solid rgba(224,49,63,.5)}
+.msg.bot{background:rgba(245,197,24,.06);border:1px solid var(--line);border-left:3px solid var(--gold)}
+.mh{font-size:12px;color:var(--green);margin-top:6px}.att{font-size:12px;color:var(--gold)}
+.lk{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.lk a,.dl{color:var(--gold);font-size:14px;border:1px solid var(--line);border-radius:999px;padding:4px 12px;text-decoration:none;display:inline-block}
+.code{margin:8px 0;border:1px solid rgba(245,197,24,.25);border-radius:10px;overflow:hidden;background:#07030a}
+.codebar{display:flex;justify-content:space-between;align-items:center;padding:4px 10px;background:rgba(245,197,24,.1);font-size:12px;color:var(--gold)}
+.copy{font:inherit;font-size:12px;color:var(--gold);background:none;border:1px solid var(--line);border-radius:6px;padding:2px 8px;cursor:pointer}
+.code pre{margin:0;padding:10px;overflow-x:auto;font:13px/1.45 ui-monospace,Consolas,monospace;color:#ffe9b8}
+code{font-family:ui-monospace,Consolas,monospace;font-size:.9em;background:rgba(245,197,24,.12);padding:1px 5px;border-radius:5px}.code code{background:none;padding:0}
+.dots i{display:inline-block;width:7px;height:7px;margin-right:4px;border-radius:50%;background:var(--gold);animation:bl 1s infinite}.dots i:nth-child(2){animation-delay:.15s}.dots i:nth-child(3){animation-delay:.3s}@keyframes bl{50%{opacity:.2}}
+.inbar{display:flex;gap:8px;align-items:center}.inbar input{margin:0;flex:1;min-width:0;height:46px;border-radius:999px;padding:0 16px}.inbar .btn{height:46px}
+.hint{font-size:13px;color:var(--muted);min-height:18px;margin-top:6px}
+.out{font-size:15px;margin-top:8px;white-space:pre-wrap;overflow-wrap:anywhere}
+.ld{color:var(--muted);font-size:14px;padding:18px 8px;text-align:center}
+.chatimg,.ib img{width:100%;border-radius:10px;display:block}.ib{border:1px solid var(--line);border-radius:10px;padding:6px;background:rgba(0,0,0,.25)}.ib .dl{margin-top:6px}
+.grid1,.grid4{display:grid;gap:10px}.grid1{grid-template-columns:1fr}.grid4{grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr))}
+#vidOut video,#vidOut canvas{width:100%;max-width:520px;border-radius:10px;display:block;margin:10px auto;border:1px solid var(--line)}
+iframe#gameFrame{width:100%;height:min(78vh,720px);border:1px solid var(--line);border-radius:12px;background:#0b0508}
+pre#gameCode{max-height:300px;overflow:auto;font-size:12px;background:rgba(0,0,0,.4);padding:10px;border-radius:10px;white-space:pre-wrap}
+.tgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:12px}.tgrid .card{margin:0}
+.item{display:flex;gap:8px;align-items:flex-start;justify-content:space-between;padding:8px 10px;margin-bottom:6px;border:1px solid var(--line);border-radius:10px;background:rgba(0,0,0,.25);font-size:15px;overflow-wrap:anywhere}
+.item small{color:var(--muted);display:block}.badge{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#0b0508;background:var(--gold);border-radius:6px;padding:1px 6px;margin-right:6px}.item button{flex:none;color:var(--red);background:none;border:none;font-size:18px;cursor:pointer}
+label.tg{display:flex;gap:10px;align-items:center;margin-bottom:10px;font-size:15px}label.tg input{width:auto;margin:0}
+.toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:99;background:#1a0a10;border:1px solid var(--gold);color:var(--text);padding:9px 16px;border-radius:999px;font-size:14px;max-width:90vw}
+@media(max-width:720px){
+ body{font-size:16px}
+ nav{position:fixed;bottom:0;left:0;right:0;flex-wrap:nowrap;gap:0;padding:5px 4px calc(5px + env(safe-area-inset-bottom));background:rgba(11,5,8,.95);border-top:1px solid var(--line);backdrop-filter:blur(10px)}
+ nav button{flex:1;flex-direction:column;gap:1px;border:none;border-radius:10px;padding:5px 2px;font-size:10px;letter-spacing:.04em;background:none}
+ nav button .ic{font-size:19px}nav button.on{background:rgba(224,49,63,.3)}
+ main{padding-bottom:78px}.msg{max-width:96%}
+}
 </style>
 </head>
 <body>
+<header>
+  <div class="stone"></div>
+  <h1 class="logo">VISION</h1>
+  <div class="tag">Synthetic Intelligence · Mind Stone Protocol</div>
+  <div class="conn"><span class="dot wait" id="dot"></span><span id="connTxt">Connecting…</span></div>
+</header>
 
-<div class="core"></div>
-<h1>VISION</h1>
-<div class="subtitle">Synthetic Intelligence — Persistent Memory</div>
+<nav>
+  <button class="on" data-t="chat"><span class="ic">💬</span><span>Chat</span></button>
+  <button data-t="create"><span class="ic">🎨</span><span>Create</span></button>
+  <button data-t="games"><span class="ic">🎮</span><span>Games</span></button>
+  <button data-t="tools"><span class="ic">🧰</span><span>Tools</span></button>
+  <button data-t="memory"><span class="ic">🧠</span><span>Memory</span></button>
+  <button data-t="settings"><span class="ic">⚙️</span><span>Settings</span></button>
+</nav>
 
-<div id="setupBox">
-  <label>Enter your free Groq API key (from console.groq.com):</label>
-  <input id="apiKeyInput" type="password" placeholder="gsk_..." />
-  <button id="saveKeyBtn">Save</button>
-</div>
+<main>
+<section class="panel on" id="p-chat">
+  <div class="chips" id="chips"></div>
+  <div id="log"></div>
+  <div class="inbar">
+    <button class="icon" id="attach" title="Attach image or PDF">📎</button>
+    <button class="icon" id="mic" title="Speak">🎙</button>
+    <input id="msg" placeholder="Ask VISION anything…" autocomplete="off" enterkeyhint="send">
+    <button class="btn" id="send">Send</button>
+  </div>
+  <input type="file" id="file" accept="image/*,application/pdf" hidden>
+  <div class="hint" id="attInfo"></div>
+</section>
 
-<div class="tabs">
-  <div class="tab-btn active" data-tab="chat">Chat</div>
-  <div class="tab-btn" data-tab="image">Image</div>
-  <div class="tab-btn" data-tab="frames">Frame Sequence</div>
-  <div class="tab-btn" data-tab="game">Game Builder</div>
-  <div class="tab-btn" data-tab="memory">Memory</div>
-  <div class="tab-btn" data-tab="settings">Settings</div>
-</div>
+<section class="panel" id="p-create">
+  <div class="seg"><button class="on" data-sub="img">Image</button><button data-sub="vid">Video</button></div>
+  <div class="card subp on" id="sub-img">
+    <h3>Image studio</h3>
+    <input id="imgPrompt" placeholder="Describe the image…">
+    <div class="row">
+      <select id="imgStyle"><option value="none">Style: none</option><option value="cinematic">Cinematic</option><option value="anime">Anime</option><option value="photo">Photoreal</option><option value="render">3D render</option><option value="sketch">Sketch</option></select>
+      <select id="imgShape"><option value="square">Square</option><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select>
+      <select id="imgModel"><option value="flux">Fast (flux)</option><option value="gptimage">Quality (gptimage)</option></select>
+    </div>
+    <label class="tg"><input type="checkbox" id="imgEnh" checked> Let VISION improve my prompt first</label>
+    <div class="row"><button class="btn" id="imgBtn">Generate</button><button class="ghost" id="img4Btn">4 variations</button></div>
+    <div id="imgOut"></div>
+  </div>
+  <div class="card subp" id="sub-vid">
+    <h3>Video studio</h3>
+    <input id="vidPrompt" placeholder="Describe the action, e.g. a balloon rising into the sky">
+    <div class="row">
+      <select id="vidMode"><option value="flip">Flipbook (AI frames)</option><option value="boomerang">Boomerang loop</option><option value="zoom">Cinematic zoom (1 image)</option></select>
+      <select id="vidFrames"><option value="8">8 frames</option><option value="12" selected>12 frames</option><option value="16">16 frames</option></select>
+    </div>
+    <button class="btn" id="vidBtn">Create video</button>
+    <div class="hint" id="vidStatus">Keep this tab open while it renders. Output is a .webm file.</div>
+    <div id="vidOut"></div>
+  </div>
+</section>
 
-<div class="panel active" id="panel-chat">
-  <label class="toggle">
-    <select id="modeSelect" class="modeSelect">
-      <option value="groq">Groq (Tier 1 — fast, hosted)</option>
-      <option value="finetuned">Fine-tuned VISION (Tier 2 — self-trained)</option>
-    </select>
-  </label>
-  <label class="toggle"><input type="checkbox" id="autoRememberToggle" checked /> Automatically remember this conversation</label>
-  <div id="chatLog"></div>
-  <input id="chatInput" placeholder="Ask VISION anything..." />
-  <button class="action" id="chatSend">Send</button>
-  <div id="status"></div>
-</div>
+<section class="panel" id="p-games">
+  <div class="card">
+    <h3>Game &amp; website builder</h3>
+    <div class="chips">
+      <button class="chip" data-g="tic tac toe game vs AI">Tic-Tac-Toe vs AI</button>
+      <button class="chip" data-g="tic tac toe game">Tic-Tac-Toe 2P</button>
+      <button class="chip" data-g="air hockey game vs AI">Air Hockey</button>
+      <button class="chip" data-g="football penalty shootout game">Penalty Shootout</button>
+    </div>
+    <textarea id="gamePrompt" rows="2" placeholder="…or describe any game or website. Add “vs AI” for a computer opponent."></textarea>
+    <div class="row"><select id="gameKind"><option value="game">Game</option><option value="website">Website</option></select><button class="btn" id="gameGo">Build with VISION</button></div>
+    <div class="hint" id="gameStatus"></div>
+  </div>
+  <div class="card" id="gameOut" style="display:none">
+    <iframe id="gameFrame" sandbox="allow-scripts allow-modals"></iframe>
+    <div class="row" style="margin-top:10px"><button class="ghost" id="gOpen">Open full screen</button><button class="ghost" id="gDl">Download .html</button><button class="ghost" id="gCode">View code</button></div>
+    <pre id="gameCode" hidden></pre>
+  </div>
+</section>
 
-<div class="panel" id="panel-image">
-  <input id="imgPrompt" placeholder="Describe the image..." />
-  <button class="action" id="imgBtn">Generate Image</button>
-  <div id="imgStatus"></div>
-  <img class="result" id="imgResult" style="display:none;" />
-</div>
+<section class="panel" id="p-tools"><div class="tgrid">
+  <div class="card"><h3>Calculator &amp; converter</h3><input id="calcIn" placeholder="15% of 240 · 2*(3+4) · convert 10 km to miles"><button class="btn sm" id="calcBtn">Calculate</button><div class="out" id="calcOut"></div></div>
+  <div class="card"><h3>Timers</h3><div class="row"><input id="tmVal" type="number" min="1" value="5" inputmode="numeric"><select id="tmUnit"><option value="1000">seconds</option><option value="60000" selected>minutes</option><option value="3600000">hours</option></select></div><input id="tmLabel" placeholder="Label (optional)"><div class="row"><button class="btn sm" id="tmStart">Start</button><button class="ghost" id="tmPomo">Pomodoro 25</button></div><div class="out" id="tmList"></div><div class="hint">Timers ring while this page stays open.</div></div>
+  <div class="card"><h3>Weather</h3><input id="wxCity" placeholder="City"><button class="btn sm" id="wxBtn">Check</button><div class="out" id="wxOut"></div></div>
+  <div class="card"><h3>Dictionary</h3><input id="dfWord" placeholder="Word"><button class="btn sm" id="dfBtn">Define</button><div class="out" id="dfOut"></div></div>
+  <div class="card"><h3>Translate</h3><textarea id="trText" rows="2" placeholder="Text"></textarea><input id="trLang" placeholder="To language (e.g. Hindi, French)"><button class="btn sm" id="trBtn">Translate</button><div class="out" id="trOut"></div></div>
+  <div class="card"><h3>Writing assistant</h3><textarea id="wrText" rows="3" placeholder="Paste text"></textarea><select id="wrAct"><option value="summarize">Summarize</option><option value="simplify">Simplify</option><option value="fix grammar and spelling in">Fix grammar</option><option value="rewrite as a formal email">Formal email</option><option value="expand with more detail">Expand</option></select><button class="btn sm" id="wrBtn">Go</button><div class="out" id="wrOut"></div></div>
+  <div class="card"><h3>Random</h3><div class="row"><button class="ghost" id="rdCoin">Coin</button><button class="ghost" id="rdDice">Dice</button><button class="ghost" id="rdPass">Password</button></div><div class="out" id="rdOut"></div></div>
+  <div class="card"><h3>QR code</h3><input id="qrIn" placeholder="Text or link"><button class="btn sm" id="qrBtn">Make QR</button><div id="qrOut"></div></div>
+  <div class="card"><h3>Messaging</h3><input id="waTo" placeholder="Saved contact name or number"><textarea id="waText" rows="2" placeholder="Message, or what the email should say"></textarea><div class="row"><button class="btn sm" id="waBtn">WhatsApp</button><button class="ghost" id="mailBtn">Draft email</button></div><div class="out" id="waOut"></div></div>
+  <div class="card"><h3>Notes</h3><input id="noteIn" placeholder="New note"><button class="btn sm" id="noteAdd">Save</button><div id="noteList"></div></div>
+  <div class="card"><h3>Journal</h3><textarea id="jrIn" rows="2" placeholder="Today…"></textarea><button class="btn sm" id="jrAdd">Save entry</button><div id="jrList"></div></div>
+</div></section>
 
-<div class="panel" id="panel-frames">
-  <input id="framePrompt" placeholder="Describe the action..." />
-  <button class="action" id="frameBtn">Generate Frame Sequence</button>
-  <div id="frameStatus"></div>
-  <div id="framesRow"></div>
-</div>
+<section class="panel" id="p-memory">
+  <div class="card"><h3>Teach VISION</h3>
+    <input id="teachIn" placeholder="A fact to remember, e.g. I study robotics and prefer short answers">
+    <button class="btn sm" id="teachBtn">Save memory</button>
+    <input id="ruleIn" placeholder="A standing rule, e.g. Always explain code line by line" style="margin-top:12px">
+    <button class="btn sm" id="ruleBtn">Save rule</button>
+    <div class="hint" id="memStatus">Memories are recalled when relevant. Rules apply to every answer.</div>
+  </div>
+  <div class="card"><h3>Stored knowledge</h3>
+    <div class="row"><select id="memFilter"><option value="all">Everything</option><option value="memory">Memories</option><option value="lesson">Rules</option><option value="note">Notes</option><option value="journal">Journal</option><option value="contact">Contacts</option></select><button class="ghost" id="memRefresh">Refresh</button><button class="ghost" id="memExport">Export JSON</button></div>
+    <div id="memList" style="margin-top:10px"></div>
+    <button class="ghost" id="memClear" style="margin-top:8px;color:var(--red)">Delete all memories</button>
+  </div>
+</section>
 
-<div class="panel" id="panel-game">
-  <input id="gamePrompt" placeholder="Describe the game or page..." />
-  <button class="action" id="gameBtn">Generate</button>
-  <div id="gameStatus"></div>
-  <pre id="gameCode"></pre>
-  <button class="action" id="downloadGameBtn">Download as HTML file</button>
-</div>
-
-<div class="panel" id="panel-memory">
-  <p style="color:#d99a6c; font-size:13px;">Teach VISION something directly:</p>
-  <input id="teachInput" placeholder="e.g. My favorite programming language is Python" />
-  <button class="action" id="teachBtn">Save to Memory</button>
-  <div id="memStatus"></div>
-  <p style="color:#d99a6c; font-size:13px; margin-top:20px;">Stored memories:</p>
-  <button class="action" id="refreshMemBtn" style="margin-bottom:10px;">Refresh List</button>
-  <button class="action" id="clearMemBtn" style="margin-bottom:10px; background:linear-gradient(90deg,#ff5252,#a11616);">Clear All Memory</button>
-  <div id="memList"></div>
-</div>
-
-<div class="panel" id="panel-settings">
-  <p style="color:#d99a6c; font-size:13px;">Change your Groq API key:</p>
-  <input id="apiKeyInputSettings" type="password" placeholder="gsk_..." />
-  <button class="action" id="saveKeySettingsBtn">Save Key</button>
-
-  <p style="color:#d99a6c; font-size:13px; margin-top:20px;">VISION server URL (Render):</p>
-  <input id="serverUrlInput" placeholder="https://vision-server-xxxx.onrender.com" />
-  <button class="action" id="saveServerBtn">Save Server URL</button>
-  <p style="color:#a06a44; font-size:11px; margin-top:16px;">Your Groq key is stored only in this browser. Memory is stored on your own server/database.</p>
-</div>
+<section class="panel" id="p-settings">
+  <div class="card"><h3>Connection</h3>
+    <input id="setServer" placeholder="Server URL — https://your-app.onrender.com">
+    <input id="setPass" type="password" placeholder="Server passcode (if you set VISION_PASSCODE)">
+    <input id="setGroq" type="password" placeholder="Groq API key (gsk_…)">
+    <input id="setTavily" type="password" placeholder="Tavily API key (optional, for news &amp; web search)">
+    <input id="setCity" placeholder="Home city for weather (optional)">
+    <div class="row"><button class="btn sm" id="btnTest">Test connection</button><button class="ghost" id="btnNotif">Enable notifications</button></div>
+    <div class="hint" id="setStatus">Keys are stored only in this browser.</div>
+  </div>
+  <div class="card"><h3>Behaviour</h3>
+    <label class="tg"><input type="checkbox" id="chkAuto"> Auto-remember personal statements</label>
+    <label class="tg"><input type="checkbox" id="chkSpeak"> Speak replies aloud</label>
+    <label class="tg"><input type="checkbox" id="chkWake"> Always listen for “Vision …” (Chrome, page open)</label>
+    <select id="selVoice"></select>
+  </div>
+</section>
+</main>
 
 <script>
-let chatHistory = [];
-let currentGameHtml = "";
-
-function getApiKey() { return localStorage.getItem("vision_groq_key") || ""; }
-function setApiKey(key) { localStorage.setItem("vision_groq_key", key); }
-function getServerUrl() { return localStorage.getItem("vision_server_url") || ""; }
-function setServerUrl(url) { localStorage.setItem("vision_server_url", url.replace(/\/$/, "")); }
-
-function checkSetup() {
-  const key = getApiKey();
-  const setupBox = document.getElementById("setupBox");
-  if (!key) { setupBox.classList.add("show"); } else { setupBox.classList.remove("show"); }
-  document.getElementById("serverUrlInput").value = getServerUrl();
-}
-checkSetup();
-
-document.getElementById("saveKeyBtn").addEventListener("click", () => {
-  const val = document.getElementById("apiKeyInput").value.trim();
-  if (val) { setApiKey(val); checkSetup(); document.getElementById("status").textContent = "API key saved."; }
-});
-document.getElementById("saveKeySettingsBtn").addEventListener("click", () => {
-  const val = document.getElementById("apiKeyInputSettings").value.trim();
-  if (val) { setApiKey(val); checkSetup(); alert("API key saved."); }
-});
-document.getElementById("saveServerBtn").addEventListener("click", () => {
-  const val = document.getElementById("serverUrlInput").value.trim();
-  if (val) { setServerUrl(val); alert("Server URL saved."); }
-});
-
-const chatLogEl = document.getElementById("chatLog");
-const chatInputEl = document.getElementById("chatInput");
-const statusEl = document.getElementById("status");
-const modeSelect = document.getElementById("modeSelect");
-
-function addMessage(role, text) {
-  const div = document.createElement("div");
-  div.className = "msg " + role;
-  div.textContent = text;
-  chatLogEl.appendChild(div);
-  chatLogEl.scrollTop = chatLogEl.scrollHeight;
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const CFG={textModel:"openai/gpt-oss-120b",visionModel:"qwen/qwen3.6-27b",defaultServer:""};
+const store={get:(k,d="")=>{const v=localStorage.getItem("vision_"+k);return v===null?d:v},set:(k,v)=>localStorage.setItem("vision_"+k,v)};
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),3200)}
+function loadScript(u){return new Promise((res,rej)=>{if(document.querySelector('script[src="'+u+'"]'))return res();const s=document.createElement('script');s.src=u;s.onload=res;s.onerror=()=>rej(new Error('Could not load a required library.'));document.head.appendChild(s)})}
+function md(text){
+  const blocks=[];
+  let t=esc(text).replace(/```(\w*)\n?([\s\S]*?)```/g,(m,l,c)=>{blocks.push({l,c});return "\u0000"+(blocks.length-1)+"\u0000"});
+  t=t.replace(/`([^`\n]+)`/g,'<code>$1</code>').replace(/^#{1,4}\s+(.+)$/gm,'<b>$1</b>').replace(/^[-*]\s+/gm,'• ').replace(/\*\*([^*\n]+)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>');
+  return t.replace(/\u0000(\d+)\u0000/g,(m,i)=>{const b=blocks[i];return '<div class="code"><div class="codebar"><span>'+(b.l||'code')+'</span><button class="copy">Copy</button></div><pre><code>'+b.c+'</code></pre></div>'});
 }
 
-async function sendChat() {
-  const message = chatInputEl.value.trim();
-  const serverUrl = getServerUrl();
-  const apiKey = getApiKey();
-  const mode = modeSelect.value;
-  if (!message) return;
-  if (!serverUrl) { statusEl.textContent = "Please set your VISION server URL in Settings first."; return; }
-  if (mode === "groq" && !apiKey) { statusEl.textContent = "Please enter your Groq API key first."; return; }
+/* ---------- navigation ---------- */
+function go(n){$$('.panel').forEach(p=>p.classList.toggle('on',p.id==='p-'+n));$$('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===n));window.scrollTo({top:0});if(n==='memory')loadMem();if(n==='tools')refreshTools()}
+$$('nav button').forEach(b=>b.onclick=()=>go(b.dataset.t));
+$$('.seg button').forEach(b=>b.onclick=()=>subSwitch(b.dataset.sub));
+function subSwitch(s){$$('.seg button').forEach(x=>x.classList.toggle('on',x.dataset.sub===s));$$('.subp').forEach(x=>x.classList.toggle('on',x.id==='sub-'+s))}
 
-  chatInputEl.value = "";
-  addMessage("user", message);
-  statusEl.textContent = "Thinking...";
+/* ---------- API helpers ---------- */
+async function api(path,method="GET",body){
+  const base=(store.get('server')||CFG.defaultServer).replace(/\/$/,'');
+  if(!base)throw new Error("Server URL not set. Open Settings and add your Render URL.");
+  const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),90000);
+  try{
+    const res=await fetch(base+path,{method,headers:{"Content-Type":"application/json","X-Vision-Passcode":store.get('pass')},body:body?JSON.stringify(body):undefined,signal:ctl.signal});
+    const data=await res.json().catch(()=>({error:"Bad response from server"}));
+    if(!res.ok||data.error)throw new Error(data.error||("Server error "+res.status));
+    return data;
+  }catch(e){if(e.name==='AbortError')throw new Error("The server took too long. It may be waking up — try again.");throw e}
+  finally{clearTimeout(to)}
+}
+async function groq(messages,{model=CFG.textModel,temperature=.6,max=1500}={}){
+  const key=store.get('groq');if(!key)throw new Error("Add your Groq API key in Settings first.");
+  const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+key},body:JSON.stringify({model,messages,temperature,max_tokens:max})});
+  const d=await res.json();if(d.error)throw new Error(d.error.message||"Groq error");
+  return (d.choices?.[0]?.message?.content||"").trim();
+}
+const addItem=(type,text,extra="")=>api('/items','POST',{type,text,extra});
+const getItems=async type=>(await api('/items'+(type?'?type='+type:''))).items;
 
-  const endpoint = mode === "finetuned" ? "/chat-finetuned" : "/chat";
-
-  try {
-    const res = await fetch(serverUrl + endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message,
-        groq_api_key: apiKey,
-        history: chatHistory,
-        auto_remember: document.getElementById("autoRememberToggle").checked,
-      }),
-    });
-    const data = await res.json();
-    if (data.error) { statusEl.textContent = "Error: " + data.error; return; }
-
-    chatHistory.push({ role: "user", content: message });
-    chatHistory.push({ role: "assistant", content: data.reply });
-    addMessage("bot", data.reply);
-
-    if (data.used_memories && data.used_memories.length > 0) {
-      addMessage("memhint", "Used memory: " + data.used_memories[0]);
-    }
-    statusEl.textContent = "";
-  } catch (e) {
-    statusEl.textContent = "Could not reach the server. Check the server URL in Settings.";
-  }
+async function ping(){
+  const dot=$('#dot'),tx=$('#connTxt');
+  if(!(store.get('server')||CFG.defaultServer)){dot.className='dot bad';tx.textContent='Server not set — open Settings';return false}
+  dot.className='dot wait';tx.textContent='Waking server…';
+  try{await api('/');dot.className='dot ok';tx.textContent='Memory online';return true}
+  catch(e){dot.className='dot bad';tx.textContent=/passcode/i.test(e.message)?'Passcode needed':'Server offline';return false}
 }
 
-document.getElementById("chatSend").addEventListener("click", sendChat);
-chatInputEl.addEventListener("keydown", (e) => { if (e.key === "Enter") sendChat(); });
+/* ---------- chat rendering ---------- */
+const log=$('#log');let busy=false,attachment=null,history=[],quiz=null,forceSpeak=false;
+function addMsg(cls,html){const d=document.createElement('div');d.className='msg '+cls;d.innerHTML=html;log.appendChild(d);log.scrollTop=log.scrollHeight;return d}
+function botSay(text,o={}){
+  $$('#log .typing').forEach(x=>x.remove());
+  let h=md(text);
+  if(o.hint)h+='<div class="mh">'+esc(o.hint)+'</div>';
+  if(o.links)h+='<div class="lk">'+o.links.filter(l=>/^(https?:|mailto:)/.test(l.url)).map(l=>'<a href="'+esc(l.url)+'" target="_blank" rel="noopener">'+esc(l.label)+'</a>').join('')+'</div>';
+  const d=addMsg('bot',h);if(!o.silent)speak(text);return d;
+}
+log.addEventListener('click',e=>{if(e.target.classList.contains('copy')){const c=e.target.closest('.code').querySelector('code').textContent;navigator.clipboard.writeText(c).then(()=>{e.target.textContent='Copied';setTimeout(()=>e.target.textContent='Copy',1200)})}});
 
-document.getElementById("imgBtn").addEventListener("click", async () => {
-  const prompt = document.getElementById("imgPrompt").value.trim();
-  if (!prompt) return;
-  const statusEl2 = document.getElementById("imgStatus");
-  const imgEl = document.getElementById("imgResult");
-  statusEl2.textContent = "Generating...";
-  imgEl.style.display = "none";
-  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=768&height=768&nologo=true`;
-  imgEl.onload = () => { statusEl2.textContent = "Done."; imgEl.style.display = "block"; };
-  imgEl.onerror = () => { statusEl2.textContent = "Image generation failed. Try again."; };
-  imgEl.src = url;
-});
+/* ---------- speech ---------- */
+function speak(text){
+  if(!('speechSynthesis' in window)||(store.get('speak','0')!=='1'&&!forceSpeak))return;
+  const clean=text.replace(/```[\s\S]*?```/g,' code block omitted. ').replace(/[*_#`>~|]/g,'').replace(/https?:\/\/\S+/g,'link').replace(/\s+/g,' ').trim().slice(0,600);
+  if(!clean)return;speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(clean),v=speechSynthesis.getVoices(),name=store.get('voice');
+  u.voice=v.find(x=>x.name===name)||v.find(x=>/en-GB/i.test(x.lang))||v.find(x=>/^en/i.test(x.lang))||null;u.rate=.98;u.pitch=.9;speechSynthesis.speak(u);
+}
+let rec=null,listening=false,wakeMode=false;
+function initRec(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return null;
+  const r=new SR();r.lang='en-US';r.interimResults=false;r.continuous=false;
+  r.onresult=e=>handleVoice(e.results[0][0].transcript.trim());
+  r.onend=()=>{listening=false;$('#mic').classList.remove('live');if(wakeMode&&!busy)setTimeout(startRec,400)};
+  r.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed'){wakeMode=false;$('#chkWake').checked=false;toast('Microphone permission denied.')}};
+  return r;
+}
+function startRec(){if(!rec)rec=initRec();if(!rec)return toast('Voice input needs Chrome.');if(listening)return;try{rec.start();listening=true;$('#mic').classList.add('live')}catch(e){}}
+function handleVoice(t){
+  if(wakeMode){const m=t.match(/\bvision\b[\s,]*(.*)/i);if(!m)return;t=m[1];if(!t){forceSpeak=true;botSay('Yes?');forceSpeak=false;return}}
+  forceSpeak=true;$('#msg').value=t;send();
+}
+$('#mic').onclick=()=>{if(listening){rec.stop();return}startRec()};
 
-document.getElementById("frameBtn").addEventListener("click", async () => {
-  const prompt = document.getElementById("framePrompt").value.trim();
-  if (!prompt) return;
-  const statusEl2 = document.getElementById("frameStatus");
-  const rowEl = document.getElementById("framesRow");
-  rowEl.innerHTML = "";
-  statusEl2.textContent = "Generating frames...";
-  const phrases = ["at the very start of the action", "a moment into the action", "partway through the action",
-    "past the midpoint", "nearing the end", "at the very end of the action"];
-  const seed = Math.floor(Math.random() * 100000);
-  for (let i = 0; i < phrases.length; i++) {
-    statusEl2.textContent = `Generating frame ${i + 1} of ${phrases.length}...`;
-    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt + ", " + phrases[i])}?width=220&height=220&seed=${seed}&nologo=true`;
-    const img = document.createElement("img");
-    img.src = url;
-    rowEl.appendChild(img);
-    await new Promise((r) => setTimeout(r, 300));
-  }
-  statusEl2.textContent = "Frame sequence ready.";
-});
+/* ---------- tool functions ---------- */
+const parseDur=s=>{const m=String(s).match(/(\d+(?:\.\d+)?)\s*(sec|second|s\b|min|minute|m\b|hour|hr|h\b)/i);if(!m)return null;const v=+m[1],u=m[2].toLowerCase();return v*(u[0]==='s'?1e3:u[0]==='m'?6e4:36e5)};
+let actx;function beep(){try{actx=actx||new(window.AudioContext||window.webkitAudioContext)();[880,660,880].forEach((f,i)=>{const o=actx.createOscillator(),g=actx.createGain();o.frequency.value=f;g.gain.value=.15;o.connect(g);g.connect(actx.destination);o.start(actx.currentTime+i*.22);o.stop(actx.currentTime+i*.22+.18)})}catch(e){}}
+function notify(t,b){if('Notification' in window&&Notification.permission==='granted')new Notification(t,{body:b})}
+const timers=[];
+function startTimer(ms,label){const id=Math.random();const to=setTimeout(()=>{beep();notify('VISION',label);botSay('⏰ '+label,{silent:false});const i=timers.findIndex(t=>t.id===id);if(i>-1)timers.splice(i,1);renderTimers()},ms);timers.push({id,end:Date.now()+ms,label,to});renderTimers()}
+function renderTimers(){const el=$('#tmList');if(!el)return;el.innerHTML=timers.length?timers.map(t=>'⏱ '+esc(t.label)+' — '+Math.max(0,Math.ceil((t.end-Date.now())/1000))+'s left').join('<br>'):''}
+setInterval(renderTimers,1000);
+function calc(expr){
+  const p=expr.match(/(\d+(?:\.\d+)?)\s*%\s*of\s*(\d+(?:\.\d+)?)/i);if(p)return +p[1]/100*+p[2];
+  const c=expr.replace(/×|x/gi,'*').replace(/÷/g,'/').replace(/\^/g,'**').replace(/[^0-9+\-*/().% ]/g,'');
+  if(!c.trim())throw new Error('Nothing to calculate.');
+  const r=Function('"use strict";return ('+c+')')();if(typeof r!=='number'||!isFinite(r))throw new Error('I could not calculate that.');return r;
+}
+const fmt=n=>+n.toFixed(6);
+const UNITS={km:['l',1000],kilometer:['l',1000],kilometers:['l',1000],m:['l',1],meter:['l',1],meters:['l',1],cm:['l',.01],mi:['l',1609.344],mile:['l',1609.344],miles:['l',1609.344],ft:['l',.3048],foot:['l',.3048],feet:['l',.3048],inch:['l',.0254],inches:['l',.0254],kg:['w',1],kilogram:['w',1],kilograms:['w',1],g:['w',.001],gram:['w',.001],grams:['w',.001],lb:['w',.45359237],lbs:['w',.45359237],pound:['w',.45359237],pounds:['w',.45359237],l:['v',1],liter:['v',1],liters:['v',1],litre:['v',1],litres:['v',1],ml:['v',.001],gal:['v',3.785411784],gallon:['v',3.785411784],gallons:['v',3.785411784]};
+const CUR={dollar:'USD',dollars:'USD',usd:'USD',rupee:'INR',rupees:'INR',inr:'INR',euro:'EUR',euros:'EUR',eur:'EUR',gbp:'GBP',yen:'JPY',jpy:'JPY',aud:'AUD',cad:'CAD'};
+async function convert(v,from,to){
+  const n=s=>s.toLowerCase().replace(/[^a-z]/g,'');from=n(from);to=n(to);
+  const T={c:'c',celsius:'c',f:'f',fahrenheit:'f'};
+  if(T[from]&&T[to]){const r=T[from]===T[to]?v:T[from]==='c'?v*9/5+32:(v-32)*5/9;return v+'° '+from+' = '+r.toFixed(2)+'° '+to}
+  if(UNITS[from]&&UNITS[to]&&UNITS[from][0]===UNITS[to][0])return v+' '+from+' = '+fmt(v*UNITS[from][1]/UNITS[to][1])+' '+to;
+  if(CUR[from]&&CUR[to]){const r=await fetch('https://api.frankfurter.app/latest?amount='+v+'&from='+CUR[from]+'&to='+CUR[to]).then(x=>x.json());return v+' '+CUR[from]+' = '+r.rates[CUR[to]]+' '+CUR[to]}
+  throw new Error("I can't convert those units.");
+}
+const WMO={0:'Clear',1:'Mostly clear',2:'Partly cloudy',3:'Overcast',45:'Fog',48:'Fog',51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',61:'Light rain',63:'Rain',65:'Heavy rain',71:'Light snow',73:'Snow',75:'Heavy snow',80:'Rain showers',81:'Rain showers',82:'Violent showers',95:'Thunderstorm',96:'Thunderstorm with hail',99:'Thunderstorm with hail'};
+async function weather(city){
+  const g=await fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&name='+encodeURIComponent(city)).then(r=>r.json());
+  const p=g.results?.[0];if(!p)throw new Error("I couldn't find that place.");
+  const w=await fetch('https://api.open-meteo.com/v1/forecast?latitude='+p.latitude+'&longitude='+p.longitude+'&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=1').then(r=>r.json());
+  const c=w.current,d=w.daily;
+  return p.name+(p.country?', '+p.country:'')+': '+(WMO[c.weather_code]||'—')+', '+c.temperature_2m+'°C (feels '+c.apparent_temperature+'°C), humidity '+c.relative_humidity_2m+'%, wind '+c.wind_speed_10m+' km/h. Today '+d.temperature_2m_min[0]+'–'+d.temperature_2m_max[0]+'°C, rain chance '+d.precipitation_probability_max[0]+'%.';
+}
+async function define(w){const d=await fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+encodeURIComponent(w)).then(r=>r.json());const m=d[0]?.meanings?.[0];if(!m)throw new Error('No definition found for "'+w+'".');return w+' ('+m.partOfSpeech+'): '+m.definitions[0].definition}
+const translate=(text,lang)=>groq([{role:'system',content:'Translate the text to '+lang+'. Reply with ONLY the translation.'},{role:'user',content:text}],{max:800,temperature:.2});
+function genPass(n){const c='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*',a=new Uint32Array(n);crypto.getRandomValues(a);return [...a].map(x=>c[x%c.length]).join('')}
+async function webSearch(q){
+  const d=await api('/search','POST',{query:q,tavily_api_key:store.get('tavily')});
+  const links=d.results.slice(0,3).map(r=>({label:(r.title||r.url).slice(0,40),url:r.url}));
+  botSay(d.answer||d.results.map(r=>'• '+r.title+': '+r.content).join('\n'),{links});
+}
+const SITES={youtube:'youtube.com',gmail:'mail.google.com',google:'google.com',github:'github.com',maps:'maps.google.com',whatsapp:'web.whatsapp.com',instagram:'instagram.com',reddit:'reddit.com',netflix:'netflix.com',amazon:'amazon.in',spotify:'open.spotify.com',drive:'drive.google.com',calendar:'calendar.google.com',linkedin:'linkedin.com'};
 
-document.getElementById("gameBtn").addEventListener("click", async () => {
-  const description = document.getElementById("gamePrompt").value.trim();
-  const apiKey = getApiKey();
-  if (!description || !apiKey) return;
-  const statusEl2 = document.getElementById("gameStatus");
-  const codeEl = document.getElementById("gameCode");
-  const downloadBtn = document.getElementById("downloadGameBtn");
-  statusEl2.textContent = "Generating...";
-  downloadBtn.style.display = "none";
-
-  try {
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: "openai/gpt-oss-120b",
-        temperature: 0.4,
-        max_tokens: 2000,
-        messages: [
-          { role: "system", content: `You are VISION. Generate a COMPLETE self-contained HTML file for the requested game or page. Put all CSS in a <style> tag and all JavaScript in ONE <script> tag at the end of <body>, using element.addEventListener only, never inline onclick attributes. Respond with ONLY the raw HTML starting with <!DOCTYPE html>, no explanation, no markdown fences.` },
-          { role: "user", content: `Build this: ${description}` },
-        ],
-      }),
-    });
-    const data = await res.json();
-    let html = data.choices?.[0]?.message?.content?.trim() || "";
-    const fenceMatch = html.match(/```(?:html)?\s*([\s\S]*?)```/i);
-    if (fenceMatch) html = fenceMatch[1].trim();
-    currentGameHtml = html;
-    codeEl.textContent = html;
-    statusEl2.textContent = "Done.";
-    downloadBtn.style.display = "inline-block";
-  } catch (e) {
-    statusEl2.textContent = "Generation failed.";
-  }
-});
-
-document.getElementById("downloadGameBtn").addEventListener("click", () => {
-  const blob = new Blob([currentGameHtml], { type: "text/html" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "vision-game.html";
-  a.click();
-});
-
-document.getElementById("teachBtn").addEventListener("click", async () => {
-  const text = document.getElementById("teachInput").value.trim();
-  const serverUrl = getServerUrl();
-  const memStatusEl = document.getElementById("memStatus");
-  if (!text) return;
-  if (!serverUrl) { memStatusEl.textContent = "Set your server URL in Settings first."; return; }
-
-  memStatusEl.textContent = "Saving...";
-  try {
-    const res = await fetch(serverUrl + "/remember", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, source: "manual" }),
-    });
-    const data = await res.json();
-    if (data.ok) {
-      memStatusEl.textContent = "Saved.";
-      document.getElementById("teachInput").value = "";
-      loadMemories();
-    } else {
-      memStatusEl.textContent = "Failed to save.";
-    }
-  } catch (e) {
-    memStatusEl.textContent = "Could not reach the server.";
-  }
-});
-
-async function loadMemories() {
-  const serverUrl = getServerUrl();
-  const listEl = document.getElementById("memList");
-  if (!serverUrl) return;
-  listEl.innerHTML = "Loading...";
-  try {
-    const res = await fetch(serverUrl + "/memories");
-    const data = await res.json();
-    listEl.innerHTML = "";
-    (data.memories || []).forEach((m) => {
-      const div = document.createElement("div");
-      div.className = "memItem";
-      div.innerHTML = `${m.text}<div class="memSource">source: ${m.source}</div><span class="delBtn" data-id="${m.id}">Delete</span>`;
-      listEl.appendChild(div);
-    });
-    listEl.querySelectorAll(".delBtn").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        await fetch(serverUrl + "/memories/" + btn.dataset.id, { method: "DELETE" });
-        loadMemories();
-      });
-    });
-  } catch (e) {
-    listEl.innerHTML = "Could not load memories.";
-  }
+/* ---------- quiz ---------- */
+async function quizNext(){const r=await groq([{role:'system',content:'Generate ONE short quiz question. Reply EXACTLY as: QUESTION: <q>\nANSWER: <short answer>'},{role:'user',content:'Topic: '+(quiz.topic||'general knowledge')+'. Do not repeat: '+quiz.seen.slice(-5).join(' | ')}],{max:150,temperature:.9});const q=r.match(/QUESTION:\s*(.*)/i),a=r.match(/ANSWER:\s*(.*)/i);if(!q||!a)throw new Error('Could not build a question.');quiz.q=q[1].trim();quiz.a=a[1].trim();quiz.seen.push(quiz.q);botSay('Question: '+quiz.q)}
+async function quizStart(topic){quiz={topic,score:0,total:0,seen:[]};botSay("Quiz mode. Say 'stop quiz' to end.");await quizNext()}
+async function quizAnswer(t){
+  if(/^(stop|end|quit|exit) quiz/i.test(t)){botSay('Quiz over. Final score: '+quiz.score+' of '+quiz.total+'.');quiz=null;return true}
+  quiz.total++;const v=await groq([{role:'system',content:'Judge a quiz answer. Reply ONLY with CORRECT or INCORRECT. Allow small spelling or wording differences.'},{role:'user',content:'Question: '+quiz.q+'\nCorrect: '+quiz.a+'\nUser: '+t}],{max:10,temperature:0});
+  const ok=/^CORRECT/i.test(v.trim());if(ok)quiz.score++;botSay((ok?'Correct! ':'Not quite — the answer was '+quiz.a+'. ')+'Score '+quiz.score+'/'+quiz.total);await quizNext();return true;
 }
 
-document.getElementById("refreshMemBtn").addEventListener("click", loadMemories);
-document.getElementById("clearMemBtn").addEventListener("click", async () => {
-  const serverUrl = getServerUrl();
-  if (!serverUrl) return;
-  if (!confirm("Delete ALL stored memories? This cannot be undone.")) return;
-  await fetch(serverUrl + "/memories/clear", { method: "POST" });
-  loadMemories();
-});
+/* ---------- images & video ---------- */
+const STYLES={cinematic:'cinematic lighting, ultra detailed, 35mm film look',anime:'anime style, vibrant colours, clean linework',photo:'photorealistic, sharp focus, natural light',render:'3d render, soft studio lighting, high detail',sketch:'detailed pencil sketch, shading',none:''};
+const SHAPES={square:[1024,1024],portrait:[832,1216],landscape:[1216,832]};
+const imgUrl=(p,w,h,seed,model)=>'https://image.pollinations.ai/prompt/'+encodeURIComponent(p)+'?width='+w+'&height='+h+'&seed='+seed+'&nologo=true'+(model?'&model='+model:'');
+async function enhance(p){if(!store.get('groq'))return p;try{return await groq([{role:'system',content:'Expand the image request into ONE vivid, specific description (max 55 words): subject, setting, colours, lighting, composition, style. For posters describe layout and any text. Reply with ONLY the description.'},{role:'user',content:p}],{max:200,temperature:.7})||p}catch(e){return p}}
+async function chatImage(p){
+  const d=addMsg('bot','<div class="ld">Composing your image…</div>');const full=await enhance(p),url=imgUrl(full,1024,1024,Math.floor(Math.random()*1e6),'flux'),im=new Image();im.className='chatimg';
+  im.onload=()=>{d.innerHTML='';d.appendChild(im);d.insertAdjacentHTML('beforeend','<div class="lk"><a href="'+url+'" target="_blank" rel="noopener">Open full size</a></div><div class="mh">'+esc(full)+'</div>');log.scrollTop=log.scrollHeight};
+  im.onerror=()=>{d.textContent='The image service did not respond. Try again in a moment.'};im.src=url;
+}
+async function createImage(n){
+  const p=$('#imgPrompt').value.trim();if(!p)return toast('Describe the image first.');
+  const out=$('#imgOut');out.innerHTML='<div class="ld">Preparing…</div>';
+  const [w,h]=SHAPES[$('#imgShape').value],style=STYLES[$('#imgStyle').value],model=$('#imgModel').value;
+  const base=$('#imgEnh').checked?await enhance(p):p,full=base+(style?', '+style:'');
+  out.innerHTML='<div class="'+(n>1?'grid4':'grid1')+'"></div><div class="mh">'+esc(full)+'</div>';const g=out.firstChild;
+  for(let i=0;i<n;i++){
+    const url=imgUrl(full,n>1?640:w,n>1?640:h,Math.floor(Math.random()*1e6),model),box=document.createElement('div');box.className='ib';box.innerHTML='<div class="ld">Generating…</div>';g.appendChild(box);
+    await new Promise(res=>{const im=new Image();im.onload=()=>{box.innerHTML='';box.appendChild(im);box.insertAdjacentHTML('beforeend','<a class="dl" href="'+url+'" target="_blank" rel="noopener">Open / save</a>');res()};im.onerror=()=>{box.textContent='Failed — try again.';res()};im.src=url});
+    await sleep(400);
+  }
+}
+$('#imgBtn').onclick=()=>createImage(1);$('#img4Btn').onclick=()=>createImage(4);
 
-document.querySelectorAll(".tab-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
-    document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
-    btn.classList.add("active");
-    document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
-    if (btn.dataset.tab === "memory") loadMemories();
+function loadImg(url){return new Promise((res,rej)=>{const i=new Image();i.crossOrigin='anonymous';i.onload=()=>res({img:i,ok:true});i.onerror=()=>{const j=new Image();j.onload=()=>res({img:j,ok:false});j.onerror=()=>rej(new Error('image failed'));j.src=url};i.src=url})}
+async function loadImgRetry(url,tries=3){for(let a=0;a<tries;a++){try{return await loadImg(url)}catch(e){await sleep(800*(a+1))}}throw new Error('The image service is busy. Try again shortly.')}
+async function loadMany(urls,cb){const out=new Array(urls.length);let i=0,done=0;async function w(){while(i<urls.length){const k=i++;try{out[k]=await loadImgRetry(urls[k])}catch(e){}done++;cb&&cb(done,urls.length)}}await Promise.all([w(),w(),w()]);return out.filter(Boolean)}
+const PH=['at the very start of the action','a moment into the action','shortly after that','continuing the motion','partway through the action','past the midpoint of the action','nearing the later part of the action','close to the end of the action','at the very end of the action'];
+const phrases=n=>Array.from({length:n},(_,i)=>PH[Math.min(PH.length-1,Math.floor(i/(n-1)*(PH.length-1)))]);
+async function baseScene(p){if(!store.get('groq'))return p;try{return await groq([{role:'system',content:'Write ONE detailed visual scene description (under 35 words) for an image generator. Be very specific about the subject, appearance, setting, colours and art style so it can be reused across a sequence with minimal drift. Reply with ONLY the description.'},{role:'user',content:p}],{max:120,temperature:.5})||p}catch(e){return p}}
+function recordCanvas(cv,drawAt,dur){
+  return new Promise(resolve=>{
+    const type=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(t=>MediaRecorder.isTypeSupported(t));
+    const rec=new MediaRecorder(cv.captureStream(30),type?{mimeType:type,videoBitsPerSecond:4e6}:undefined),chunks=[];
+    rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);rec.onstop=()=>resolve(new Blob(chunks,{type:'video/webm'}));
+    rec.start();const t0=performance.now();
+    (function tick(now){const t=Math.min(1,(now-t0)/dur);drawAt(t);if(t<1)requestAnimationFrame(tick);else setTimeout(()=>rec.stop(),150)})(t0);
   });
-});
-</script>
+}
+async function renderVideo(frames,mode){
+  const S=512,cv=document.createElement('canvas');cv.width=cv.height=S;const x=cv.getContext('2d'),out=$('#vidOut');
+  const canRec=frames.every(f=>f.ok)&&window.MediaRecorder&&cv.captureStream;
+  let seq=frames;if(mode==='boomerang')seq=[...frames,...frames.slice(1,-1).reverse()];
+  const draw=mode==='zoom'?(t=>{const im=frames[0].img,e=t*t*(3-2*t),s=1+.4*e,cw=im.naturalWidth/s,ch=im.naturalHeight/s;x.drawImage(im,(im.naturalWidth-cw)*(.5-.08*e),(im.naturalHeight-ch)*(.5-.1*e),cw,ch,0,0,S,S)}):(t=>{x.drawImage(seq[Math.min(seq.length-1,Math.floor(t*seq.length))].img,0,0,S,S)});
+  const dur=mode==='zoom'?4500:seq.length*220;
+  if(canRec){
+    const blob=await recordCanvas(cv,draw,dur),url=URL.createObjectURL(blob);
+    out.innerHTML='<video src="'+url+'" autoplay loop muted playsinline controls></video><div class="lk"><a href="'+url+'" download="vision-'+mode+'.webm">Download video (.webm)</a></div>';
+  }else{
+    out.innerHTML='<div class="mh">The image host blocks exporting, so this plays live instead of producing a file.</div>';out.appendChild(cv);
+    const tok=renderVideo.tok=Symbol(),t0=performance.now();(function loop(now){if(renderVideo.tok!==tok)return;draw(((now-t0)%dur)/dur);requestAnimationFrame(loop)})(t0);
+  }
+}
+async function createVideo(){
+  const p=$('#vidPrompt').value.trim();if(!p)return toast('Describe the action first.');
+  const mode=$('#vidMode').value,n=+$('#vidFrames').value,st=$('#vidStatus');$('#vidOut').innerHTML='';$('#vidBtn').disabled=true;
+  try{
+    let frames;
+    if(mode==='zoom'){st.textContent='Generating source image…';const full=await enhance(p);frames=[await loadImgRetry(imgUrl(full,768,768,Math.floor(Math.random()*1e6),'flux'))]}
+    else{st.textContent='Planning the scene…';const base=await baseScene(p),seed=Math.floor(Math.random()*1e6);frames=await loadMany(phrases(n).map(ph=>imgUrl(base+', '+ph,448,448,seed,'flux')),(d,t)=>st.textContent='Generating frame '+d+' of '+t+'…');if(frames.length<3)throw new Error('Too few frames loaded — the image service is busy. Try again.')}
+    st.textContent='Assembling video…';await renderVideo(frames,mode);st.textContent='Done.';
+  }catch(e){st.textContent='⚠ '+e.message}
+  $('#vidBtn').disabled=false;
+}
+$('#vidBtn').onclick=createVideo;
 
+/* ---------- games ---------- */
+const GAME_CSS="*{box-sizing:border-box;margin:0;padding:0}body{min-height:100vh;min-height:100dvh;background:radial-gradient(circle at 50% 0%,#3a0d14 0%,#0b0508 70%);color:#ffe9b8;font-family:'Segoe UI',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px;text-align:center}h1{letter-spacing:6px;font-size:clamp(20px,6vw,30px);color:#f5c518;text-shadow:0 0 14px rgba(245,197,24,.6);margin-bottom:4px}.sub{font-size:12px;letter-spacing:3px;color:#c98a3c;text-transform:uppercase;margin-bottom:14px}.row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;justify-content:center}.chip{padding:8px 16px;border:1px solid rgba(245,197,24,.4);background:rgba(245,197,24,.06);color:#f5c518;border-radius:16px;cursor:pointer;font-size:12px;letter-spacing:2px;text-transform:uppercase}.chip.on{background:rgba(245,197,24,.25);box-shadow:0 0 14px rgba(245,197,24,.4)}.status{font-size:15px;color:#ffd166;margin-bottom:14px;min-height:22px}.btn{padding:11px 28px;border:1px solid #e0313f;background:rgba(224,49,63,.15);color:#ffb3b8;border-radius:22px;cursor:pointer;letter-spacing:2px;text-transform:uppercase;margin-top:14px;font-size:13px}.score{margin-top:14px;font-size:15px;color:#d9b36a}.score b{color:#f5c518;font-size:19px}";
+function gameShell(title,sub,css,body,js){return '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+title+'</title><style>'+GAME_CSS+css+'</style></head><body><h1>'+title+'</h1><div class="sub">'+sub+'</div>'+body+'<script>'+js+'<\/script></body></html>'}
+const DIFF_ROW='<div class="row" id="dr"><div class="chip" data-d="easy">Easy</div><div class="chip" data-d="medium">Medium</div><div class="chip on" data-d="hard">Hard</div></div>';
+const TEMPLATES={
+ttt:vs=>gameShell('TIC TAC TOE',vs?'You (X) vs VISION (O)':'Two players',
+"#bd{display:grid;grid-template-columns:repeat(3,min(27vw,104px));gap:10px;padding:12px;border:1px solid rgba(245,197,24,.25);border-radius:14px;background:rgba(0,0,0,.35)}.cell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;font:900 clamp(32px,10vw,48px) sans-serif;border:1px solid rgba(245,197,24,.25);border-radius:10px;background:rgba(255,255,255,.03);cursor:pointer;user-select:none}.cell:hover{border-color:#f5c518}.cell.x{color:#f5c518;text-shadow:0 0 12px #f5c518}.cell.o{color:#ff5a68;text-shadow:0 0 12px #e0313f}.cell.win{background:rgba(57,217,138,.18);border-color:#39d98a}",
+DIFF_ROW+'<div class="status" id="st"></div><div id="bd"></div><button class="btn" id="rs">Restart</button><div class="score" id="sc"></div>',
+"var VS="+(vs?'true':'false')+",diff='hard',b=Array(9).fill(''),cur='X',on=true,sc={X:0,O:0,D:0};var W=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];var bd=document.getElementById('bd'),st=document.getElementById('st');"+
+"function win(x){for(var i=0;i<8;i++){var p=W[i];if(x[p[0]]&&x[p[0]]===x[p[1]]&&x[p[1]]===x[p[2]])return p}return null}"+
+"function draw(w){bd.innerHTML='';for(var i=0;i<9;i++){var c=document.createElement('div');c.className='cell '+(b[i]?b[i].toLowerCase():'')+(w&&w.indexOf(i)>-1?' win':'');c.textContent=b[i];c.setAttribute('data-i',i);c.addEventListener('click',tap);bd.appendChild(c)}}"+
+"function tap(e){var i=+e.currentTarget.getAttribute('data-i');if(!on||b[i]||(VS&&cur!=='X'))return;move(i,cur)}"+
+"function move(i,p){b[i]=p;var w=win(b);draw(w);if(w){on=false;st.textContent=p==='X'?(VS?'You win!':'X wins!'):(VS?'VISION wins!':'O wins!');sc[p]++;score();return}if(b.every(function(c){return c})){on=false;st.textContent=\"It's a draw!\";sc.D++;score();return}cur=p==='X'?'O':'X';if(VS&&cur==='O'){st.textContent='VISION is thinking...';setTimeout(ai,450)}else st.textContent=VS?'Your turn':cur+\"'s turn\"}"+
+"function mm(x,d,mx){var w=win(x);if(w)return x[w[0]]==='O'?10-d:d-10;if(x.every(function(c){return c}))return 0;var r=mx?-9:9;for(var i=0;i<9;i++)if(!x[i]){x[i]=mx?'O':'X';var s=mm(x,d+1,!mx);x[i]='';r=mx?Math.max(r,s):Math.min(r,s)}return r}"+
+"function best(){var bs=-99,bm=-1;for(var i=0;i<9;i++)if(!b[i]){b[i]='O';var s=mm(b,0,false);b[i]='';if(s>bs){bs=s;bm=i}}return bm}"+
+"function rnd(){var e=[];for(var i=0;i<9;i++)if(!b[i])e.push(i);return e[Math.floor(Math.random()*e.length)]}"+
+"function ai(){if(!on)return;move(diff==='easy'?rnd():diff==='medium'?(Math.random()<.5?rnd():best()):best(),'O')}"+
+"function score(){document.getElementById('sc').innerHTML='X <b>'+sc.X+'</b> · O <b>'+sc.O+'</b> · Draws <b>'+sc.D+'</b>'}"+
+"function reset(){b=Array(9).fill('');cur='X';on=true;st.textContent=VS?'Your turn':\"X's turn\";draw()}"+
+"document.querySelectorAll('[data-d]').forEach(function(c){c.addEventListener('click',function(){diff=c.getAttribute('data-d');document.querySelectorAll('[data-d]').forEach(function(x){x.classList.remove('on')});c.classList.add('on');reset()})});"+
+"document.getElementById('rs').addEventListener('click',reset);if(!VS)document.getElementById('dr').style.display='none';reset();score();"),
+hockey:()=>gameShell('AIR HOCKEY','You vs VISION — drag over the table',"canvas{width:min(92vw,420px);height:auto;touch-action:none;cursor:none;border:2px solid rgba(245,197,24,.5);border-radius:10px;background:linear-gradient(180deg,#1a0a10,#0b0508);box-shadow:0 0 40px rgba(224,49,63,.2)}",
+DIFF_ROW.replace('chip on" data-d="hard"','chip" data-d="hard"').replace('data-d="medium"','data-d="medium" id="dm"')+'<div class="status" id="st">First to 7 wins</div><canvas id="cv" width="440" height="620"></canvas><div class="score" id="sc"></div><button class="btn" id="rs">Restart match</button>',
+"var cv=document.getElementById('cv'),x=cv.getContext('2d'),W=440,H=620,G=140,R=26,BR=12,diff='medium',ps=0,as=0,run=true;document.getElementById('dm').classList.add('on');"+
+"var P={x:W/2,y:H-70},A={x:W/2,y:70},B={x:W/2,y:H/2,vx:0,vy:0},st=document.getElementById('st');"+
+"function serve(d){B.x=W/2;B.y=H/2;var a=Math.random()*.8-.4;B.vx=Math.sin(a)*4;B.vy=Math.cos(a)*4*d}serve(1);"+
+"function pos(cx,cy){var r=cv.getBoundingClientRect();P.x=Math.max(R,Math.min(W-R,(cx-r.left)*W/r.width));P.y=Math.max(H/2+R,Math.min(H-R,(cy-r.top)*H/r.height))}"+
+"cv.addEventListener('mousemove',function(e){pos(e.clientX,e.clientY)});cv.addEventListener('touchstart',function(e){e.preventDefault();pos(e.touches[0].clientX,e.touches[0].clientY)},{passive:false});cv.addEventListener('touchmove',function(e){e.preventDefault();pos(e.touches[0].clientX,e.touches[0].clientY)},{passive:false});"+
+"var CF={easy:[.035,40],medium:[.07,18],hard:[.13,4]};"+
+"function ai(){var c=CF[diff],tx=B.vy<0?B.x+(Math.random()*c[1]-c[1]/2):W/2;A.x+=(tx-A.x)*c[0];A.x=Math.max(R,Math.min(W-R,A.x));var ty=B.vy<0?Math.min(H/2-R,B.y):70;A.y+=(ty-A.y)*c[0];A.y=Math.max(R,Math.min(H/2-R,A.y))}"+
+"function hit(p){var dx=B.x-p.x,dy=B.y-p.y,d=Math.sqrt(dx*dx+dy*dy);if(d<R+BR){var a=Math.atan2(dy,dx),s=Math.min(12,Math.sqrt(B.vx*B.vx+B.vy*B.vy)+2);B.vx=Math.cos(a)*s;B.vy=Math.sin(a)*s;var o=R+BR-d;B.x+=Math.cos(a)*o;B.y+=Math.sin(a)*o}}"+
+"function over(){if(ps>=7){st.textContent='You win the match!';run=false}else if(as>=7){st.textContent='VISION wins the match!';run=false}}"+
+"function score(){document.getElementById('sc').innerHTML='You <b>'+ps+'</b> · VISION <b>'+as+'</b>'}"+
+"function circ(o,c){x.beginPath();x.arc(o.x,o.y,o===B?BR:R,0,7);x.fillStyle=c;x.shadowColor=c;x.shadowBlur=16;x.fill();x.shadowBlur=0}"+
+"function paint(){x.clearRect(0,0,W,H);x.strokeStyle='rgba(245,197,24,.3)';x.lineWidth=2;x.beginPath();x.moveTo(0,H/2);x.lineTo(W,H/2);x.stroke();x.beginPath();x.arc(W/2,H/2,55,0,7);x.stroke();x.strokeStyle='#e0313f';x.lineWidth=4;x.strokeRect((W-G)/2,0,G,8);x.strokeRect((W-G)/2,H-8,G,8);circ(A,'#ff5a68');circ(P,'#f5c518');circ(B,'#ffffff')}"+
+"function step(){if(run){ai();B.x+=B.vx;B.y+=B.vy;var g=B.x>(W-G)/2&&B.x<(W+G)/2;if(B.x<BR){B.x=BR;B.vx*=-1}if(B.x>W-BR){B.x=W-BR;B.vx*=-1}if(B.y<BR){if(g){ps++;score();over();serve(1)}else{B.y=BR;B.vy*=-1}}if(B.y>H-BR){if(g){as++;score();over();serve(-1)}else{B.y=H-BR;B.vy*=-1}}hit(P);hit(A);B.vx*=.999;B.vy*=.999}paint();requestAnimationFrame(step)}"+
+"document.querySelectorAll('[data-d]').forEach(function(c){c.addEventListener('click',function(){diff=c.getAttribute('data-d');document.querySelectorAll('[data-d]').forEach(function(z){z.classList.remove('on')});c.classList.add('on')})});"+
+"document.getElementById('rs').addEventListener('click',function(){ps=0;as=0;run=true;st.textContent='First to 7 wins';score();serve(1)});score();step();"),
+penalty:()=>gameShell('PENALTY SHOOTOUT','Tap a corner of the goal',
+"#fd{position:relative;width:min(92vw,440px);aspect-ratio:22/17;border-radius:10px;overflow:hidden;background:repeating-linear-gradient(0deg,#0f3a1d,#0f3a1d 8%,#134a25 8%,#134a25 16%);box-shadow:0 0 30px rgba(245,197,24,.15)}#gf{position:absolute;left:12%;top:8%;width:76%;height:44%;border:6px solid #eee;border-bottom:none;background:repeating-linear-gradient(90deg,rgba(255,255,255,.08) 0 1px,transparent 1px 14px),repeating-linear-gradient(0deg,rgba(255,255,255,.08) 0 1px,transparent 1px 14px)}.z{position:absolute;top:8%;height:44%;width:25.33%;cursor:pointer}.z:hover{background:rgba(245,197,24,.15)}#kp{position:absolute;top:26%;left:44%;width:12%;height:18%;border-radius:8px;background:#e0313f;box-shadow:0 0 16px #e0313f;transition:left .45s ease}#bl{position:absolute;left:47.5%;top:84%;width:5%;aspect-ratio:1;border-radius:50%;background:#fff;box-shadow:0 0 12px #fff;transition:left .55s ease,top .55s ease}",
+DIFF_ROW.replace('chip on" data-d="hard"','chip" data-d="hard"').replace('data-d="medium"','data-d="medium" id="dm"')+'<div class="status" id="st">Shot 1 of 5 — pick a corner</div><div id="fd"><div id="gf"></div><div id="kp"></div><div id="bl"></div><div class="z" style="left:12%" data-z="left"></div><div class="z" style="left:37.33%" data-z="center"></div><div class="z" style="left:62.66%" data-z="right"></div></div><div class="score" id="sc"></div><button class="btn" id="rs" style="display:none">Play again</button>',
+"var d='medium',g=0,at=1,MX=5,busy=false,st=document.getElementById('st'),bl=document.getElementById('bl'),kp=document.getElementById('kp');document.getElementById('dm').classList.add('on');"+
+"var BP={left:[21,30],center:[47.5,26],right:[74,30]},KP={left:20,center:44,right:68};"+
+"function prob(){return d==='easy'?.2:d==='hard'?.7:.45}"+
+"function pick(s){if(Math.random()<prob())return s;var o=['left','center','right'].filter(function(z){return z!==s});return o[Math.floor(Math.random()*2)]}"+
+"function score(){document.getElementById('sc').innerHTML='Goals <b>'+g+'</b> · Shot <b>'+Math.min(at,MX)+'</b>/'+MX}"+
+"function shoot(s){if(busy||at>MX)return;busy=true;var k=pick(s);bl.style.left=BP[s][0]+'%';bl.style.top=BP[s][1]+'%';kp.style.left=KP[k]+'%';st.textContent='Ball is flying in...';setTimeout(function(){if(k===s)st.textContent='SAVED by VISION!';else{g++;st.textContent='GOAL!'}at++;score();setTimeout(function(){bl.style.left='47.5%';bl.style.top='84%';kp.style.left='44%';if(at>MX){st.textContent='Shootout over — you scored '+g+' of '+MX;document.getElementById('rs').style.display='inline-block'}else st.textContent='Shot '+at+' of '+MX+' — pick a corner';busy=false},900)},600)}"+
+"document.querySelectorAll('.z').forEach(function(z){z.addEventListener('click',function(){shoot(z.getAttribute('data-z'))})});"+
+"document.querySelectorAll('[data-d]').forEach(function(c){c.addEventListener('click',function(){d=c.getAttribute('data-d');document.querySelectorAll('[data-d]').forEach(function(z){z.classList.remove('on')});c.classList.add('on')})});"+
+"document.getElementById('rs').addEventListener('click',function(){g=0;at=1;busy=false;score();st.textContent='Shot 1 of 5 — pick a corner';this.style.display='none'});score();")
+};
+const wantsAI=d=>/\b(vs\.?|versus|against)\s*(the\s*)?(ai|computer|cpu|bot|vision|you)\b|\b(single|one|1)[ -]?player\b/i.test(d);
+const knownGame=d=>{d=d.toLowerCase();return /tic.?tac.?toe|noughts/.test(d)?'ttt':/air\s*hockey/.test(d)?'hockey':/penalt|football|soccer/.test(d)?'penalty':null};
+const cleanHtml=s=>{const m=(s||'').match(/```(?:html)?\s*([\s\S]*?)```/i);return (m?m[1]:s||'').trim()};
+async function buildAI(desc,kind){
+  const vs=kind==='game'&&wantsAI(desc);
+  let sys='You are an expert front-end developer and visual designer. Generate a COMPLETE, SELF-CONTAINED single HTML file for a '+kind+'. Style: near-black background with a crimson radial gradient, gold (#f5c518) glowing accents, crimson (#e0313f) secondary accents, rounded corners, smooth transitions, pop-in animations, clean modern font, fully responsive on phones (viewport meta tag, touch events as well as mouse events, nothing wider than the screen). For sports or real-world games actually DRAW the scene with CSS, SVG or canvas (goalposts and pitch for football, hoop and net for basketball, track and car for racing), never plain boxes. Put all CSS in one style tag and all JavaScript in ONE plain script tag (not type module) at the end of the body. Attach ALL interactivity with addEventListener, never inline onclick. No external files or libraries. All game logic (moves, win or lose detection, scoring, restart) must be fully implemented and working. ';
+  if(vs)sys+='The user wants a computer opponent: implement a real AI in client-side JavaScript that moves automatically after the player (400-600ms delay with a "VISION is thinking" status), plus visible Easy/Medium/Hard buttons (default Hard, selecting resets the game) with genuinely different behaviour: Easy mostly random, Medium mixed, Hard near-optimal. ';
+  sys+='Reply with ONLY raw HTML starting with <!DOCTYPE html>. No explanation, no markdown fences.';
+  let html=cleanHtml(await groq([{role:'system',content:sys},{role:'user',content:'Build this: '+desc}],{max:6000,temperature:.4}));
+  if(html.length<100)throw new Error('The model returned no usable code. Try rephrasing.');
+  if(!/addEventListener/.test(html)||/type\s*=\s*["']module/.test(html)||/\sonclick\s*=/.test(html)){
+    const fixed=cleanHtml(await groq([{role:'system',content:'Fix this single-file HTML so interactivity really works: no script type module, no inline onclick or similar attributes, every listener attached with addEventListener in ONE plain script at the end of the body after the elements exist, all game logic (and any AI opponent) fully implemented. Reply with ONLY the complete corrected HTML starting with <!DOCTYPE html>.'},{role:'user',content:'Request: '+desc+'\n\n'+html}],{max:6000,temperature:.2}));
+    if(fixed.length>100)html=fixed;
+  }
+  return html;
+}
+let currentHtml='';
+function showGame(html){currentHtml=html;$('#gameFrame').srcdoc=html;$('#gameOut').style.display='block';$('#gameCode').textContent=html;$('#gameCode').hidden=true;$('#gameOut').scrollIntoView({behavior:'smooth'})}
+async function startGame(desc,kind='game'){
+  go('games');const st=$('#gameStatus');st.textContent='Building…';
+  try{const k=kind==='game'?knownGame(desc):null;const html=k?TEMPLATES[k](wantsAI(desc)):await buildAI(desc,kind);showGame(html);st.textContent=k?'Loaded built-in game.':'Generated by VISION.'}
+  catch(e){st.textContent='⚠ '+e.message}
+}
+$$('[data-g]').forEach(c=>c.onclick=()=>startGame(c.dataset.g));
+$('#gameGo').onclick=()=>{const d=$('#gamePrompt').value.trim();if(!d)return toast('Describe what to build.');startGame(d,$('#gameKind').value)};
+$('#gOpen').onclick=()=>window.open(URL.createObjectURL(new Blob([currentHtml],{type:'text/html'})),'_blank');
+$('#gDl').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([currentHtml],{type:'text/html'}));a.download='vision-build.html';a.click()};
+$('#gCode').onclick=()=>{$('#gameCode').hidden=!$('#gameCode').hidden};
+
+/* ---------- attachments ---------- */
+const toDataURL=f=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f)});
+async function pdfText(f){await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';const pdf=await pdfjsLib.getDocument({data:await f.arrayBuffer()}).promise;let t='';for(let i=1;i<=Math.min(pdf.numPages,30);i++){const p=await pdf.getPage(i);t+=(await p.getTextContent()).items.map(x=>x.str).join(' ')+'\n\n'}return t.replace(/([a-zA-Z])-\s+([a-z])/g,'$1$2').replace(/\s{2,}/g,' ').slice(0,15000)}
+function renderAttach(){$('#attInfo').innerHTML=attachment?'📎 '+esc(attachment.name)+' — ask about it, or <a href="#" id="rmAtt" style="color:var(--gold)">remove it</a> to chat normally.':'';const r=$('#rmAtt');if(r)r.onclick=e=>{e.preventDefault();attachment=null;renderAttach()}}
+$('#attach').onclick=()=>$('#file').click();
+$('#file').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
+  try{if(f.type.startsWith('image/'))attachment={name:f.name,kind:'image',data:await toDataURL(f)};else if(f.type==='application/pdf'){toast('Reading PDF…');attachment={name:f.name,kind:'pdf',text:await pdfText(f)}}else return toast('Attach an image or a PDF.');renderAttach()}catch(err){toast(err.message)}};
+async function askAttachment(q){
+  q=q||'Describe this in detail.';
+  if(attachment.kind==='image')return groq([{role:'user',content:[{type:'text',text:q},{type:'image_url',image_url:{url:attachment.data}}]}],{model:CFG.visionModel,max:1200});
+  return groq([{role:'system',content:'Answer questions about the user\'s document using its text. Answer in clear plain sentences. If the answer is not in the text, say so.'},{role:'user',content:'Document:\n'+attachment.text+'\n\nQuestion: '+q}],{max:1200});
+}
+
+/* ---------- command router ---------- */
+async function route(t){
+  let m;const l=t.toLowerCase();
+  if(m=t.match(/^(?:vision[, ]+)?(?:please )?(?:remember|learn)(?: that|:)?\s+(.+)/i)){await api('/remember','POST',{text:m[1],source:'manual'});botSay('Noted. I will remember that.');return true}
+  if(m=t.match(/^(?:lesson|rule)[:,]\s*(.+)|^from now on[, ]+(.+)/i)){await addItem('lesson',m[1]||('From now on '+m[2]));botSay('Understood. That is now a standing rule.');return true}
+  if(m=t.match(/^my name is\s+(.+)/i)){const n=m[1].replace(/[.!]$/,'');await addItem('lesson',"The user's name is "+n+'.');botSay('A pleasure to meet you, '+n+'.');return true}
+  if(m=t.match(/^add contact\s+(.+?)\s+number\s+([\d\s+\-]+)/i)){await addItem('contact',m[1].trim(),m[2].replace(/[^\d]/g,''));botSay('Saved '+m[1].trim()+' to your contacts.');return true}
+  if(/^(?:read|show|list) my notes/i.test(t)){const n=await getItems('note');botSay(n.length?n.map((x,i)=>(i+1)+'. '+x.text).join('\n'):'You have no notes.');return true}
+  if(m=t.match(/^(?:take a note|note that|add a note|note)[:,]?\s+(.+)/i)){await addItem('note',m[1]);botSay('Note saved.');return true}
+  if(/^(?:read|show) (?:my )?journal/i.test(t)){const n=(await getItems('journal')).slice(0,5);botSay(n.length?n.map(x=>new Date(x.created_at*1000).toLocaleDateString()+': '+x.text).join('\n'):'Your journal is empty.');return true}
+  if(m=t.match(/^(?:journal(?: entry)?|add to journal)[:,]?\s+(.+)/i)){await addItem('journal',m[1]);botSay('Journal entry saved.');return true}
+  if(m=t.match(/^remind me (?:in )?(\d+(?:\.\d+)?\s*\w+)\s*(?:to|about)?\s*(.*)/i)){const ms=parseDur(m[1]);if(ms){startTimer(ms,m[2]?'Reminder: '+m[2]:'Reminder');botSay('I will remind you in '+m[1]+'. (Keep this page open.)');return true}}
+  if(m=t.match(/^(?:set (?:a )?)?timer (?:for )?(.+)/i)){const ms=parseDur(m[1]);if(ms){startTimer(ms,'Timer finished');botSay('Timer set for '+m[1]+'.');return true}}
+  if(/pomodoro/i.test(t)){startTimer(25*6e4,'Pomodoro complete — take a 5 minute break.');botSay('25 minute focus session started.');return true}
+  if(/flip a coin|coin flip|heads or tails/i.test(t)){botSay(Math.random()<.5?'Heads.':'Tails.');return true}
+  if(m=t.match(/roll (?:a |an )?(?:(\d+)[ -]sided )?(?:dice|die)/i)){const s=+m[1]||6;botSay('You rolled a '+(1+Math.floor(Math.random()*s))+' (d'+s+').');return true}
+  if(m=t.match(/(?:generate|create|make) (?:a )?(?:(\d+)[ -]character )?password/i)){botSay('`'+genPass(Math.min(64,Math.max(6,+m[1]||16)))+'`',{silent:true});return true}
+  if(m=t.match(/^(?:calculate|calc|compute|what(?:'s| is))\s+([\d\s+\-*/().x×÷^%]+(?:\s*of\s*[\d.]+)?)\??$/i)){try{botSay(m[1].trim()+' = '+fmt(calc(m[1])));return true}catch(e){}}
+  if(m=t.match(/^convert\s+([\d.]+)\s*([a-z°]+)\s+(?:to|in|into)\s+([a-z°]+)/i)){botSay(await convert(+m[1],m[2],m[3]));return true}
+  if(/^(?:what(?:'s| is) )?(?:the )?(?:weather|temperature|forecast)\b/i.test(t)){const c=(t.match(/(?:in|for|at)\s+([a-z .,'-]+?)\s*[?.!]?$/i)||[])[1]||store.get('city');if(!c){botSay('Which city? You can also set a home city in Settings.');return true}botSay(await weather(c));return true}
+  if(m=t.match(/^(?:define|meaning of)\s+([\w-]+)/i)||t.match(/^what does ([\w-]+) mean/i)){botSay(await define(m[1]));return true}
+  if(m=t.match(/^translate\s+(.+?)\s+(?:to|into)\s+([a-z]+)\s*$/i)){botSay(await translate(m[1],m[2]));return true}
+  if(m=t.match(/^(?:generate|create|make|build|code|develop)\s+(?:me\s+)?(?:an?\s+)?(.*\b(?:game|website|web ?site|landing page|web ?page|web app)\b.*)$/i)){const d=m[1];botSay('On it — opening the Games tab.',{silent:true});startGame(d,/game/i.test(d)?'game':'website');return true}
+  if(m=t.match(/^(?:generate|create|make)\s+(?:me\s+)?(?:an?\s+)?(flipbook|boomerang|video|animation|gif)\s+(?:of\s+|about\s+)?(.+)/i)){const k=m[1].toLowerCase();go('create');subSwitch('vid');$('#vidPrompt').value=m[2];$('#vidMode').value=k==='boomerang'?'boomerang':k==='animation'?'zoom':'flip';botSay('Starting your '+k+' in the Create tab.',{silent:true});createVideo();return true}
+  if(m=t.match(/^(?:generate|create|make|draw|paint|show me)\s+(?:me\s+)?(?:an?\s+)?(?:image|picture|photo|poster|illustration|drawing|wallpaper|logo)\s+(?:of\s+|for\s+)?(.+)/i)||t.match(/^draw\s+(.+)/i)){await chatImage(m[1]);return true}
+  if(/^(search|look up|latest|news|price of|stock price|what'?s happening)/i.test(t)){await webSearch(/^news\s*$/i.test(t)?'top world news headlines today':t.replace(/^(?:search(?: the web)?(?: for)?|look up)\s+/i,''));return true}
+  if(/^what(?:'s| is) the time|^what time is it/i.test(t)){botSay('It is '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+'.');return true}
+  if(/^what(?:'s| is) (?:the |today'?s )?date|^what day is it/i.test(t)){botSay(new Date().toLocaleDateString([],{weekday:'long',year:'numeric',month:'long',day:'numeric'})+'.');return true}
+  if(m=t.match(/^(?:start (?:a )?quiz|quiz me)(?: on)?\s*(.*)/i)){await quizStart(m[1]);return true}
+  if(m=t.match(/^message\s+(.+?)\s+on whatsapp\s+(?:saying\s+)?(.+)/i)){const who=m[1].trim();let num=who.replace(/[^\d]/g,'');if(num.length<8){const c=(await getItems('contact')).find(x=>x.text.toLowerCase().includes(who.toLowerCase()));num=c?c.extra:''}if(!num){botSay('I have no number for '+who+'. Say: add contact '+who+' number 91XXXXXXXXXX');return true}botSay('Draft ready — tap to open WhatsApp, then press send.',{links:[{label:'Open WhatsApp draft',url:'https://wa.me/'+num+'?text='+encodeURIComponent(m[2])}]});return true}
+  if(m=t.match(/^(?:draft|write|compose)\s+(?:an?\s+)?email\s+(.+)/i)){const d=await groq([{role:'system',content:'Write a short professional email. Reply EXACTLY as:\nSUBJECT: <subject>\nBODY: <body>'},{role:'user',content:m[1]}],{max:500});const s=(d.match(/SUBJECT:\s*(.*)/i)||[])[1]||'Hello',b=(d.match(/BODY:\s*([\s\S]*)/i)||[])[1]||m[1];botSay('Draft ready:\n\n'+b.trim(),{links:[{label:'Open in Gmail',url:'https://mail.google.com/mail/?view=cm&fs=1&su='+encodeURIComponent(s.trim())+'&body='+encodeURIComponent(b.trim())}]});return true}
+  if(m=t.match(/^play\s+(?:a\s+)?(?:song\s+)?(.+)/i)){botSay('Here are the results.',{links:[{label:'Play on YouTube',url:'https://www.youtube.com/results?search_query='+encodeURIComponent(m[1])}]});return true}
+  if(m=t.match(/^open\s+(.+)/i)){const w=m[1].toLowerCase().trim();botSay('Here you go.',{links:[{label:'Open '+w,url:'https://'+(SITES[w]||w.replace(/\s+/g,'')+'.com')}]});return true}
+  if(/^clear (?:the )?chat/i.test(t)){log.innerHTML='';history=[];return true}
+  if(/^(?:help|what can you do)/i.test(t)){botSay("I can chat and write complex code, remember facts and standing rules, generate images, videos and games, read images and PDFs, set timers and reminders, do weather, definitions, translation, conversions, notes, journal, quizzes, web search, WhatsApp and email drafts. Tap a suggestion above, or just ask.");return true}
+  return false;
+}
+async function askServer(text){
+  const d=await api('/chat','POST',{message:text,groq_api_key:store.get('groq'),history:history.slice(-10),auto_remember:store.get('auto','1')==='1',client_time:new Date().toString()});
+  history.push({role:'user',content:text},{role:'assistant',content:d.reply});
+  botSay(d.reply,{hint:d.used_memories&&d.used_memories.length?'🧠 Used memory: '+d.used_memories[0].slice(0,140):''});
+}
+async function send(){
+  const text=$('#msg').value.trim();if((!text&&!attachment)||busy)return;
+  $('#msg').value='';addMsg('user',esc(text)+(attachment?'<div class="att">📎 '+esc(attachment.name)+'</div>':''));
+  busy=true;addMsg('bot typing','<span class="dots"><i></i><i></i><i></i></span>');
+  try{
+    if(attachment)botSay(await askAttachment(text));
+    else if(quiz)await quizAnswer(text);
+    else if(!await route(text))await askServer(text);
+  }catch(e){botSay('⚠ '+(e.message||'Something went wrong.'),{silent:true})}
+  $$('#log .typing').forEach(x=>x.remove());busy=false;forceSpeak=false;
+  if(wakeMode&&!listening)setTimeout(startRec,400);
+}
+$('#send').onclick=send;$('#msg').addEventListener('keydown',e=>{if(e.key==='Enter')send()});
+['Explain how neural networks learn','Write a Python script to rename files','Weather in Mumbai','Set a timer for 10 minutes','Make a tic tac toe game vs AI','Draw a cyberpunk city at night','Convert 10 km to miles','Quiz me on space','Help'].forEach(s=>{const b=document.createElement('button');b.className='chip';b.textContent=s;b.onclick=()=>{$('#msg').value=s;send()};$('#chips').appendChild(b)});
+
+/* ---------- tools panel ---------- */
+const wire=(b,o,fn)=>$(b).onclick=async()=>{const out=$(o);out.textContent='…';try{out.textContent=await fn()}catch(e){out.textContent='⚠ '+(e.message||'Failed')}};
+wire('#calcBtn','#calcOut',async()=>{const v=$('#calcIn').value.trim(),m=v.match(/^convert\s+([\d.]+)\s*([a-z°]+)\s+(?:to|in|into)\s+([a-z°]+)/i);return m?await convert(+m[1],m[2],m[3]):v+' = '+fmt(calc(v))});
+$('#tmStart').onclick=()=>{const v=+$('#tmVal').value;if(!v)return;startTimer(v*+$('#tmUnit').value,$('#tmLabel').value.trim()||'Timer finished');$('#tmLabel').value=''};
+$('#tmPomo').onclick=()=>startTimer(25*6e4,'Pomodoro complete — take a 5 minute break.');
+wire('#wxBtn','#wxOut',()=>weather($('#wxCity').value.trim()||store.get('city')));
+wire('#dfBtn','#dfOut',()=>define($('#dfWord').value.trim()));
+wire('#trBtn','#trOut',()=>translate($('#trText').value,$('#trLang').value||'English'));
+wire('#wrBtn','#wrOut',()=>groq([{role:'system',content:'Task: '+$('#wrAct').value+' the user\'s text. Reply with only the result.'},{role:'user',content:$('#wrText').value}],{max:1500}));
+$('#rdCoin').onclick=()=>$('#rdOut').textContent=Math.random()<.5?'Heads':'Tails';
+$('#rdDice').onclick=()=>$('#rdOut').textContent='Rolled '+(1+Math.floor(Math.random()*6));
+$('#rdPass').onclick=()=>$('#rdOut').textContent=genPass(16);
+$('#qrBtn').onclick=()=>{const v=$('#qrIn').value.trim();if(v)$('#qrOut').innerHTML='<img alt="QR" style="width:200px;background:#fff;padding:8px;border-radius:10px;margin-top:8px" src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data='+encodeURIComponent(v)+'">'};
+$('#waBtn').onclick=async()=>{const who=$('#waTo').value.trim(),msg=$('#waText').value.trim(),o=$('#waOut');let num=who.replace(/[^\d]/g,'');try{if(num.length<8){const c=(await getItems('contact')).find(x=>x.text.toLowerCase().includes(who.toLowerCase()));num=c?c.extra:''}if(!num)return o.textContent='No saved contact or number found. Save one in chat: add contact NAME number 91XXXXXXXXXX';window.open('https://wa.me/'+num+'?text='+encodeURIComponent(msg),'_blank')}catch(e){o.textContent='⚠ '+e.message}};
+$('#mailBtn').onclick=async()=>{const o=$('#waOut'),req=$('#waText').value.trim();if(!req)return;o.textContent='Drafting…';try{const d=await groq([{role:'system',content:'Write a short professional email. Reply EXACTLY as:\nSUBJECT: <subject>\nBODY: <body>'},{role:'user',content:req}],{max:500});const s=(d.match(/SUBJECT:\s*(.*)/i)||[])[1]||'Hello',b=(d.match(/BODY:\s*([\s\S]*)/i)||[])[1]||req;window.open('https://mail.google.com/mail/?view=cm&fs=1&su='+encodeURIComponent(s.trim())+'&body='+encodeURIComponent(b.trim()),'_blank');o.textContent=''}catch(e){o.textContent='⚠ '+e.message}};
+async function renderList(type,el,cid){try{const it=await getItems(type);$(el).innerHTML=it.length?it.slice(0,8).map(x=>'<div class="item"><div>'+esc(x.text)+'<small>'+new Date(x.created_at*1000).toLocaleString()+'</small></div><button data-id="'+x.id+'">✕</button></div>').join(''):'<div class="hint">Nothing yet.</div>';$(el).querySelectorAll('button').forEach(b=>b.onclick=async()=>{await api('/items/'+b.dataset.id,'DELETE');renderList(type,el)})}catch(e){$(el).innerHTML='<div class="hint">⚠ '+esc(e.message)+'</div>'}}
+$('#noteAdd').onclick=async()=>{const v=$('#noteIn').value.trim();if(!v)return;try{await addItem('note',v);$('#noteIn').value='';renderList('note','#noteList')}catch(e){toast(e.message)}};
+$('#jrAdd').onclick=async()=>{const v=$('#jrIn').value.trim();if(!v)return;try{await addItem('journal',v);$('#jrIn').value='';renderList('journal','#jrList')}catch(e){toast(e.message)}};
+function refreshTools(){renderList('note','#noteList');renderList('journal','#jrList');renderTimers()}
+
+/* ---------- memory panel ---------- */
+$('#teachBtn').onclick=async()=>{const v=$('#teachIn').value.trim();if(!v)return;try{await api('/remember','POST',{text:v,source:'manual'});$('#teachIn').value='';$('#memStatus').textContent='Saved.';loadMem()}catch(e){$('#memStatus').textContent='⚠ '+e.message}};
+$('#ruleBtn').onclick=async()=>{const v=$('#ruleIn').value.trim();if(!v)return;try{await addItem('lesson',v);$('#ruleIn').value='';$('#memStatus').textContent='Rule saved.';loadMem()}catch(e){$('#memStatus').textContent='⚠ '+e.message}};
+async function loadMem(){
+  const box=$('#memList');box.textContent='Loading…';
+  try{
+    const [m,i]=await Promise.all([api('/memories'),api('/items')]);
+    const rows=[...m.memories.map(x=>({...x,kind:'mem',type:'memory'})),...i.items.map(x=>({...x,kind:'item'}))].sort((a,b)=>b.created_at-a.created_at);
+    const f=$('#memFilter').value,list=rows.filter(r=>f==='all'||r.type===f);
+    box.innerHTML=list.length?list.map(r=>'<div class="item"><div><span class="badge">'+esc(r.type)+'</span>'+esc(r.text)+(r.extra?' — '+esc(r.extra):'')+'<small>'+new Date(r.created_at*1000).toLocaleString()+'</small></div><button data-k="'+r.kind+'" data-id="'+r.id+'">✕</button></div>').join(''):'<div class="hint">Nothing stored here yet.</div>';
+    box.querySelectorAll('button').forEach(b=>b.onclick=async()=>{await api((b.dataset.k==='mem'?'/memories/':'/items/')+b.dataset.id,'DELETE');loadMem()});
+  }catch(e){box.textContent='⚠ '+e.message}
+}
+$('#memFilter').onchange=loadMem;$('#memRefresh').onclick=loadMem;
+$('#memExport').onclick=async()=>{try{const d=await api('/export');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,2)],{type:'application/json'}));a.download='vision-memory.json';a.click()}catch(e){toast(e.message)}};
+$('#memClear').onclick=async()=>{if(!confirm('Delete ALL memories? Rules, notes and journal are kept.'))return;try{await api('/memories/clear','POST');loadMem()}catch(e){toast(e.message)}};
+
+/* ---------- settings ---------- */
+[['#setServer','server'],['#setPass','pass'],['#setGroq','groq'],['#setTavily','tavily'],['#setCity','city']].forEach(([id,k])=>{const el=$(id);el.value=store.get(k);el.onchange=()=>{store.set(k,el.value.trim().replace(k==='server'?/\/$/:/$^/,''));toast('Saved.');if(k==='server'||k==='pass')ping()}});
+$('#chkAuto').checked=store.get('auto','1')==='1';$('#chkAuto').onchange=e=>store.set('auto',e.target.checked?'1':'0');
+$('#chkSpeak').checked=store.get('speak','0')==='1';$('#chkSpeak').onchange=e=>store.set('speak',e.target.checked?'1':'0');
+$('#chkWake').onchange=e=>{wakeMode=e.target.checked;if(wakeMode)startRec();else if(rec&&listening)rec.stop()};
+$('#selVoice').onchange=e=>store.set('voice',e.target.value);
+function fillVoices(){if(!('speechSynthesis' in window))return;const v=speechSynthesis.getVoices().filter(x=>/^en/i.test(x.lang));$('#selVoice').innerHTML='<option value="">Voice: automatic (British preferred)</option>'+v.map(x=>'<option value="'+esc(x.name)+'">'+esc(x.name)+' ('+x.lang+')</option>').join('');$('#selVoice').value=store.get('voice')}
+if('speechSynthesis' in window){speechSynthesis.onvoiceschanged=fillVoices;fillVoices()}
+$('#btnTest').onclick=async()=>{$('#setStatus').textContent='Testing…';const ok=await ping();$('#setStatus').textContent=ok?'Server reachable and memory online.':'Could not reach the server — check the URL, passcode, and that Render shows Live.'};
+$('#btnNotif').onclick=async()=>{if(!('Notification' in window))return toast('Notifications are not supported here.');const p=await Notification.requestPermission();toast(p==='granted'?'Notifications enabled.':'Notifications blocked.')};
+
+/* ---------- start ---------- */
+botSay("Good day. I am VISION. Ask me anything, request code, or tell me to draw, animate, build a game or set a timer. "+((store.get('server')||CFG.defaultServer)&&store.get('groq')?"":"To begin, open Settings and add your server URL and Groq key."),{silent:true});
+ping();
+</script>
 </body>
 </html>
