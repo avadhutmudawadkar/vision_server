@@ -41,7 +41,7 @@ select option{background:#1a0a10}
 .chip{flex:none;font:inherit;font-size:14px;color:#f0d08a;background:rgba(245,197,24,.06);border:1px solid var(--line);border-radius:999px;padding:6px 14px;cursor:pointer;white-space:nowrap}
 .seg{display:flex;gap:8px;margin-bottom:12px}.seg button{flex:1;font:inherit;text-transform:uppercase;letter-spacing:.1em;padding:9px;color:#e9c98d;background:rgba(245,197,24,.05);border:1px solid var(--line);border-radius:10px;cursor:pointer}.seg button.on{background:rgba(224,49,63,.4);border-color:var(--gold);color:#fff}
 .subp{display:none}.subp.on{display:block}
-#log{height:calc(100vh - 350px);height:calc(100dvh - 350px);min-height:230px;max-height:640px;overflow-y:auto;padding:12px;margin-bottom:10px;border:1px solid var(--line);border-radius:14px;background:rgba(0,0,0,.28)}
+#log{height:calc(100vh - 400px);height:calc(100dvh - 400px);min-height:230px;max-height:640px;overflow-y:auto;padding:12px;margin-bottom:10px;border:1px solid var(--line);border-radius:14px;background:rgba(0,0,0,.28)}
 .msg{max-width:92%;margin-bottom:10px;padding:9px 13px;border-radius:12px;line-height:1.4;word-wrap:break-word;overflow-wrap:anywhere}
 .msg.user{margin-left:auto;background:linear-gradient(135deg,rgba(224,49,63,.45),rgba(122,15,28,.5));border:1px solid rgba(224,49,63,.5)}
 .msg.bot{background:rgba(245,197,24,.06);border:1px solid var(--line);border-left:3px solid var(--gold)}
@@ -67,6 +67,7 @@ pre#gameCode{max-height:300px;overflow:auto;font-size:12px;background:rgba(0,0,0
 .item small{color:var(--muted);display:block}.badge{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#0b0508;background:var(--gold);border-radius:6px;padding:1px 6px;margin-right:6px}.item button{flex:none;color:var(--red);background:none;border:none;font-size:18px;cursor:pointer}
 label.tg{display:flex;gap:10px;align-items:center;margin-bottom:10px;font-size:15px}label.tg input{width:auto;margin:0}
 .toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:99;background:#1a0a10;border:1px solid var(--gold);color:var(--text);padding:9px 16px;border-radius:999px;font-size:14px;max-width:90vw}
+.tierbar{margin-bottom:10px}
 @media(max-width:720px){
  body{font-size:16px}
  nav{position:fixed;bottom:0;left:0;right:0;flex-wrap:nowrap;gap:0;padding:5px 4px calc(5px + env(safe-area-inset-bottom));background:rgba(11,5,8,.95);border-top:1px solid var(--line);backdrop-filter:blur(10px)}
@@ -95,6 +96,12 @@ label.tg{display:flex;gap:10px;align-items:center;margin-bottom:10px;font-size:1
 
 <main>
 <section class="panel on" id="p-chat">
+  <div class="row tierbar">
+    <select id="tierSelect">
+      <option value="tier1">VISION (Tier 1 — Groq, with memory)</option>
+      <option value="tier2">Fine-tuned VISION (Tier 2 — self-trained)</option>
+    </select>
+  </div>
   <div class="chips" id="chips"></div>
   <div id="log"></div>
   <div class="inbar">
@@ -174,7 +181,7 @@ label.tg{display:flex;gap:10px;align-items:center;margin-bottom:10px;font-size:1
     <button class="btn sm" id="teachBtn">Save memory</button>
     <input id="ruleIn" placeholder="A standing rule, e.g. Always explain code line by line" style="margin-top:12px">
     <button class="btn sm" id="ruleBtn">Save rule</button>
-    <div class="hint" id="memStatus">Memories are recalled when relevant. Rules apply to every answer.</div>
+    <div class="hint" id="memStatus">Memories are recalled when relevant. Rules apply to every answer. (Tier 1 only.)</div>
   </div>
   <div class="card"><h3>Stored knowledge</h3>
     <div class="row"><select id="memFilter"><option value="all">Everything</option><option value="memory">Memories</option><option value="lesson">Rules</option><option value="note">Notes</option><option value="journal">Journal</option><option value="contact">Contacts</option></select><button class="ghost" id="memRefresh">Refresh</button><button class="ghost" id="memExport">Export JSON</button></div>
@@ -192,6 +199,10 @@ label.tg{display:flex;gap:10px;align-items:center;margin-bottom:10px;font-size:1
     <input id="setCity" placeholder="Home city for weather (optional)">
     <div class="row"><button class="btn sm" id="btnTest">Test connection</button><button class="ghost" id="btnNotif">Enable notifications</button></div>
     <div class="hint" id="setStatus">Keys are stored only in this browser.</div>
+  </div>
+  <div class="card"><h3>Tier 2 — Fine-tuned model</h3>
+    <input id="setFinetuned" placeholder="ngrok URL from Kaggle — https://xxxx.ngrok-free.dev">
+    <div class="hint">This changes every time you restart your Kaggle notebook. Update it here whenever that happens — no redeploy needed.</div>
   </div>
   <div class="card"><h3>Behaviour</h3>
     <label class="tg"><input type="checkbox" id="chkAuto"> Auto-remember personal statements</label>
@@ -223,11 +234,15 @@ $$('nav button').forEach(b=>b.onclick=()=>go(b.dataset.t));
 $$('.seg button').forEach(b=>b.onclick=()=>subSwitch(b.dataset.sub));
 function subSwitch(s){$$('.seg button').forEach(x=>x.classList.toggle('on',x.dataset.sub===s));$$('.subp').forEach(x=>x.classList.toggle('on',x.id==='sub-'+s))}
 
+/* ---------- tier switch ---------- */
+$('#tierSelect').value=store.get('tier','tier1');
+$('#tierSelect').onchange=e=>store.set('tier',e.target.value);
+
 /* ---------- API helpers ---------- */
 async function api(path,method="GET",body){
   const base=(store.get('server')||CFG.defaultServer).replace(/\/$/,'');
   if(!base)throw new Error("Server URL not set. Open Settings and add your Render URL.");
-  const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),90000);
+  const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),120000);
   try{
     const res=await fetch(base+path,{method,headers:{"Content-Type":"application/json","X-Vision-Passcode":store.get('pass')},body:body?JSON.stringify(body):undefined,signal:ctl.signal});
     const data=await res.json().catch(()=>({error:"Bad response from server"}));
@@ -249,7 +264,7 @@ async function ping(){
   const dot=$('#dot'),tx=$('#connTxt');
   if(!(store.get('server')||CFG.defaultServer)){dot.className='dot bad';tx.textContent='Server not set — open Settings';return false}
   dot.className='dot wait';tx.textContent='Waking server…';
-  try{await api('/');dot.className='dot ok';tx.textContent='Memory online';return true}
+  try{const d=await api('/');dot.className='dot ok';tx.textContent=d.memory_connected===false?'Server online (memory offline)':'Server online';return true}
   catch(e){dot.className='dot bad';tx.textContent=/passcode/i.test(e.message)?'Passcode needed':'Server offline';return false}
 }
 
@@ -500,7 +515,7 @@ async function askAttachment(q){
   return groq([{role:'system',content:'Answer questions about the user\'s document using its text. Answer in clear plain sentences. If the answer is not in the text, say so.'},{role:'user',content:'Document:\n'+attachment.text+'\n\nQuestion: '+q}],{max:1200});
 }
 
-/* ---------- command router ---------- */
+/* ---------- command router (Tier 1 only — disabled while Tier 2 is selected) ---------- */
 async function route(t){
   let m;const l=t.toLowerCase();
   if(m=t.match(/^(?:vision[, ]+)?(?:please )?(?:remember|learn)(?: that|:)?\s+(.+)/i)){await api('/remember','POST',{text:m[1],source:'manual'});botSay('Noted. I will remember that.');return true}
@@ -538,6 +553,15 @@ async function route(t){
   return false;
 }
 async function askServer(text){
+  const tier=store.get('tier','tier1');
+  if(tier==='tier2'){
+    const fu=store.get('finetuned');
+    if(!fu)throw new Error('Set your fine-tuned server URL (ngrok) in Settings first.');
+    const d=await api('/chat-finetuned','POST',{message:text,finetuned_url:fu,auto_remember:store.get('auto','1')==='1'});
+    history.push({role:'user',content:text},{role:'assistant',content:d.reply});
+    botSay(d.reply);
+    return;
+  }
   const d=await api('/chat','POST',{message:text,groq_api_key:store.get('groq'),history:history.slice(-10),auto_remember:store.get('auto','1')==='1',client_time:new Date().toString()});
   history.push({role:'user',content:text},{role:'assistant',content:d.reply});
   botSay(d.reply,{hint:d.used_memories&&d.used_memories.length?'🧠 Used memory: '+d.used_memories[0].slice(0,140):''});
@@ -547,9 +571,11 @@ async function send(){
   $('#msg').value='';addMsg('user',esc(text)+(attachment?'<div class="att">📎 '+esc(attachment.name)+'</div>':''));
   busy=true;addMsg('bot typing','<span class="dots"><i></i><i></i><i></i></span>');
   try{
+    const tier=store.get('tier','tier1');
     if(attachment)botSay(await askAttachment(text));
     else if(quiz)await quizAnswer(text);
-    else if(!await route(text))await askServer(text);
+    else if(tier==='tier1'&&await route(text)){}
+    else await askServer(text);
   }catch(e){botSay('⚠ '+(e.message||'Something went wrong.'),{silent:true})}
   $$('#log .typing').forEach(x=>x.remove());busy=false;forceSpeak=false;
   if(wakeMode&&!listening)setTimeout(startRec,400);
@@ -595,14 +621,14 @@ $('#memExport').onclick=async()=>{try{const d=await api('/export');const a=docum
 $('#memClear').onclick=async()=>{if(!confirm('Delete ALL memories? Rules, notes and journal are kept.'))return;try{await api('/memories/clear','POST');loadMem()}catch(e){toast(e.message)}};
 
 /* ---------- settings ---------- */
-[['#setServer','server'],['#setPass','pass'],['#setGroq','groq'],['#setTavily','tavily'],['#setCity','city']].forEach(([id,k])=>{const el=$(id);el.value=store.get(k);el.onchange=()=>{store.set(k,el.value.trim().replace(k==='server'?/\/$/:/$^/,''));toast('Saved.');if(k==='server'||k==='pass')ping()}});
+[['#setServer','server'],['#setPass','pass'],['#setGroq','groq'],['#setTavily','tavily'],['#setCity','city'],['#setFinetuned','finetuned']].forEach(([id,k])=>{const el=$(id);el.value=store.get(k);el.onchange=()=>{store.set(k,el.value.trim().replace(k==='server'||k==='finetuned'?/\/$/:/$^/,''));toast('Saved.');if(k==='server'||k==='pass')ping()}});
 $('#chkAuto').checked=store.get('auto','1')==='1';$('#chkAuto').onchange=e=>store.set('auto',e.target.checked?'1':'0');
 $('#chkSpeak').checked=store.get('speak','0')==='1';$('#chkSpeak').onchange=e=>store.set('speak',e.target.checked?'1':'0');
 $('#chkWake').onchange=e=>{wakeMode=e.target.checked;if(wakeMode)startRec();else if(rec&&listening)rec.stop()};
 $('#selVoice').onchange=e=>store.set('voice',e.target.value);
 function fillVoices(){if(!('speechSynthesis' in window))return;const v=speechSynthesis.getVoices().filter(x=>/^en/i.test(x.lang));$('#selVoice').innerHTML='<option value="">Voice: automatic (British preferred)</option>'+v.map(x=>'<option value="'+esc(x.name)+'">'+esc(x.name)+' ('+x.lang+')</option>').join('');$('#selVoice').value=store.get('voice')}
 if('speechSynthesis' in window){speechSynthesis.onvoiceschanged=fillVoices;fillVoices()}
-$('#btnTest').onclick=async()=>{$('#setStatus').textContent='Testing…';const ok=await ping();$('#setStatus').textContent=ok?'Server reachable and memory online.':'Could not reach the server — check the URL, passcode, and that Render shows Live.'};
+$('#btnTest').onclick=async()=>{$('#setStatus').textContent='Testing…';const ok=await ping();$('#setStatus').textContent=ok?'Server reachable.':'Could not reach the server — check the URL, passcode, and that Render shows Live.'};
 $('#btnNotif').onclick=async()=>{if(!('Notification' in window))return toast('Notifications are not supported here.');const p=await Notification.requestPermission();toast(p==='granted'?'Notifications enabled.':'Notifications blocked.')};
 
 /* ---------- start ---------- */
