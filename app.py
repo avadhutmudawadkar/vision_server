@@ -12,14 +12,28 @@ import requests as http
 app = Flask(__name__)
 CORS(app)
 
-client = MongoClient(os.environ.get("MONGODB_URI"))
-db = client["vision_db"]
-memories = db["memories"]   # facts VISION retrieves when relevant
-items = db["items"]         # lessons (standing rules), notes, journal, contacts
+# --- Mongo is now optional at startup: a bad/missing MONGODB_URI used to
+# crash the ENTIRE server (including Tier 1 chat) the moment it launched.
+# Now it just disables memory features and everything else keeps working. ---
+MONGODB_URI = os.environ.get("MONGODB_URI", "")
+mongo_ok = False
+memories = None
+items = None
+if MONGODB_URI:
+    try:
+        _client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+        _client.admin.command("ping")
+        db = _client["vision_db"]
+        memories = db["memories"]
+        items = db["items"]
+        mongo_ok = True
+    except Exception as e:
+        print("MongoDB connection failed at startup:", e)
 
 PASSCODE = os.environ.get("VISION_PASSCODE", "")
 ENV_GROQ = os.environ.get("GROQ_API_KEY", "")
 ENV_TAVILY = os.environ.get("TAVILY_API_KEY", "")
+ENV_FINETUNED_URL = os.environ.get("FINETUNED_URL", "")
 CHAT_MODEL = os.environ.get("CHAT_MODEL", "openai/gpt-oss-120b")
 
 STOPWORDS = set("the a an is are was were be been being to of and or but in on at for with as by from this that it its i you your my me he she they we do does did can could would should what how why when who".split())
@@ -32,6 +46,12 @@ def guard():
         return None
     if PASSCODE and request.headers.get("X-Vision-Passcode", "") != PASSCODE:
         return jsonify({"error": "Wrong or missing passcode."}), 401
+
+
+def need_mongo():
+    if not mongo_ok:
+        return jsonify({"error": "Memory database is not configured or unreachable. Check MONGODB_URI on Render."}), 503
+    return None
 
 
 def mem_out(d):
@@ -47,6 +67,8 @@ def tokenize(text):
 
 
 def retrieve(query, top_k=5):
+    if not mongo_ok:
+        return []
     docs = list(memories.find({}).sort("created_at", -1).limit(1500))
     q = set(tokenize(query))
     if not docs or not q:
@@ -74,11 +96,14 @@ def looks_personal(msg):
 
 @app.route("/", methods=["GET"])
 def health():
-    return jsonify({"status": "VISION server running"})
+    return jsonify({"status": "VISION server running", "memory_connected": mongo_ok})
 
 
 @app.route("/remember", methods=["POST"])
 def remember():
+    err = need_mongo()
+    if err:
+        return err
     d = request.get_json(silent=True) or {}
     text = (d.get("text") or "").strip()
     if not text:
@@ -90,12 +115,18 @@ def remember():
 
 @app.route("/memories", methods=["GET"])
 def list_memories():
+    err = need_mongo()
+    if err:
+        return err
     docs = memories.find({}).sort("created_at", -1).limit(300)
     return jsonify({"memories": [mem_out(x) for x in docs]})
 
 
 @app.route("/memories/<mem_id>", methods=["DELETE"])
 def delete_memory(mem_id):
+    err = need_mongo()
+    if err:
+        return err
     try:
         memories.delete_one({"_id": ObjectId(mem_id)})
         return jsonify({"ok": True})
@@ -105,12 +136,18 @@ def delete_memory(mem_id):
 
 @app.route("/memories/clear", methods=["POST"])
 def clear_memories():
+    err = need_mongo()
+    if err:
+        return err
     memories.delete_many({})
     return jsonify({"ok": True})
 
 
 @app.route("/items", methods=["GET"])
 def list_items():
+    err = need_mongo()
+    if err:
+        return err
     t = request.args.get("type")
     q = {"type": t} if t else {}
     docs = items.find(q).sort("created_at", -1).limit(300)
@@ -119,6 +156,9 @@ def list_items():
 
 @app.route("/items", methods=["POST"])
 def add_item():
+    err = need_mongo()
+    if err:
+        return err
     d = request.get_json(silent=True) or {}
     t, text = d.get("type", ""), (d.get("text") or "").strip()
     if t not in ("lesson", "note", "journal", "contact") or not text:
@@ -129,6 +169,9 @@ def add_item():
 
 @app.route("/items/<item_id>", methods=["DELETE"])
 def delete_item(item_id):
+    err = need_mongo()
+    if err:
+        return err
     try:
         items.delete_one({"_id": ObjectId(item_id)})
         return jsonify({"ok": True})
@@ -138,6 +181,9 @@ def delete_item(item_id):
 
 @app.route("/export", methods=["GET"])
 def export_all():
+    err = need_mongo()
+    if err:
+        return err
     return jsonify({
         "memories": [mem_out(x) for x in memories.find({}).sort("created_at", 1)],
         "items": [item_out(x) for x in items.find({}).sort("created_at", 1)],
@@ -158,7 +204,7 @@ def chat():
     if not key:
         return jsonify({"error": "No Groq API key. Add it in Settings or set GROQ_API_KEY on Render."}), 400
 
-    rules = [i["text"] for i in items.find({"type": "lesson"}).sort("created_at", 1).limit(30)]
+    rules = [i["text"] for i in items.find({"type": "lesson"}).sort("created_at", 1).limit(30)] if mongo_ok else []
     relevant = retrieve(message)
 
     system = (
@@ -192,10 +238,43 @@ def chat():
     except Exception as e:
         return jsonify({"error": "Request to Groq failed: " + str(e)}), 500
 
-    if auto and looks_personal(message) and not memories.find_one({"text": message}):
+    if mongo_ok and auto and looks_personal(message) and not memories.find_one({"text": message}):
         memories.insert_one({"text": message, "created_at": time.time(), "source": "auto"})
 
     return jsonify({"reply": reply, "used_memories": [m["text"] for m in relevant]})
+
+
+@app.route("/chat-finetuned", methods=["POST"])
+def chat_finetuned():
+    d = request.get_json(silent=True) or {}
+    message = (d.get("message") or "").strip()
+    finetuned_url = (d.get("finetuned_url") or ENV_FINETUNED_URL or "").strip().rstrip("/")
+
+    if not message:
+        return jsonify({"error": "No message provided"}), 400
+    if not finetuned_url:
+        return jsonify({"error": "No fine-tuned server URL. Paste your current ngrok URL in Settings."}), 400
+
+    try:
+        res = http.post(
+            finetuned_url + "/chat",
+            json={"message": message, "auto_remember": d.get("auto_remember", True)},
+            headers={"ngrok-skip-browser-warning": "true"},
+            timeout=120,
+        )
+    except Exception as e:
+        return jsonify({"error": "Could not reach the fine-tuned server: " + str(e)}), 502
+
+    try:
+        result = res.json()
+    except Exception:
+        preview = res.text[:200].replace("\n", " ")
+        return jsonify({"error": "The fine-tuned server did not return valid data (is Kaggle/ngrok still running?). Raw response: " + preview}), 502
+
+    if "reply" not in result:
+        return jsonify({"error": "Fine-tuned server responded but sent no 'reply' field."}), 502
+
+    return jsonify({"reply": result["reply"]})
 
 
 @app.route("/search", methods=["POST"])
