@@ -12,9 +12,6 @@ import requests as http
 app = Flask(__name__)
 CORS(app)
 
-# --- Mongo is now optional at startup: a bad/missing MONGODB_URI used to
-# crash the ENTIRE server (including Tier 1 chat) the moment it launched.
-# Now it just disables memory features and everything else keeps working. ---
 MONGODB_URI = os.environ.get("MONGODB_URI", "")
 mongo_ok = False
 memories = None
@@ -38,6 +35,17 @@ CHAT_MODEL = os.environ.get("CHAT_MODEL", "openai/gpt-oss-120b")
 
 STOPWORDS = set("the a an is are was were be been being to of and or but in on at for with as by from this that it its i you your my me he she they we do does did can could would should what how why when who".split())
 PERSONAL = re.compile(r"\b(my|i am|i'm|i like|i love|i prefer|i hate|i work|i study|i live|i have|i want|i need|i use|mine|our)\b", re.I)
+
+# --- Coding-request detection: used to tune temperature/length for sharper,
+# more deterministic code rather than the looser, more varied phrasing that
+# suits casual conversation. ---
+CODE_SIGNAL = re.compile(
+    r"\b(write|create|generate|implement|fix|debug|refactor|optimi[sz]e|explain)\b.{0,40}\b(code|function|script|program|class|algorithm|method|api|regex|query|sql)\b"
+    r"|\b(python|javascript|java|c\+\+|c#|typescript|html|css|sql|bash|go|rust|php|kotlin|swift)\b.{0,30}\b(code|script|function|program)\b"
+    r"|\bwrite a (?:python|javascript|java|c\+\+|program|function|script)\b"
+    r"|```",
+    re.I,
+)
 
 
 @app.before_request
@@ -92,6 +100,23 @@ def retrieve(query, top_k=5):
 def looks_personal(msg):
     m = msg.strip()
     return bool(PERSONAL.search(m)) and not m.endswith("?") and len(m) < 400
+
+
+def is_code_request(msg):
+    return bool(CODE_SIGNAL.search(msg))
+
+
+CODING_RULES = (
+    "\n\nWhen the request involves writing, fixing, or explaining code, follow these rules strictly:\n"
+    "1. Write complete, correct, runnable code — never pseudocode, never partial snippets with '...' unless explicitly asked for a snippet.\n"
+    "2. Always put code in a fenced block with the correct language tag (e.g. ```python).\n"
+    "3. Use clear variable and function names, and include a short docstring or comment for any non-trivial function.\n"
+    "4. Handle realistic edge cases (empty input, zero, negative numbers, invalid types) unless the user says not to.\n"
+    "5. After the code, include a brief usage example or a small test showing it works, unless the user asked for only the code.\n"
+    "6. Prefer standard library solutions unless a specific library is requested or clearly necessary.\n"
+    "7. If the request is ambiguous, make the most reasonable assumption, state it in one line, then give working code rather than asking a clarifying question first.\n"
+    "8. Keep explanation around the code brief and focused — the code itself should do most of the work, not a long essay."
+)
 
 
 @app.route("/", methods=["GET"])
@@ -206,15 +231,16 @@ def chat():
 
     rules = [i["text"] for i in items.find({"type": "lesson"}).sort("created_at", 1).limit(30)] if mongo_ok else []
     relevant = retrieve(message)
+    code_mode = is_code_request(message)
 
     system = (
         "You are VISION, a calm, precise and quietly warm AI assistant, inspired by the synthetic android from Marvel, "
         "but you never claim to be a real person or to have powers. Speak clearly and concisely; be gently formal, "
-        "occasionally thoughtful, never robotic or preachy. For coding requests, write complete, working, well-structured "
-        "code in fenced code blocks with a language tag, handle edge cases, then add a short explanation. For factual "
-        "questions be accurate and admit uncertainty; never invent sources. Use remembered context and the user's standing "
-        "rules naturally, without announcing that you are consulting memory."
+        "occasionally thoughtful, never robotic or preachy. For factual questions be accurate and admit uncertainty; "
+        "never invent sources. Use remembered context and the user's standing rules naturally, without announcing that "
+        "you are consulting memory."
     )
+    system += CODING_RULES
     if client_time:
         system += "\nCurrent time on the user's device: " + client_time + "."
     if rules:
@@ -224,11 +250,17 @@ def chat():
 
     messages = [{"role": "system", "content": system}] + history + [{"role": "user", "content": message}]
 
+    # Coding requests get a lower temperature (more deterministic, fewer
+    # "creative" slips in logic) and a larger token budget (so full programs
+    # aren't cut off mid-function).
+    temperature = 0.2 if code_mode else 0.6
+    max_tokens = 4000 if code_mode else 2500
+
     try:
         res = http.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Content-Type": "application/json", "Authorization": "Bearer " + key},
-            json={"model": CHAT_MODEL, "messages": messages, "temperature": 0.6, "max_tokens": 2500},
+            json={"model": CHAT_MODEL, "messages": messages, "temperature": temperature, "max_tokens": max_tokens},
             timeout=100,
         )
         data = res.json()
