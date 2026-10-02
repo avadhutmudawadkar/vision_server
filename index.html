@@ -68,6 +68,8 @@ pre#gameCode{max-height:300px;overflow:auto;font-size:12px;background:rgba(0,0,0
 label.tg{display:flex;gap:10px;align-items:center;margin-bottom:10px;font-size:15px}label.tg input{width:auto;margin:0}
 .toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:99;background:#1a0a10;border:1px solid var(--gold);color:var(--text);padding:9px 16px;border-radius:999px;font-size:14px;max-width:90vw}
 .tierbar{margin-bottom:10px}
+.swatches{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.swatch{width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.2)}
 @media(max-width:720px){
  body{font-size:16px}
  nav{position:fixed;bottom:0;left:0;right:0;flex-wrap:nowrap;gap:0;padding:5px 4px calc(5px + env(safe-area-inset-bottom));background:rgba(11,5,8,.95);border-top:1px solid var(--line);backdrop-filter:blur(10px)}
@@ -91,6 +93,7 @@ label.tg{display:flex;gap:10px;align-items:center;margin-bottom:10px;font-size:1
   <button data-t="games"><span class="ic">🎮</span><span>Games</span></button>
   <button data-t="tools"><span class="ic">🧰</span><span>Tools</span></button>
   <button data-t="memory"><span class="ic">🧠</span><span>Memory</span></button>
+  <button data-t="design"><span class="ic">🖌</span><span>Design</span></button>
   <button data-t="settings"><span class="ic">⚙️</span><span>Settings</span></button>
 </nav>
 
@@ -181,12 +184,22 @@ label.tg{display:flex;gap:10px;align-items:center;margin-bottom:10px;font-size:1
     <button class="btn sm" id="teachBtn">Save memory</button>
     <input id="ruleIn" placeholder="A standing rule, e.g. Always explain code line by line" style="margin-top:12px">
     <button class="btn sm" id="ruleBtn">Save rule</button>
-    <div class="hint" id="memStatus">Memories are recalled when relevant. Rules apply to every answer. (Tier 1 only.)</div>
+    <div class="hint" id="memStatus">Memories are private to this device and recalled when relevant. Rules apply to every answer.</div>
   </div>
   <div class="card"><h3>Stored knowledge</h3>
     <div class="row"><select id="memFilter"><option value="all">Everything</option><option value="memory">Memories</option><option value="lesson">Rules</option><option value="note">Notes</option><option value="journal">Journal</option><option value="contact">Contacts</option></select><button class="ghost" id="memRefresh">Refresh</button><button class="ghost" id="memExport">Export JSON</button></div>
     <div id="memList" style="margin-top:10px"></div>
     <button class="ghost" id="memClear" style="margin-top:8px;color:var(--red)">Delete all memories</button>
+  </div>
+</section>
+
+<section class="panel" id="p-design">
+  <div class="card">
+    <h3>Describe a new look</h3>
+    <textarea id="themePrompt" rows="2" placeholder="e.g. Make it deep ocean blue with teal glowing accents, or Give it a soft pastel look, or Make it look like Iron Man's suit"></textarea>
+    <div class="row"><button class="btn" id="themeGo">Apply UI change</button><button class="ghost" id="themeReset">Reset to default Vision theme</button></div>
+    <div class="hint" id="themeStatus">Changes apply instantly and are saved only on this device.</div>
+    <div class="swatches" id="themeSwatches"></div>
   </div>
 </section>
 
@@ -198,7 +211,7 @@ label.tg{display:flex;gap:10px;align-items:center;margin-bottom:10px;font-size:1
     <input id="setTavily" type="password" placeholder="Tavily API key (optional, for news &amp; web search)">
     <input id="setCity" placeholder="Home city for weather (optional)">
     <div class="row"><button class="btn sm" id="btnTest">Test connection</button><button class="ghost" id="btnNotif">Enable notifications</button></div>
-    <div class="hint" id="setStatus">Keys are stored only in this browser.</div>
+    <div class="hint" id="setStatus">Keys and memory are private to this device — they never sync anywhere else.</div>
   </div>
   <div class="card"><h3>Tier 2 — Fine-tuned model</h3>
     <input id="setFinetuned" placeholder="ngrok URL from Kaggle — https://xxxx.ngrok-free.dev">
@@ -228,6 +241,14 @@ function md(text){
   return t.replace(/\u0000(\d+)\u0000/g,(m,i)=>{const b=blocks[i];return '<div class="code"><div class="codebar"><span>'+(b.l||'code')+'</span><button class="copy">Copy</button></div><pre><code>'+b.c+'</code></pre></div>'});
 }
 
+/* ---------- per-device identity (this is what makes memory private) ---------- */
+function getDeviceId(){
+  let id=store.get('device_id');
+  if(!id){id=(crypto.randomUUID?crypto.randomUUID():'dev-'+Date.now()+'-'+Math.random().toString(36).slice(2));store.set('device_id',id)}
+  return id;
+}
+const DEVICE_ID=getDeviceId();
+
 /* ---------- navigation ---------- */
 function go(n){$$('.panel').forEach(p=>p.classList.toggle('on',p.id==='p-'+n));$$('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===n));window.scrollTo({top:0});if(n==='memory')loadMem();if(n==='tools')refreshTools()}
 $$('nav button').forEach(b=>b.onclick=()=>go(b.dataset.t));
@@ -244,7 +265,7 @@ async function api(path,method="GET",body){
   if(!base)throw new Error("Server URL not set. Open Settings and add your Render URL.");
   const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),120000);
   try{
-    const res=await fetch(base+path,{method,headers:{"Content-Type":"application/json","X-Vision-Passcode":store.get('pass')},body:body?JSON.stringify(body):undefined,signal:ctl.signal});
+    const res=await fetch(base+path,{method,headers:{"Content-Type":"application/json","X-Vision-Passcode":store.get('pass'),"X-Vision-Device":DEVICE_ID},body:body?JSON.stringify(body):undefined,signal:ctl.signal});
     const data=await res.json().catch(()=>({error:"Bad response from server"}));
     if(!res.ok||data.error)throw new Error(data.error||("Server error "+res.status));
     return data;
@@ -515,7 +536,7 @@ async function askAttachment(q){
   return groq([{role:'system',content:'Answer questions about the user\'s document using its text. Answer in clear plain sentences. If the answer is not in the text, say so.'},{role:'user',content:'Document:\n'+attachment.text+'\n\nQuestion: '+q}],{max:1200});
 }
 
-/* ---------- command router (Tier 1 only — disabled while Tier 2 is selected) ---------- */
+/* ---------- command router ---------- */
 async function route(t){
   let m;const l=t.toLowerCase();
   if(m=t.match(/^(?:vision[, ]+)?(?:please )?(?:remember|learn)(?: that|:)?\s+(.+)/i)){await api('/remember','POST',{text:m[1],source:'manual'});botSay('Noted. I will remember that.');return true}
@@ -549,7 +570,7 @@ async function route(t){
   if(m=t.match(/^play\s+(?:a\s+)?(?:song\s+)?(.+)/i)){botSay('Here are the results.',{links:[{label:'Play on YouTube',url:'https://www.youtube.com/results?search_query='+encodeURIComponent(m[1])}]});return true}
   if(m=t.match(/^open\s+(.+)/i)){const w=m[1].toLowerCase().trim();botSay('Here you go.',{links:[{label:'Open '+w,url:'https://'+(SITES[w]||w.replace(/\s+/g,'')+'.com')}]});return true}
   if(/^clear (?:the )?chat/i.test(t)){log.innerHTML='';history=[];return true}
-  if(/^(?:help|what can you do)/i.test(t)){botSay("I can chat and write complex code, remember facts and standing rules, generate images, videos and games, read images and PDFs, set timers and reminders, do weather, definitions, translation, conversions, notes, journal, quizzes, web search, WhatsApp and email drafts. Tap a suggestion above, or just ask.");return true}
+  if(/^(?:help|what can you do)/i.test(t)){botSay("I can chat and write complex code, remember facts and standing rules, generate images, videos and games, read images and PDFs, set timers and reminders, do weather, definitions, translation, conversions, notes, journal, quizzes, web search, WhatsApp and email drafts, and change my own appearance in the Design tab. Tap a suggestion above, or just ask.");return true}
   return false;
 }
 async function askServer(text){
@@ -620,6 +641,53 @@ $('#memFilter').onchange=loadMem;$('#memRefresh').onclick=loadMem;
 $('#memExport').onclick=async()=>{try{const d=await api('/export');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,2)],{type:'application/json'}));a.download='vision-memory.json';a.click()}catch(e){toast(e.message)}};
 $('#memClear').onclick=async()=>{if(!confirm('Delete ALL memories? Rules, notes and journal are kept.'))return;try{await api('/memories/clear','POST');loadMem()}catch(e){toast(e.message)}};
 
+/* ---------- Design tab: self-driven UI changes ---------- */
+const THEME_KEYS=['--bg','--panel','--line','--gold','--red','--green','--text','--muted'];
+function applyTheme(theme){
+  const root=document.documentElement.style;
+  THEME_KEYS.forEach(k=>{if(theme[k])root.setProperty(k,theme[k])});
+  let extraEl=document.getElementById('customExtraCss');
+  if(!extraEl){extraEl=document.createElement('style');extraEl.id='customExtraCss';document.head.appendChild(extraEl)}
+  extraEl.textContent=theme.extraCss||'';
+  renderSwatches(theme);
+}
+function renderSwatches(theme){
+  const box=$('#themeSwatches');if(!box)return;
+  box.innerHTML=THEME_KEYS.filter(k=>theme[k]).map(k=>'<div class="swatch" title="'+k+'" style="background:'+theme[k]+'"></div>').join('');
+}
+function loadSavedTheme(){
+  const raw=store.get('theme');
+  if(raw){try{applyTheme(JSON.parse(raw))}catch(e){}}
+}
+loadSavedTheme();
+$('#themeGo').onclick=async()=>{
+  const desc=$('#themePrompt').value.trim();if(!desc)return toast('Describe the look you want.');
+  const st=$('#themeStatus');st.textContent='Designing…';
+  try{
+    const raw=await groq([{role:'system',content:
+      'You are a UI theme generator for a dark sci-fi web app called VISION. It uses these CSS custom properties: '+
+      '--bg (page background, a solid or dark colour), --panel (card background, usually a semi-transparent rgba colour), '+
+      '--line (border colour, usually semi-transparent), --gold (primary accent colour), --red (secondary accent colour), '+
+      '--green (a success/highlight colour), --text (main text colour, should stay readable on --bg), --muted (secondary/label text colour). '+
+      'Given the user\'s description, output ONLY a single valid JSON object with exactly these keys as valid CSS colour values, '+
+      'plus an optional "extraCss" key containing a short string of extra raw CSS rules if truly needed (e.g. to change font or shapes). '+
+      'No markdown fences, no explanation, no comments — JSON only.'},
+      {role:'user',content:desc}],{max:500,temperature:.8});
+    const cleaned=raw.replace(/```(?:json)?/gi,'').trim();
+    const theme=JSON.parse(cleaned);
+    applyTheme(theme);
+    store.set('theme',JSON.stringify(theme));
+    st.textContent='Applied. Saved to this device only.';
+  }catch(e){st.textContent='⚠ Could not build that theme — try rephrasing. ('+e.message+')'}
+};
+$('#themeReset').onclick=()=>{
+  THEME_KEYS.forEach(k=>document.documentElement.style.removeProperty(k));
+  const extraEl=document.getElementById('customExtraCss');if(extraEl)extraEl.textContent='';
+  localStorage.removeItem('vision_theme');
+  $('#themeSwatches').innerHTML='';
+  $('#themeStatus').textContent='Reset to the default Vision theme.';
+};
+
 /* ---------- settings ---------- */
 [['#setServer','server'],['#setPass','pass'],['#setGroq','groq'],['#setTavily','tavily'],['#setCity','city'],['#setFinetuned','finetuned']].forEach(([id,k])=>{const el=$(id);el.value=store.get(k);el.onchange=()=>{store.set(k,el.value.trim().replace(k==='server'||k==='finetuned'?/\/$/:/$^/,''));toast('Saved.');if(k==='server'||k==='pass')ping()}});
 $('#chkAuto').checked=store.get('auto','1')==='1';$('#chkAuto').onchange=e=>store.set('auto',e.target.checked?'1':'0');
@@ -632,7 +700,7 @@ $('#btnTest').onclick=async()=>{$('#setStatus').textContent='Testing…';const o
 $('#btnNotif').onclick=async()=>{if(!('Notification' in window))return toast('Notifications are not supported here.');const p=await Notification.requestPermission();toast(p==='granted'?'Notifications enabled.':'Notifications blocked.')};
 
 /* ---------- start ---------- */
-botSay("Good day. I am VISION. Ask me anything, request code, or tell me to draw, animate, build a game or set a timer. "+((store.get('server')||CFG.defaultServer)&&store.get('groq')?"":"To begin, open Settings and add your server URL and Groq key."),{silent:true});
+botSay("Good day. I am VISION. Ask me anything, request code, or tell me to draw, animate, build a game, change my appearance, or set a timer. "+((store.get('server')||CFG.defaultServer)&&store.get('groq')?"":"To begin, open Settings and add your server URL and Groq key."),{silent:true});
 ping();
 </script>
 </body>
