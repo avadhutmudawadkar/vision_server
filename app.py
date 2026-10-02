@@ -36,9 +36,6 @@ CHAT_MODEL = os.environ.get("CHAT_MODEL", "openai/gpt-oss-120b")
 STOPWORDS = set("the a an is are was were be been being to of and or but in on at for with as by from this that it its i you your my me he she they we do does did can could would should what how why when who".split())
 PERSONAL = re.compile(r"\b(my|i am|i'm|i like|i love|i prefer|i hate|i work|i study|i live|i have|i want|i need|i use|mine|our)\b", re.I)
 
-# --- Coding-request detection: used to tune temperature/length for sharper,
-# more deterministic code rather than the looser, more varied phrasing that
-# suits casual conversation. ---
 CODE_SIGNAL = re.compile(
     r"\b(write|create|generate|implement|fix|debug|refactor|optimi[sz]e|explain)\b.{0,40}\b(code|function|script|program|class|algorithm|method|api|regex|query|sql)\b"
     r"|\b(python|javascript|java|c\+\+|c#|typescript|html|css|sql|bash|go|rust|php|kotlin|swift)\b.{0,30}\b(code|script|function|program)\b"
@@ -56,10 +53,22 @@ def guard():
         return jsonify({"error": "Wrong or missing passcode."}), 401
 
 
+def get_device_id():
+    # Every memory/item route is now scoped to this device's own ID, sent as
+    # a header by the browser. Without one, nothing is readable or writable —
+    # this is what makes each device's data genuinely private.
+    did = request.headers.get("X-Vision-Device", "").strip()
+    return did if did else None
+
+
 def need_mongo():
     if not mongo_ok:
         return jsonify({"error": "Memory database is not configured or unreachable. Check MONGODB_URI on Render."}), 503
     return None
+
+
+def need_device():
+    return jsonify({"error": "No device ID sent by the browser. Try reloading the page."}), 400
 
 
 def mem_out(d):
@@ -74,10 +83,10 @@ def tokenize(text):
     return [w for w in re.findall(r"[a-zA-Z0-9']+", text.lower()) if w not in STOPWORDS and len(w) > 1]
 
 
-def retrieve(query, top_k=5):
-    if not mongo_ok:
+def retrieve(query, device_id, top_k=5):
+    if not mongo_ok or not device_id:
         return []
-    docs = list(memories.find({}).sort("created_at", -1).limit(1500))
+    docs = list(memories.find({"device_id": device_id}).sort("created_at", -1).limit(1500))
     q = set(tokenize(query))
     if not docs or not q:
         return []
@@ -129,12 +138,15 @@ def remember():
     err = need_mongo()
     if err:
         return err
+    device_id = get_device_id()
+    if not device_id:
+        return need_device()
     d = request.get_json(silent=True) or {}
     text = (d.get("text") or "").strip()
     if not text:
         return jsonify({"error": "No text provided"}), 400
-    if not memories.find_one({"text": text}):
-        memories.insert_one({"text": text, "created_at": time.time(), "source": d.get("source", "manual")})
+    if not memories.find_one({"text": text, "device_id": device_id}):
+        memories.insert_one({"text": text, "created_at": time.time(), "source": d.get("source", "manual"), "device_id": device_id})
     return jsonify({"ok": True})
 
 
@@ -143,7 +155,10 @@ def list_memories():
     err = need_mongo()
     if err:
         return err
-    docs = memories.find({}).sort("created_at", -1).limit(300)
+    device_id = get_device_id()
+    if not device_id:
+        return need_device()
+    docs = memories.find({"device_id": device_id}).sort("created_at", -1).limit(300)
     return jsonify({"memories": [mem_out(x) for x in docs]})
 
 
@@ -152,8 +167,11 @@ def delete_memory(mem_id):
     err = need_mongo()
     if err:
         return err
+    device_id = get_device_id()
+    if not device_id:
+        return need_device()
     try:
-        memories.delete_one({"_id": ObjectId(mem_id)})
+        memories.delete_one({"_id": ObjectId(mem_id), "device_id": device_id})
         return jsonify({"ok": True})
     except Exception:
         return jsonify({"error": "Bad id"}), 400
@@ -164,7 +182,10 @@ def clear_memories():
     err = need_mongo()
     if err:
         return err
-    memories.delete_many({})
+    device_id = get_device_id()
+    if not device_id:
+        return need_device()
+    memories.delete_many({"device_id": device_id})
     return jsonify({"ok": True})
 
 
@@ -173,8 +194,13 @@ def list_items():
     err = need_mongo()
     if err:
         return err
+    device_id = get_device_id()
+    if not device_id:
+        return need_device()
     t = request.args.get("type")
-    q = {"type": t} if t else {}
+    q = {"device_id": device_id}
+    if t:
+        q["type"] = t
     docs = items.find(q).sort("created_at", -1).limit(300)
     return jsonify({"items": [item_out(x) for x in docs]})
 
@@ -184,11 +210,14 @@ def add_item():
     err = need_mongo()
     if err:
         return err
+    device_id = get_device_id()
+    if not device_id:
+        return need_device()
     d = request.get_json(silent=True) or {}
     t, text = d.get("type", ""), (d.get("text") or "").strip()
     if t not in ("lesson", "note", "journal", "contact") or not text:
         return jsonify({"error": "Invalid item"}), 400
-    items.insert_one({"type": t, "text": text, "extra": d.get("extra", ""), "created_at": time.time()})
+    items.insert_one({"type": t, "text": text, "extra": d.get("extra", ""), "created_at": time.time(), "device_id": device_id})
     return jsonify({"ok": True})
 
 
@@ -197,8 +226,11 @@ def delete_item(item_id):
     err = need_mongo()
     if err:
         return err
+    device_id = get_device_id()
+    if not device_id:
+        return need_device()
     try:
-        items.delete_one({"_id": ObjectId(item_id)})
+        items.delete_one({"_id": ObjectId(item_id), "device_id": device_id})
         return jsonify({"ok": True})
     except Exception:
         return jsonify({"error": "Bad id"}), 400
@@ -209,14 +241,18 @@ def export_all():
     err = need_mongo()
     if err:
         return err
+    device_id = get_device_id()
+    if not device_id:
+        return need_device()
     return jsonify({
-        "memories": [mem_out(x) for x in memories.find({}).sort("created_at", 1)],
-        "items": [item_out(x) for x in items.find({}).sort("created_at", 1)],
+        "memories": [mem_out(x) for x in memories.find({"device_id": device_id}).sort("created_at", 1)],
+        "items": [item_out(x) for x in items.find({"device_id": device_id}).sort("created_at", 1)],
     })
 
 
 @app.route("/chat", methods=["POST"])
 def chat():
+    device_id = get_device_id()
     d = request.get_json(silent=True) or {}
     message = (d.get("message") or "").strip()
     key = (d.get("groq_api_key") or ENV_GROQ).strip()
@@ -229,8 +265,10 @@ def chat():
     if not key:
         return jsonify({"error": "No Groq API key. Add it in Settings or set GROQ_API_KEY on Render."}), 400
 
-    rules = [i["text"] for i in items.find({"type": "lesson"}).sort("created_at", 1).limit(30)] if mongo_ok else []
-    relevant = retrieve(message)
+    rules = []
+    if mongo_ok and device_id:
+        rules = [i["text"] for i in items.find({"type": "lesson", "device_id": device_id}).sort("created_at", 1).limit(30)]
+    relevant = retrieve(message, device_id)
     code_mode = is_code_request(message)
 
     system = (
@@ -250,9 +288,6 @@ def chat():
 
     messages = [{"role": "system", "content": system}] + history + [{"role": "user", "content": message}]
 
-    # Coding requests get a lower temperature (more deterministic, fewer
-    # "creative" slips in logic) and a larger token budget (so full programs
-    # aren't cut off mid-function).
     temperature = 0.2 if code_mode else 0.6
     max_tokens = 4000 if code_mode else 2500
 
@@ -270,8 +305,8 @@ def chat():
     except Exception as e:
         return jsonify({"error": "Request to Groq failed: " + str(e)}), 500
 
-    if mongo_ok and auto and looks_personal(message) and not memories.find_one({"text": message}):
-        memories.insert_one({"text": message, "created_at": time.time(), "source": "auto"})
+    if mongo_ok and device_id and auto and looks_personal(message) and not memories.find_one({"text": message, "device_id": device_id}):
+        memories.insert_one({"text": message, "created_at": time.time(), "source": "auto", "device_id": device_id})
 
     return jsonify({"reply": reply, "used_memories": [m["text"] for m in relevant]})
 
