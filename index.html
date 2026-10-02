@@ -702,6 +702,236 @@ $('#btnNotif').onclick=async()=>{if(!('Notification' in window))return toast('No
 /* ---------- start ---------- */
 botSay("Good day. I am VISION. Ask me anything, request code, or tell me to draw, animate, build a game, change my appearance, or set a timer. "+((store.get('server')||CFG.defaultServer)&&store.get('groq')?"":"To begin, open Settings and add your server URL and Groq key."),{silent:true});
 ping();
+/* ================= VISION MEDIA PACK: free video + audio chains ================= */
+const GEMINI_TTS_MODEL='gemini-2.5-flash-preview-tts';
+
+/* ---------- inject UI (settings card, audio tab, video extras) ---------- */
+(function injectMediaUI(){
+  if(!document.getElementById('mediaCard')){
+    document.getElementById('p-settings').insertAdjacentHTML('beforeend',
+    '<div class="card" id="mediaCard"><h3>Free AI keys — video &amp; audio</h3>'
+    +'<input id="kPoll" type="password" placeholder="Pollinations key (video + voice) — enter.pollinations.ai">'
+    +'<input id="kVidModels" placeholder="Video models in order (default: wan-fast,seedance)">'
+    +'<input id="kEl" type="password" placeholder="ElevenLabs key (voice + sound effects)">'
+    +'<input id="kElVoice" placeholder="ElevenLabs voice ID (optional)">'
+    +'<input id="kGem" type="password" placeholder="Google Gemini key (voice) — aistudio.google.com/apikey">'
+    +'<input id="kGroqVoice" placeholder="Groq voice (default: hannah)">'
+    +'<label class="tg"><input type="checkbox" id="chkAiVoice"> Use AI voice for spoken replies (uses free quota)</label>'
+    +'<div class="hint">Your Groq key above is also used for Groq voice. Keys stay on this device. Providers without a key are skipped; the browser voice is the last fallback.</div></div>');
+    [['#kPoll','poll'],['#kVidModels','vidmodels'],['#kEl','elkey'],['#kElVoice','elvoice'],['#kGem','gemkey'],['#kGroqVoice','gvoice']].forEach(([id,k])=>{
+      const el=$(id);el.value=store.get(k);el.onchange=()=>{store.set(k,el.value.trim());toast('Saved.')}});
+    $('#chkAiVoice').checked=store.get('aivoice','0')==='1';
+    $('#chkAiVoice').onchange=e=>store.set('aivoice',e.target.checked?'1':'0');
+  }
+  if(!document.getElementById('sub-aud')){
+    const b=document.createElement('button');b.dataset.sub='aud';b.textContent='Audio';b.onclick=()=>subSwitch('aud');
+    document.querySelector('#p-create .seg').appendChild(b);
+    document.getElementById('p-create').insertAdjacentHTML('beforeend',
+    '<div class="card subp" id="sub-aud"><h3>Audio studio</h3>'
+    +'<textarea id="audText" rows="3" placeholder="Text to turn into speech…"></textarea>'
+    +'<div class="row"><select id="audProv"><option value="auto">Voice: Auto (best available)</option><option value="eleven">ElevenLabs</option><option value="groq">Groq</option><option value="gemini">Gemini</option><option value="poll">Pollinations</option><option value="browser">Browser voice (no key)</option></select><button class="btn" id="audGo">Generate voice</button></div>'
+    +'<div id="audOut"></div>'
+    +'<h3 style="margin-top:18px">Sound effects (ElevenLabs)</h3>'
+    +'<input id="sfxText" placeholder="e.g. thunder rolling over a city, footsteps on gravel">'
+    +'<div class="row"><select id="sfxDur"><option value="2">2 sec</option><option value="4" selected>4 sec</option><option value="8">8 sec</option></select><button class="btn" id="sfxGo">Generate sound</button></div>'
+    +'<div id="sfxOut"></div></div>');
+  }
+  $('#vidMode').innerHTML='<option value="ai">🎬 Real AI video (free chain)</option><option value="flip">Flipbook (AI frames)</option><option value="boomerang">Boomerang loop</option><option value="zoom">Cinematic zoom (1 image)</option>';
+  if(!$('#vidDur'))$('#vidMode').insertAdjacentHTML('afterend','<select id="vidDur"><option value="4">AI video: 4 sec</option><option value="6" selected>AI video: 6 sec</option><option value="8">AI video: 8 sec</option><option value="10">AI video: 10 sec</option></select>');
+  if(!$('#vidNarr'))$('#vidBtn').insertAdjacentHTML('beforebegin','<input id="vidNarr" placeholder="Narration / voiceover text (optional)" style="margin-top:8px">');
+})();
+
+/* ---------- audio helpers ---------- */
+function pcmToWav(bytes,rate){
+  const h=new ArrayBuffer(44),v=new DataView(h),w=(o,s)=>[...s].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));
+  w(0,'RIFF');v.setUint32(4,36+bytes.length,true);w(8,'WAVE');w(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,bytes.length,true);
+  return new Blob([h,bytes],{type:'audio/wav'});
+}
+async function mergeWavs(bufs){
+  if(bufs.length===1)return new Blob(bufs,{type:'audio/wav'});
+  const ac=new (window.AudioContext||window.webkitAudioContext)(),dec=[];
+  for(const b of bufs)dec.push(await ac.decodeAudioData(b.slice(0)));
+  const rate=dec[0].sampleRate,pcm=new Int16Array(dec.reduce((s,d)=>s+d.length,0));let o=0;
+  for(const d of dec){const c=d.getChannelData(0);for(let i=0;i<c.length;i++)pcm[o++]=Math.max(-1,Math.min(1,c[i]))*32767}
+  ac.close();return pcmToWav(new Uint8Array(pcm.buffer),rate);
+}
+function splitText(t,max){
+  const out=[];let cur='';
+  for(const s of (t.replace(/\s+/g,' ').match(/[^.!?]+[.!?]*\s*/g)||[t])){
+    if((cur+s).length>max&&cur){out.push(cur.trim());cur=''}
+    if(s.length>max){for(let i=0;i<s.length;i+=max)out.push(s.slice(i,i+max).trim())}else cur+=s;
+  }
+  if(cur.trim())out.push(cur.trim());return out.slice(0,8);
+}
+function browserSpeak(text){
+  if(!('speechSynthesis' in window))return;
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text.slice(0,1500)),v=speechSynthesis.getVoices(),name=store.get('voice');
+  u.voice=v.find(x=>x.name===name)||v.find(x=>/en-GB/i.test(x.lang))||v.find(x=>/^en/i.test(x.lang))||null;u.rate=.98;u.pitch=.9;speechSynthesis.speak(u);
+}
+
+/* ---------- voice providers (each returns an audio Blob or throws) ---------- */
+async function ttsEleven(text){
+  const r=await fetch('https://api.elevenlabs.io/v1/text-to-speech/'+(store.get('elvoice')||'21m00Tcm4TlvDq8ikWAM')+'?output_format=mp3_44100_128',
+    {method:'POST',headers:{'xi-api-key':store.get('elkey'),'Content-Type':'application/json'},body:JSON.stringify({text:text.slice(0,2500),model_id:'eleven_flash_v2_5'})});
+  if(!r.ok)throw new Error(r.status+' '+(await r.text()).slice(0,120));
+  return new Blob([await r.arrayBuffer()],{type:'audio/mpeg'});
+}
+async function ttsGroq(text){
+  const bufs=[];
+  for(const part of splitText(text,190)){
+    const r=await fetch('https://api.groq.com/openai/v1/audio/speech',{method:'POST',headers:{Authorization:'Bearer '+store.get('groq'),'Content-Type':'application/json'},
+      body:JSON.stringify({model:'canopylabs/orpheus-v1-english',input:part,voice:store.get('gvoice')||'hannah',response_format:'wav'})});
+    if(!r.ok)throw new Error(r.status+' '+(await r.text()).slice(0,120));
+    bufs.push(await r.arrayBuffer());
+  }
+  return mergeWavs(bufs);
+}
+async function ttsGemini(text){
+  const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+GEMINI_TTS_MODEL+':generateContent',{method:'POST',
+    headers:{'Content-Type':'application/json','x-goog-api-key':store.get('gemkey')},
+    body:JSON.stringify({contents:[{parts:[{text:text.slice(0,1500)}]}],generationConfig:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:'Kore'}}}}})});
+  if(!r.ok)throw new Error(r.status+' '+(await r.text()).slice(0,120));
+  const d=await r.json(),b64=d.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+  if(!b64)throw new Error('no audio returned');
+  const bin=atob(b64),bytes=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+  return pcmToWav(bytes,24000);
+}
+async function ttsPoll(text){
+  const r=await fetch('https://gen.pollinations.ai/audio/'+encodeURIComponent(text.slice(0,1000))+'?voice=nova',{headers:{Authorization:'Bearer '+store.get('poll')}});
+  const type=r.headers.get('content-type')||'';
+  if(!r.ok||!type.startsWith('audio'))throw new Error(r.status+' '+type);
+  return await r.blob();
+}
+const VPROV={
+  eleven:{name:'ElevenLabs',need:()=>store.get('elkey'),fn:ttsEleven},
+  groq:{name:'Groq',need:()=>store.get('groq'),fn:ttsGroq},
+  gemini:{name:'Gemini',need:()=>store.get('gemkey'),fn:ttsGemini},
+  poll:{name:'Pollinations',need:()=>store.get('poll'),fn:ttsPoll}
+};
+/* mode: 'speak' = browser voice speaks at once if all fail; 'defer' = just report browser; 'strict' = throw */
+async function makeVoice(text,pref='auto',mode='speak'){
+  if(pref==='browser'){if(mode==='speak')browserSpeak(text);return {browser:true,provider:'Browser voice'}}
+  let order=['eleven','groq','gemini','poll'];
+  if(order.includes(pref))order=[pref,...order.filter(x=>x!==pref)];
+  const errs=[];
+  for(const k of order){const p=VPROV[k];if(!p.need())continue;try{return {blob:await p.fn(text),provider:p.name}}catch(e){errs.push(p.name+': '+e.message)}}
+  if(mode==='strict')throw new Error(errs.join(' | ')||'No voice keys set.');
+  if(mode==='speak')browserSpeak(text);
+  return {browser:true,provider:'Browser voice',errs};
+}
+async function makeSfx(text,dur){
+  const key=store.get('elkey');if(!key)throw new Error('Add your ElevenLabs key in Settings for sound effects.');
+  const r=await fetch('https://api.elevenlabs.io/v1/sound-generation',{method:'POST',headers:{'xi-api-key':key,'Content-Type':'application/json'},body:JSON.stringify({text,duration_seconds:dur,prompt_influence:.5})});
+  if(!r.ok)throw new Error('ElevenLabs '+r.status+' '+(await r.text()).slice(0,120));
+  return new Blob([await r.arrayBuffer()],{type:'audio/mpeg'});
+}
+function audioBox(el,res,label){
+  if(res.browser){el.innerHTML='<div class="mh">Played with your browser voice'+(res.errs&&res.errs.length?' (AI providers failed: '+esc(res.errs.join(' | '))+')':' (no AI key set)')+'.</div>';return}
+  const u=URL.createObjectURL(res.blob),ext=res.blob.type.includes('wav')?'wav':'mp3';
+  el.innerHTML='<audio controls autoplay src="'+u+'" style="width:100%;margin-top:8px"></audio><div class="lk"><a href="'+u+'" download="vision-'+label+'.'+ext+'">Download .'+ext+'</a></div><div class="mh">via '+esc(res.provider)+'</div>';
+}
+$('#audGo').onclick=async()=>{
+  const t=$('#audText').value.trim();if(!t)return toast('Type some text first.');
+  const b=$('#audGo'),o=$('#audOut');b.disabled=true;o.innerHTML='<div class="ld">Generating voice…</div>';
+  try{audioBox(o,await makeVoice(t,$('#audProv').value,'defer').then(r=>{if(r.browser)browserSpeak(t);return r}),'voice')}catch(e){o.textContent='⚠ '+e.message}
+  b.disabled=false;
+};
+$('#sfxGo').onclick=async()=>{
+  const t=$('#sfxText').value.trim();if(!t)return toast('Describe the sound first.');
+  const b=$('#sfxGo'),o=$('#sfxOut');b.disabled=true;o.innerHTML='<div class="ld">Generating sound…</div>';
+  try{audioBox(o,{blob:await makeSfx(t,+$('#sfxDur').value),provider:'ElevenLabs'},'sfx')}catch(e){o.textContent='⚠ '+e.message}
+  b.disabled=false;
+};
+
+/* ---------- spoken replies + chat commands (wrap existing functions) ---------- */
+const _speak0=speak;
+speak=function(text){
+  if(store.get('aivoice','0')!=='1'||(store.get('speak','0')!=='1'&&!forceSpeak))return _speak0(text);
+  const clean=text.replace(/```[\s\S]*?```/g,' code block omitted. ').replace(/[*_#`>~|]/g,'').replace(/https?:\/\/\S+/g,'link').replace(/\s+/g,' ').trim().slice(0,350);
+  if(!clean)return;
+  makeVoice(clean,'auto','strict').then(r=>{if(window._va)window._va.pause();window._va=new Audio(URL.createObjectURL(r.blob));window._va.play()}).catch(()=>_speak0(text));
+};
+const _route0=route;
+route=async function(t){
+  let m;
+  if(m=t.match(/^(?:voiceover|narrate|read aloud|say aloud)[:,]?\s+(.+)/i)){
+    const d=addMsg('bot','<div class="ld">Recording…</div>'),r=await makeVoice(m[1],'auto','defer');
+    if(r.browser){browserSpeak(m[1])}audioBox(d,r,'voice');return true;
+  }
+  if(m=t.match(/^(?:sound effect|sfx)(?: of| for)?[:,]?\s+(.+)/i)){
+    const d=addMsg('bot','<div class="ld">Making the sound…</div>');
+    audioBox(d,{blob:await makeSfx(m[1],4),provider:'ElevenLabs'},'sfx');return true;
+  }
+  return _route0(t);
+};
+
+/* ---------- video: free chain (Pollinations models in order) → flipbook fallback ---------- */
+async function fetchPollVideo(full,model,dur,key){
+  const url='https://gen.pollinations.ai/image/'+encodeURIComponent(full)+'?model='+encodeURIComponent(model)+'&duration='+dur+'&seed='+Math.floor(Math.random()*1e6)+'&nologo=true';
+  const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),240000);
+  try{
+    const res=await fetch(url,{headers:{Authorization:'Bearer '+key},signal:ctl.signal});
+    const type=res.headers.get('content-type')||'';
+    if(!res.ok||/json|text|html/.test(type)){let msg='';try{msg=(await res.text()).slice(0,140)}catch(e){}throw new Error(model+' replied '+res.status+' '+msg)}
+    return await res.blob();
+  }catch(e){throw new Error(e.name==='AbortError'?model+' took too long':e.message)}
+  finally{clearTimeout(to)}
+}
+async function aiVideo(p,dur,st){
+  const key=store.get('poll');if(!key)throw new Error('No Pollinations key set');
+  const models=(store.get('vidmodels')||'wan-fast,seedance').split(',').map(s=>s.trim()).filter(Boolean);
+  st.textContent='Improving your prompt…';const full=await enhance(p);let last;
+  for(let i=0;i<models.length;i++){
+    st.textContent='Rendering AI video with '+models[i]+' (try '+(i+1)+' of '+models.length+') — 1–3 minutes…';
+    try{
+      const u=URL.createObjectURL(await fetchPollVideo(full,models[i],dur,key));
+      $('#vidOut').innerHTML='<video src="'+u+'" autoplay loop muted playsinline controls></video><div class="lk"><a href="'+u+'" download="vision-ai-video.mp4">Download video</a></div><div class="mh">'+esc(models[i])+' · '+esc(full)+'</div>';
+      return;
+    }catch(e){last=e}
+  }
+  throw last||new Error('No video model available');
+}
+async function framesVideo(p,mode,n,st){
+  let frames;
+  if(mode==='zoom'){st.textContent='Generating source image…';const full=await enhance(p);frames=[await loadImgRetry(imgUrl(full,768,768,Math.floor(Math.random()*1e6),'flux'))]}
+  else{st.textContent='Planning the scene…';const base=await baseScene(p),seed=Math.floor(Math.random()*1e6);
+    frames=await loadMany(phrases(n).map(ph=>imgUrl(base+', '+ph,448,448,seed,'flux')),(d,t)=>st.textContent='Generating frame '+d+' of '+t+'…');
+    if(frames.length<3)throw new Error('Too few frames loaded — the image service is busy. Try again.')}
+  st.textContent='Assembling video…';await renderVideo(frames,mode);
+}
+async function addNarration(st){
+  const t=($('#vidNarr').value||'').trim();if(!t)return;
+  st.textContent='Recording narration…';
+  const r=await makeVoice(t,'auto','defer'),out=$('#vidOut');
+  const playBoth=()=>{const v=$('#vidOut video');if(v){v.muted=true;v.currentTime=0;v.play()}};
+  if(r.browser){
+    out.insertAdjacentHTML('beforeend','<div class="row"><button class="ghost" id="playBoth">▶ Play video + narration</button></div><div class="mh">Narration uses your browser voice.</div>');
+    $('#playBoth').onclick=()=>{playBoth();browserSpeak(t)};return;
+  }
+  const u=URL.createObjectURL(r.blob);
+  out.insertAdjacentHTML('beforeend','<audio id="narrAud" controls src="'+u+'" style="width:100%"></audio><div class="row"><button class="ghost" id="playBoth">▶ Play video + narration</button></div><div class="lk"><a href="'+u+'" download="vision-narration.'+(r.blob.type.includes('wav')?'wav':'mp3')+'">Download narration</a></div><div class="mh">Narration via '+esc(r.provider)+'</div>');
+  $('#playBoth').onclick=()=>{playBoth();const a=$('#narrAud');a.currentTime=0;a.play()};
+}
+async function createVideo(){
+  const p=$('#vidPrompt').value.trim();if(!p)return toast('Describe the action first.');
+  const mode=$('#vidMode').value,n=+$('#vidFrames').value,dur=+$('#vidDur').value||6,st=$('#vidStatus');
+  $('#vidOut').innerHTML='';$('#vidBtn').disabled=true;let fellBack=false;
+  try{
+    let done=false;
+    if(mode==='ai'){
+      try{await aiVideo(p,dur,st);done=true}
+      catch(e){fellBack=true;st.textContent='⚠ AI video unavailable ('+e.message.slice(0,150)+') — building a flipbook instead…';await sleep(1800)}
+    }
+    if(!done)await framesVideo(p,mode==='ai'?'flip':mode,n,st);
+    await addNarration(st);
+    st.textContent=fellBack?'Done (flipbook fallback — check your Pollinations key or limit).':'Done.';
+  }catch(e){st.textContent='⚠ '+e.message}
+  $('#vidBtn').disabled=false;
+}
+$('#vidBtn').onclick=createVideo;
+/* ================= END MEDIA PACK ================= */ 
 </script>
 </body>
 </html>
