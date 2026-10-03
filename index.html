@@ -1628,6 +1628,115 @@ createVideo=async function(){
 };
 $('#vidBtn').onclick=createVideo;
 /* ================= END PACK 9 ================= */
+ /* ================= PACK 10: more free image engines + Best-of-2 ================= */
+(function(){
+  if(!$('#kHf')){
+    $('#kVidModels').insertAdjacentHTML('afterend',
+      '<input id="kHf" type="password" placeholder="Hugging Face token (free images) — huggingface.co/settings/tokens">'
+     +'<input id="kHfModel" placeholder="HF image model (default: black-forest-labs/FLUX.1-schnell)">');
+    [['#kHf','hftok'],['#kHfModel','hfmodel']].forEach(([id,k])=>{const el=$(id);el.value=store.get(k);el.onchange=()=>{store.set(k,el.value.trim());toast('Saved.')}});
+  }
+  if(!$('#imgEngine')){
+    $('#imgModel').insertAdjacentHTML('afterend',
+      '<select id="imgEngine"><option value="auto">Engine: Auto (with fallback)</option><option value="poll">Pollinations first</option><option value="cf">Cloudflare FLUX first</option><option value="hf">Hugging Face first</option></select>');
+    $('#imgEnh').parentElement.insertAdjacentHTML('afterend',
+      '<label class="tg"><input type="checkbox" id="imgBest"> Best of 2: make two images, AI keeps the better one (uses 2× credits)</label>');
+  }
+})();
+
+/* Cloudflare (via your Render server) with adjustable steps */
+async function cfImage(prompt,steps=6){
+  const acc=store.get('cfacc'),tok=store.get('cftok');
+  if(!acc||!tok)throw new Error('Add your Cloudflare Account ID and API token in Settings.');
+  const d=await api('/cf-image','POST',{prompt:String(prompt).slice(0,1800),account_id:acc,api_token:tok,steps});
+  const bin=atob(d.image),bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+  return {url:URL.createObjectURL(new Blob([bytes],{type:'image/jpeg'})),model:'Cloudflare FLUX'};
+}
+
+/* Hugging Face (browser calls it directly with your token) */
+async function hfImage(prompt,w,h){
+  const tok=store.get('hftok');if(!tok)throw new Error('no token');
+  const model=store.get('hfmodel')||'black-forest-labs/FLUX.1-schnell';
+  const r=await fetch('https://router.huggingface.co/hf-inference/models/'+model,{method:'POST',
+    headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json',Accept:'image/png'},
+    body:JSON.stringify({inputs:prompt,parameters:{width:Math.min(w,1024),height:Math.min(h,1024)}})});
+  const type=r.headers.get('content-type')||'';
+  if(!r.ok||!type.startsWith('image'))throw new Error(r.status+' '+apiMsg(await r.text().catch(()=>'')));
+  return {url:URL.createObjectURL(await r.blob()),model:'Hugging Face · '+model.split('/').pop()};
+}
+
+/* Pollinations with key only (the keyless fallback now runs last, after all engines) */
+async function pollKeyed(prompt,w,h,model,seed){
+  const key=store.get('poll');if(!key)throw new Error('no key');
+  const avail=await discoverImageModels(),picked=($('#imgModel')||{}).value;
+  const first=(model&&model!=='auto')?model:(picked&&picked!=='auto')?picked:(IMG_PREF.find(m=>avail.includes(m))||avail[0]);
+  const errs=[];
+  for(const m of [...new Set([first,'flux'])]){
+    if(img402[m]&&Date.now()-img402[m]<300000){errs.push(m+': no balance');continue}
+    try{
+      const r=await fetch('https://gen.pollinations.ai/image/'+enc(prompt)+'?width='+w+'&height='+h+'&seed='+seed+'&nologo=true&model='+enc(m),{headers:{Authorization:'Bearer '+key}});
+      const type=r.headers.get('content-type')||'';
+      if(!r.ok||!type.startsWith('image')){if(r.status===402)img402[m]=Date.now();errs.push(m+': '+r.status+' '+apiMsg(await r.text().catch(()=>'')));if(r.status===401)break;continue}
+      return {url:URL.createObjectURL(await r.blob()),model:m};
+    }catch(e){errs.push(m+': '+e.message)}
+  }
+  throw new Error(errs.join(' | '));
+}
+
+/* the engine chain: chosen engine first, then the others you have keys for, keyless flux last */
+async function genImageChain(prompt,w,h,model,opts={}){
+  const eng=(($('#imgEngine')||{}).value)||'auto',seed=opts.seed||Math.floor(Math.random()*1e6);
+  const has={poll:!!store.get('poll'),cf:!!(store.get('cfacc')&&store.get('cftok')),hf:!!store.get('hftok')};
+  const names={poll:'Pollinations',cf:'Cloudflare',hf:'Hugging Face'},base=['poll','cf','hf'];
+  const order=(eng==='auto'?base:[eng,...base.filter(x=>x!==eng)]).filter(x=>has[x]);
+  const errs=[];
+  for(const e of order){
+    try{
+      if(e==='poll')return await pollKeyed(prompt,w,h,model,seed);
+      if(e==='cf')return await cfImage(prompt,8);
+      if(e==='hf')return await hfImage(prompt,w,h);
+    }catch(x){errs.push(names[e]+': '+String(x.message).slice(0,170))}
+  }
+  const k=await keylessImage(prompt,w,h,seed);
+  if(k)return k;
+  throw new Error(errs.join(' | ')||'No image engine available. Add a key in Settings.');
+}
+
+/* Best-of-2 judge (uses your Groq vision model) */
+async function smallData(url){
+  const im=new Image();im.src=url;await im.decode();
+  const s=Math.min(1,512/Math.max(im.naturalWidth,im.naturalHeight)),c=document.createElement('canvas');
+  c.width=Math.round(im.naturalWidth*s);c.height=Math.round(im.naturalHeight*s);c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+  return c.toDataURL('image/jpeg',.7);
+}
+async function pickBetter(prompt,a,b){
+  try{
+    const [da,db]=await Promise.all([smallData(a.url),smallData(b.url)]);
+    const v=await groq([{role:'user',content:[
+      {type:'text',text:'Image prompt: "'+String(prompt).slice(0,400)+'". Image A is first, image B is second. Which one follows the prompt more accurately and looks better (anatomy, detail, composition)? Reply with ONLY the letter A or B.'},
+      {type:'image_url',image_url:{url:da}},{type:'image_url',image_url:{url:db}}]}],{model:CFG.visionModel,max:400,temperature:0});
+    const m=String(v).match(/\b([AB])\b/);
+    return m&&m[1]==='B'?b:a;
+  }catch(e){return a}
+}
+
+/* hook into genImage (storyboard modes keep using their own cheap / Cloudflare paths) */
+const _genImage10=genImage;
+genImage=async function(prompt,w,h,model,opts={}){
+  if(opts.cheap||_cfMode)return _genImage10(prompt,w,h,model,opts);
+  const best=$('#imgBest')&&$('#imgBest').checked&&window._imgN===1&&store.get('groq');
+  const a=await genImageChain(prompt,w,h,model,opts);
+  if(!best)return a;
+  try{
+    const b=await genImageChain(prompt,w,h,model,{...opts,seed:Math.floor(Math.random()*1e6)});
+    const win=await pickBetter(prompt,a,b);
+    return {url:win.url,model:win.model+' (best of 2)'};
+  }catch(e){return a}
+};
+const _createImage10=createImage;
+createImage=async function(n){window._imgN=n;try{return await _createImage10(n)}finally{window._imgN=0}};
+/* ================= END PACK 10 ================= */
 </script>
 </body>
 </html>
