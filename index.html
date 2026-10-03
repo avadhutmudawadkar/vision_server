@@ -1211,6 +1211,102 @@ route=async function(t){
   return _route2(t);
 };
 /* ================= END MEDIA PACK 2 ================= */
+ /* ================= PACK 3: honest video handling + free Storyboard animation ================= */
+
+/* corrected model discovery (old fallback names were invalid) */
+async function discoverVideoModels(force){
+  if(vidModelCache&&!force)return vidModelCache;
+  const key=store.get('poll'),h=key?{Authorization:'Bearer '+key}:{};let names=[];
+  try{const r=await fetch('https://gen.pollinations.ai/video/models',{headers:h});if(r.ok)names=modelList(await r.json()).map(x=>x.name||x.id)}catch(e){}
+  if(!names.length){try{const r=await fetch('https://gen.pollinations.ai/image/models',{headers:h});if(r.ok)names=modelList(await r.json()).filter(x=>JSON.stringify(x.output_modalities||'').includes('video')).map(x=>x.name||x.id)}catch(e){}}
+  vidModelCache=names.length?names:['wan-fast','seedance-pro','veo'];return vidModelCache;
+}
+
+/* AI video: friendly message when the balance is empty */
+async function aiVideo(p,dur,st){
+  const key=store.get('poll');if(!key)throw new Error('No Pollinations key set in Settings.');
+  const custom=(store.get('vidmodels')||'').split(',').map(s=>s.trim()).filter(Boolean);
+  let models=custom;
+  if(!models.length){
+    st.textContent='Finding available video models…';
+    const cheap=s=>/fast|mini|lite/i.test(s)?0:1;
+    models=[...await discoverVideoModels()].sort((a,b)=>cheap(a)-cheap(b)).slice(0,4);
+  }
+  st.textContent='Improving your prompt…';const full=await enhance(p);const errs=[];
+  for(let i=0;i<models.length;i++){
+    st.textContent='Trying '+models[i]+' ('+(i+1)+' of '+models.length+') — up to 3 minutes…';
+    try{
+      const u=URL.createObjectURL(await fetchPollVideo(full,models[i],dur,key));
+      $('#vidOut').innerHTML='<video src="'+u+'" autoplay loop muted playsinline controls></video><div class="lk"><a href="'+u+'" download="vision-ai-video.mp4">Download video</a></div><div class="mh">'+esc(models[i])+' · '+esc(full)+'</div>';
+      return;
+    }catch(e){errs.push(e.message);if(e.status===401)break}
+  }
+  const err=new Error(errs.some(m=>/402|insufficient/i.test(m))
+    ?'AI video needs paid Pollen balance (yours is 0) — top up at enter.pollinations.ai/top-up.'
+    :errs.join(' | '));
+  err.paid=errs.some(m=>/402|insufficient/i.test(m));
+  throw err;
+}
+
+/* FREE storyboard animation: AI scenes + zoom/pan + crossfade + captions */
+async function storyVideo(p,st){
+  const W=768,H=432,SC=6,SEC=3000,errs=[];let scenes;
+  st.textContent='Writing the storyboard…';
+  try{
+    if(!store.get('groq'))throw 0;
+    const raw=await groq([{role:'system',content:'You are a storyboard artist. Break the idea into exactly '+SC+' consecutive scenes of a short animated film. Reply with ONLY a JSON array: [{"image":"detailed visual prompt; repeat the SAME character and art-style description in every scene","caption":"short caption, max 8 words"}]. No markdown.'},{role:'user',content:p}],{max:1100,temperature:.6});
+    scenes=JSON.parse(raw.match(/\[[\s\S]*\]/)[0]).filter(s=>s&&s.image).slice(0,SC);
+    if(scenes.length<3)throw 0;
+  }catch(e){const base=await baseScene(p);scenes=phrases(SC).map(ph=>({image:base+', '+ph,caption:''}))}
+  const seed=Math.floor(Math.random()*1e6),imgs=new Array(scenes.length);let k=0,done=0;
+  const wk=async()=>{while(k<scenes.length){const i=k++;try{const r=await genImage(String(scenes[i].image),1024,576,'auto',{seed,cheap:true});imgs[i]=await loadImgRetry(r.url)}catch(e){errs.push(e.message)}done++;st.textContent='Painting scene '+done+' of '+scenes.length+'…'}};
+  await Promise.all([wk(),wk()]);
+  const ok=imgs.map((im,i)=>im?{img:im.img,ok:im.ok,cap:String(scenes[i].caption||'')}:null).filter(Boolean);
+  if(ok.length<2)throw new Error('Could not paint enough scenes: '+(errs[0]||'image service busy')+' (try again, or pick a cheaper image model in the Image tab).');
+  st.textContent='Animating…';
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;const x=cv.getContext('2d'),dur=ok.length*SEC;
+  const cover=(f,i,u)=>{const im=f.img,z=i%2?1.16-.16*u:1+.16*u,s=Math.max(W/im.naturalWidth,H/im.naturalHeight)*z,dw=im.naturalWidth*s,dh=im.naturalHeight*s,px=(u-.5)*(i%2?-1:1)*(dw-W)*.35;x.drawImage(im,(W-dw)/2+px,(H-dh)/2,dw,dh)};
+  const cap=t=>{if(!t)return;x.font='600 26px sans-serif';x.textAlign='center';const w=Math.min(W-40,x.measureText(t).width+36);x.fillStyle='rgba(0,0,0,.55)';x.fillRect((W-w)/2,H-66,w,42);x.fillStyle='#ffe9b8';x.fillText(t,W/2,H-37)};
+  const draw=t=>{const tm=t*dur,i=Math.min(ok.length-1,Math.floor(tm/SEC)),u=Math.min(1,(tm-i*SEC)/SEC);x.globalAlpha=1;x.fillStyle='#000';x.fillRect(0,0,W,H);cover(ok[i],i,u);if(u>.82&&ok[i+1]){x.globalAlpha=(u-.82)/.18;cover(ok[i+1],i+1,0);x.globalAlpha=1}cap(ok[i].cap)};
+  const out=$('#vidOut');
+  if(ok.every(f=>f.ok)&&window.MediaRecorder&&cv.captureStream){
+    const blob=await recordCanvas(cv,draw,dur),url=URL.createObjectURL(blob);
+    out.innerHTML='<video src="'+url+'" autoplay loop muted playsinline controls style="width:100%;border-radius:10px"></video><div class="lk"><a href="'+url+'" download="vision-storyboard.webm">Download video (.webm)</a></div><div class="mh">'+esc(String(p))+'</div>';
+  }else{
+    out.innerHTML='<div class="mh">Plays live (the image host blocked exporting a file).</div>';out.appendChild(cv);
+    const tok=renderVideo.tok=Symbol(),t0=performance.now();(function loop(now){if(renderVideo.tok!==tok)return;draw(((now-t0)%dur)/dur);requestAnimationFrame(loop)})(t0);
+  }
+}
+
+/* main video button: story is the free default; AI video falls back to story */
+let aiBlocked=false;
+async function createVideo(){
+  const p=$('#vidPrompt').value.trim();if(!p)return toast('Describe the action first.');
+  const mode=$('#vidMode').value,n=+$('#vidFrames').value,dur=+$('#vidDur').value||6,st=$('#vidStatus');
+  $('#vidOut').innerHTML='';$('#vidBtn').disabled=true;let note='';
+  try{
+    let done=false;
+    if(mode==='ai'){
+      if(aiBlocked)note='AI video needs paid Pollen — made a free storyboard animation instead.';
+      else{
+        try{await aiVideo(p,dur,st);done=true}
+        catch(e){if(e.paid)aiBlocked=true;note=e.message.slice(0,260)+' Made a free storyboard animation instead.';st.textContent='⚠ '+note;await sleep(2500)}
+      }
+    }
+    if(!done){
+      if(mode==='flip'||mode==='boomerang'||mode==='zoom')await framesVideo(p,mode,n,st);
+      else await storyVideo(p,st);
+    }
+    await addNarration(st);
+    st.textContent=note||'Done.';
+  }catch(e){st.textContent='⚠ '+e.message}
+  $('#vidBtn').disabled=false;
+}
+$('#vidBtn').onclick=createVideo;
+$('#vidMode').innerHTML='<option value="story">🎞 Storyboard animation (free)</option><option value="ai">🎬 Real AI video (needs paid Pollen)</option><option value="flip">Flipbook (AI frames)</option><option value="boomerang">Boomerang loop</option><option value="zoom">Cinematic zoom (1 image)</option>';
+$('#vidMode').value='story';
+const _pk=$('#kPoll');if(_pk)_pk.addEventListener('change',()=>{aiBlocked=false});
+/* ================= END PACK 3 ================= */
 </script>
 </body>
 </html>
