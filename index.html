@@ -1394,6 +1394,240 @@ async function storyVideo(p,st){
   }
 }
 /* ================= END PACK 4 ================= */
+ /* ================= PACK 7: image fallback when Pollinations balance is 0 ================= */
+async function keylessImage(prompt,w,h,seed){
+  const url='https://image.pollinations.ai/prompt/'+enc(prompt)+'?width='+w+'&height='+h+'&seed='+seed+'&nologo=true&model=flux';
+  try{
+    const r=await fetch(url),t=r.headers.get('content-type')||'';
+    if(r.ok&&t.startsWith('image'))return {url:URL.createObjectURL(await r.blob()),model:'flux (free, no key)'};
+  }catch(e){}
+  return null;
+}
+async function genImage(prompt,w,h,model,opts={}){
+  const key=store.get('poll'),seed=opts.seed||Math.floor(Math.random()*1e6);
+  if(!key){
+    const k=await keylessImage(prompt,w,h,seed);
+    return k||{url:'https://image.pollinations.ai/prompt/'+enc(prompt)+'?width='+w+'&height='+h+'&seed='+seed+'&nologo=true&model=flux',model:'flux (no key)'};
+  }
+  const avail=await discoverImageModels();
+  let order;
+  if(opts.cheap){
+    order=['flux',...avail.filter(m=>/(^|\/)(flux|zimage|z-image-turbo|klein)\b|flash|turbo|schnell/i.test(m)&&m!=='flux')];
+  }else if(model&&model!=='auto'){
+    order=[model,'flux'];
+  }else{
+    order=[...IMG_PREF.filter(m=>avail.includes(m)),'flux'];
+  }
+  order=[...new Set(order)].slice(0,4);
+  const errs=[];
+  for(const m of order){
+    try{
+      const r=await fetch('https://gen.pollinations.ai/image/'+enc(prompt)+'?width='+w+'&height='+h+'&seed='+seed+'&nologo=true&model='+enc(m),{headers:{Authorization:'Bearer '+key}});
+      const type=r.headers.get('content-type')||'';
+      if(!r.ok||!type.startsWith('image')){errs.push(m+': '+r.status+' '+apiMsg(await r.text().catch(()=>'')));if(r.status===401)break;continue}
+      return {url:URL.createObjectURL(await r.blob()),model:m};
+    }catch(e){errs.push(m+': '+e.message)}
+  }
+  const k=await keylessImage(prompt,w,h,seed);
+  if(k)return k;
+  if(errs.length&&errs.every(e=>/ 402 /.test(e)))
+    throw new Error('Your free Pollinations balance is 0 and the free fallback is busy. Check your balance at enter.pollinations.ai, wait for it to refill, or try again in a few minutes.');
+  throw new Error(errs.join(' | ')||'No image model available');
+}
+/* ================= END PACK 7 ================= */
+ /* ================= PACK 8: strict 3-step image order ================= */
+const img402={};   /* models that just failed with "insufficient balance" (skipped for 5 min) */
+async function genImage(prompt,w,h,model,opts={}){
+  const key=store.get('poll'),seed=opts.seed||Math.floor(Math.random()*1e6);
+  if(!key){
+    const k=await keylessImage(prompt,w,h,seed);
+    return k||{url:'https://image.pollinations.ai/prompt/'+enc(prompt)+'?width='+w+'&height='+h+'&seed='+seed+'&nologo=true&model=flux',model:'flux (no key)'};
+  }
+  const avail=await discoverImageModels();
+  const picked=($('#imgModel')||{}).value;
+  let first;
+  if(model&&model!=='auto')first=model;
+  else if(picked&&picked!=='auto')first=picked;
+  else if(opts.cheap)first=avail.find(m=>/z-image|zimage|turbo|klein|flash|schnell/i.test(m))||avail.find(m=>/flux/i.test(m))||avail[0];
+  else first=IMG_PREF.find(m=>avail.includes(m))||avail[0];
+
+  const order=[...new Set([first,'flux'])];          /* step 1, step 2 */
+  const errs=[];let keyBad=false;
+  for(const m of order){
+    if(keyBad)break;
+    if(img402[m]&&Date.now()-img402[m]<300000){errs.push(m+': skipped (no balance)');continue}
+    try{
+      const r=await fetch('https://gen.pollinations.ai/image/'+enc(prompt)+'?width='+w+'&height='+h+'&seed='+seed+'&nologo=true&model='+enc(m),{headers:{Authorization:'Bearer '+key}});
+      const type=r.headers.get('content-type')||'';
+      if(!r.ok||!type.startsWith('image')){
+        if(r.status===402)img402[m]=Date.now();
+        if(r.status===401)keyBad=true;
+        errs.push(m+': '+r.status+' '+apiMsg(await r.text().catch(()=>'')));continue;
+      }
+      return {url:URL.createObjectURL(await r.blob()),model:m};
+    }catch(e){errs.push(m+': '+e.message)}
+  }
+  const k=await keylessImage(prompt,w,h,seed);       /* step 3 */
+  if(k)return k;
+  throw new Error(errs.some(e=>/402|no balance/.test(e))
+    ?'Your Pollinations balance is 0 and the free fallback is busy. Check enter.pollinations.ai, or try again in a few minutes.'
+    :errs.join(' | ')||'No image model available');
+}
+/* ================= END PACK 8 ================= */
+ /* ================= PACK 9: two new video modes (Cloudflare storyboard + AI-drawn animation) ================= */
+
+/* --- settings fields + new dropdown options (existing options untouched) --- */
+(function(){
+  if(!$('#kCfAcc')){
+    $('#kVidModels').insertAdjacentHTML('afterend',
+      '<input id="kCfAcc" placeholder="Cloudflare Account ID (free FLUX images)">'
+     +'<input id="kCfTok" type="password" placeholder="Cloudflare API token (Workers AI)">');
+    [['#kCfAcc','cfacc'],['#kCfTok','cftok']].forEach(([id,k])=>{const el=$(id);el.value=store.get(k);el.onchange=()=>{store.set(k,el.value.trim());toast('Saved.')}});
+  }
+  const anchor=document.querySelector('#vidMode option[value="story"]');
+  if(anchor&&!document.querySelector('#vidMode option[value="cfstory"]'))
+    anchor.insertAdjacentHTML('afterend','<option value="cfstory">☁️ Storyboard — Cloudflare FLUX (free)</option><option value="svganim">✏️ AI-drawn animation (Groq)</option>');
+})();
+
+/* --- Cloudflare image via your Render server --- */
+async function cfImage(prompt){
+  const acc=store.get('cfacc'),tok=store.get('cftok');
+  if(!acc||!tok)throw new Error('Add your Cloudflare Account ID and API token in Settings.');
+  const d=await api('/cf-image','POST',{prompt:String(prompt).slice(0,1800),account_id:acc,api_token:tok,steps:6});
+  const bin=atob(d.image),bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+  return {url:URL.createObjectURL(new Blob([bytes],{type:'image/jpeg'})),model:'Cloudflare FLUX'};
+}
+let _cfMode=false;
+const _genImage9=genImage;
+genImage=async function(prompt,w,h,model,opts){
+  if(_cfMode)return cfImage(prompt);
+  return _genImage9(prompt,w,h,model,opts);
+};
+
+/* --- AI-drawn animation: Groq writes shapes as JSON, we animate them on canvas (no code is executed) --- */
+const aLerp=(a,b,t)=>a+(b-a)*t, aEase=t=>t*t*(3-2*t);
+function aVal(v,u,def){
+  if(Array.isArray(v)&&v.length>=2&&typeof v[0]==='number'&&typeof v[1]==='number')return aLerp(v[0],v[1],aEase(Math.max(0,Math.min(1,u))));
+  const n=typeof v==='number'?v:parseFloat(v);return isFinite(n)?n:def;
+}
+function aCenter(s,u){
+  const g=k=>aVal(s[k],u,0);
+  if(s.t==='circle'||s.t==='ellipse')return [g('x'),g('y')];
+  if(s.t==='rect')return [g('x')+g('w')/2,g('y')+g('h')/2];
+  if(s.t==='line')return [(g('x1')+g('x2'))/2,(g('y1')+g('y2'))/2];
+  if(s.t==='poly'){const p=(s.pts||[]).filter(q=>Array.isArray(q)&&q.length>=2);if(p.length)return [p.reduce((a,q)=>a+(+q[0]),0)/p.length,p.reduce((a,q)=>a+(+q[1]),0)/p.length]}
+  return [50,28];
+}
+function aDraw(x,s,u,tm,depth){
+  if(!s||typeof s!=='object'||depth>5)return;
+  x.save();
+  x.globalAlpha*=Math.max(0,Math.min(1,aVal(s.alpha,u,1)));
+  let dx=aVal(s.dx,u,0),dy=aVal(s.dy,u,0);
+  if(s.sway&&typeof s.sway==='object'){const sp=(+s.sway.speed||1)*2;dx+=(+s.sway.ax||0)*Math.sin(tm*sp);dy+=(+s.sway.ay||0)*Math.cos(tm*sp)}
+  const c=aCenter(s,u),px=s.px!=null?aVal(s.px,u,c[0]):c[0],py=s.py!=null?aVal(s.py,u,c[1]):c[1];
+  x.translate(px+dx,py+dy);x.rotate(aVal(s.rot,u,0)*Math.PI/180);const sc=aVal(s.scale,u,1);x.scale(sc,sc);x.translate(-px,-py);
+  const fill=s.fill||null,stroke=s.stroke||null,g=k=>aVal(s[k],u,0);
+  x.fillStyle=fill||'#ffffff';x.strokeStyle=stroke||fill||'#000000';x.lineWidth=aVal(s.lw,u,.4);
+  x.beginPath();
+  if(s.t==='circle')x.arc(g('x'),g('y'),Math.max(0,g('r')),0,7);
+  else if(s.t==='ellipse')x.ellipse(g('x'),g('y'),Math.max(0,g('rx')),Math.max(0,g('ry')),0,0,7);
+  else if(s.t==='rect')x.rect(g('x'),g('y'),g('w'),g('h'));
+  else if(s.t==='poly'){const p=(s.pts||[]).filter(q=>Array.isArray(q)&&q.length>=2);p.forEach((q,i)=>i?x.lineTo(+q[0],+q[1]):x.moveTo(+q[0],+q[1]));x.closePath()}
+  else if(s.t==='line'){x.moveTo(g('x1'),g('y1'));x.lineTo(g('x2'),g('y2'))}
+  else if(s.t==='group'){(s.shapes||[]).forEach(k=>aDraw(x,k,u,tm,depth+1));x.restore();return}
+  else{x.restore();return}
+  if(s.t==='line'){x.lineCap='round';x.stroke()}else{if(fill||!stroke)x.fill();if(stroke)x.stroke()}
+  x.restore();
+}
+function aScene(x,sc,u,tm,W,H){
+  const K=W/100;x.save();x.setTransform(K,0,0,K,0,0);
+  const bg=Array.isArray(sc.bg)&&sc.bg.length?sc.bg:['#0b0508','#4d0f1b'];
+  const gr=x.createLinearGradient(0,0,0,H/K);
+  bg.forEach((c,i)=>{try{gr.addColorStop(bg.length>1?i/(bg.length-1):0,c)}catch(e){}});
+  x.fillStyle=gr;x.fillRect(0,0,100,H/K);
+  (sc.shapes||[]).forEach(s=>aDraw(x,s,u,tm,0));
+  x.restore();
+}
+const ASVG_SYS='You are an animator. Turn the idea into exactly 5 short animated scenes drawn with simple vector shapes. Reply with ONLY a JSON array, no markdown: [{"caption":"one natural narration sentence, 6 to 12 words","bg":["#top colour","#bottom colour"],"shapes":[...]}].\n'
++'The canvas is 100 wide and 56 tall (x from 0 to 100, y from 0 to 56, y grows downward). Shape types: {"t":"circle","x":0,"y":0,"r":5} {"t":"ellipse","x":0,"y":0,"rx":5,"ry":3} {"t":"rect","x":0,"y":0,"w":10,"h":5} {"t":"poly","pts":[[x,y],[x,y],[x,y]]} {"t":"line","x1":0,"y1":0,"x2":5,"y2":5,"lw":0.4} {"t":"group","shapes":[...]}. Every shape has "fill":"#hex" and optionally "stroke":"#hex".\n'
++'ANIMATION: any number can be written as [start,end] and moves smoothly during the scene (for example "y":[50,10] rises). Any shape or group may also have "dx":[a,b], "dy":[a,b] (move), "rot":[deg,deg], "scale":[a,b], "alpha":[a,b], and "sway":{"ax":1.5,"ay":0.5,"speed":1} for a gentle wobble. To move a multi-part object together, put its parts in a "group" and animate the group dx/dy.\n'
++'RULES: 8 to 14 shapes per scene, drawn back to front (sky details, ground, then characters). Every scene must contain clear motion. Keep the same colours and character design in all scenes. Build recognisable objects from layered shapes. No text shapes.\n'
++'EXAMPLE of one scene: {"caption":"A red balloon slips free and floats upward.","bg":["#8ecae6","#ffe8c2"],"shapes":[{"t":"circle","x":82,"y":10,"r":6,"fill":"#ffd166"},{"t":"rect","x":0,"y":48,"w":100,"h":10,"fill":"#6a994e"},{"t":"ellipse","x":[75,35],"y":14,"rx":10,"ry":3.5,"fill":"#ffffff","alpha":0.9},{"t":"group","dy":[0,-14],"sway":{"ax":1.2,"speed":1.2},"shapes":[{"t":"ellipse","x":30,"y":30,"rx":8,"ry":10,"fill":"#e63946"},{"t":"poly","pts":[[28,40],[32,40],[30,43]],"fill":"#c1121f"},{"t":"line","x1":30,"y1":43,"x2":30,"y2":54,"stroke":"#333333","lw":0.3}]}]}';
+
+async function svgStory(p,st){
+  const W=768,H=432,SC=5,errs=[];
+  if(!store.get('groq'))throw new Error('This mode needs your Groq key (Settings).');
+  st.textContent='Designing animated scenes…';
+  let scenes=null,note='';
+  for(let t=0;t<2&&!scenes;t++){
+    const raw=await groq([{role:'system',content:ASVG_SYS},{role:'user',content:'Idea: '+p+(note?'\n\nNOTE: '+note:'')}],{max:6000,temperature:.6});
+    try{
+      const m=raw.replace(/```(?:json)?/gi,'').match(/\[[\s\S]*\]/);
+      const arr=JSON.parse(m[0]).filter(s=>s&&Array.isArray(s.shapes)&&s.shapes.length);
+      if(arr.length>=2)scenes=arr.slice(0,SC);else note='Return at least 3 scenes, each with a non-empty "shapes" array.';
+    }catch(e){note='Your last reply was not valid JSON. Reply with ONLY the JSON array.'}
+  }
+  if(!scenes)throw new Error('The AI could not produce valid animation data. Try again or simplify the idea.');
+  const caps=scenes.map(s=>String(s.caption||''));
+  const wantVoice=$('#vidAutoVoice')&&$('#vidAutoVoice').checked&&!($('#vidNarr').value||'').trim();
+  const voices=new Array(scenes.length).fill(null);let vProv='';
+  if(wantVoice){
+    for(let i=0;i<scenes.length;i++){
+      if(!caps[i])continue;
+      st.textContent='Recording voice for scene '+(i+1)+' of '+scenes.length+'…';
+      try{const r=await makeVoice(caps[i],'auto','defer');if(r.blob){voices[i]=await getAC().decodeAudioData(await r.blob.arrayBuffer());vProv=r.provider}}
+      catch(e){errs.push('voice: '+e.message)}
+    }
+  }
+  const durs=scenes.map((s,i)=>Math.max(4500,voices[i]?Math.ceil(voices[i].duration*1000)+900:4500));
+  const starts=[];durs.reduce((a,d,i)=>(starts[i]=a,a+d),0);
+  const total=durs.reduce((a,b)=>a+b,0),hasVoice=voices.some(Boolean);
+  st.textContent='Animating'+(hasVoice?' and mixing voice (keep this tab open, ~'+Math.round(total/1000)+'s)':'')+'…';
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;const x=cv.getContext('2d');
+  const cap=t=>{if(!t)return;x.font='600 24px sans-serif';x.textAlign='center';const lines=wrapLines(x,t,W-90),lh=30,bh=lines.length*lh+16;x.fillStyle='rgba(0,0,0,.6)';x.fillRect(30,H-bh-18,W-60,bh);x.fillStyle='#ffe9b8';lines.forEach((l,q)=>x.fillText(l,W/2,H-bh-18+8+lh*(q+.8)))};
+  const draw=t=>{
+    const tm=t*total;let i=0;while(i<scenes.length-1&&tm>=starts[i+1])i++;
+    const ms=tm-starts[i],u=Math.min(1,ms/durs[i]),f=Math.min(.2,700/durs[i]);
+    x.setTransform(1,0,0,1,0,0);x.globalAlpha=1;x.fillStyle='#000';x.fillRect(0,0,W,H);
+    aScene(x,scenes[i],u,ms/1000,W,H);
+    if(u>1-f&&scenes[i+1]){x.globalAlpha=(u-(1-f))/f;aScene(x,scenes[i+1],0,0,W,H);x.globalAlpha=1}
+    x.setTransform(1,0,0,1,0,0);cap(caps[i]);
+  };
+  const out=$('#vidOut');
+  if(window.MediaRecorder&&cv.captureStream){
+    const blob=hasVoice?await recordCanvasVoice(cv,draw,total+400,voices,starts):await recordCanvas(cv,draw,total),url=URL.createObjectURL(blob);
+    out.innerHTML='<video src="'+url+'" '+(hasVoice?'':'autoplay loop muted ')+'playsinline controls style="width:100%;border-radius:10px"></video><div class="lk"><a href="'+url+'" download="vision-drawn-animation.webm">Download video (.webm)</a></div>'
+      +(hasVoice?'<div class="mh">🔊 Voice by '+esc(vProv)+' is built into this video. Press play.</div>':'')+'<div class="mh">'+esc(String(p))+'</div>';
+  }else{
+    out.innerHTML='<div class="mh">Plays live (this browser cannot export a file).</div>';out.appendChild(cv);
+    const tok=renderVideo.tok=Symbol(),t0=performance.now();(function loop(now){if(renderVideo.tok!==tok)return;draw(((now-t0)%total)/total);requestAnimationFrame(loop)})(t0);
+  }
+  if(wantVoice&&!hasVoice&&caps.some(Boolean)){
+    out.insertAdjacentHTML('beforeend','<div class="row"><button class="ghost" id="playVoiceC">▶ Play with browser voice</button></div><div class="mh">No AI voice worked, so this uses your browser voice (not saved in the file).</div>');
+    $('#playVoiceC').onclick=()=>{const v=out.querySelector('video');speechSynthesis.cancel();if(v){v.muted=true;v.currentTime=0;v.play()}caps.forEach((c,i)=>setTimeout(()=>browserSpeak(c),starts[i]+250))};
+  }
+}
+
+/* --- route the two new modes; all other modes still use the previous createVideo --- */
+const _createVideo9=createVideo;
+createVideo=async function(){
+  const mode=$('#vidMode').value;
+  if(mode!=='cfstory'&&mode!=='svganim')return _createVideo9();
+  const p=$('#vidPrompt').value.trim();if(!p)return toast('Describe the action first.');
+  const st=$('#vidStatus');$('#vidOut').innerHTML='';$('#vidBtn').disabled=true;
+  try{
+    if(mode==='cfstory'){_cfMode=true;await storyVideo(p,st)}
+    else await svgStory(p,st);
+    await addNarration(st);
+    st.textContent='Done.';
+  }catch(e){
+    st.textContent='⚠ '+String(e.message).replace(/\s*\(try again[^)]*\)\.?/,'');
+  }
+  _cfMode=false;$('#vidBtn').disabled=false;
+};
+$('#vidBtn').onclick=createVideo;
+/* ================= END PACK 9 ================= */
 </script>
 </body>
 </html>
