@@ -932,6 +932,285 @@ async function createVideo(){
 }
 $('#vidBtn').onclick=createVideo;
 /* ================= END MEDIA PACK ================= */ 
+ /* ================= VISION MEDIA PACK 2: fixed video, better images, real Akinator ================= */
+
+/* ---------- shared helpers ---------- */
+const VID_FALLBACK=['veo','seedance','seedance-pro','ltx-2','grok-video'];
+const IMG_FALLBACK=['zimage','flux','gptimage','seedream','nanobanana','kontext','imagen','klein'];
+const IMG_PREF=['gptimage','nanobanana','seedream','zimage','flux','klein','kontext','imagen'];
+let vidModelCache=null,imgModelCache=null;
+const enc=encodeURIComponent;
+function apiMsg(t){try{const j=JSON.parse(t);return (j.error&&j.error.message)||j.message||String(t).slice(0,140)}catch(e){return String(t).slice(0,140)}}
+function modelList(d){
+  const arr=Array.isArray(d)?d:(d&&(d.data||d.models))||[];
+  return arr.map(x=>typeof x==='string'?{name:x}:x).filter(x=>x&&(x.name||x.id));
+}
+async function discoverVideoModels(force){
+  if(vidModelCache&&!force)return vidModelCache;
+  const key=store.get('poll'),h=key?{Authorization:'Bearer '+key}:{};let names=[];
+  try{const r=await fetch('https://gen.pollinations.ai/video/models',{headers:h});if(r.ok)names=modelList(await r.json()).map(x=>x.name||x.id)}catch(e){}
+  if(!names.length){try{const r=await fetch('https://gen.pollinations.ai/image/models',{headers:h});if(r.ok)names=modelList(await r.json()).filter(x=>JSON.stringify(x.output_modalities||'').includes('video')).map(x=>x.name||x.id)}catch(e){}}
+  vidModelCache=names.length?names:VID_FALLBACK;return vidModelCache;
+}
+async function discoverImageModels(){
+  if(imgModelCache)return imgModelCache;
+  const key=store.get('poll');let names=[];
+  try{const r=await fetch('https://gen.pollinations.ai/image/models',{headers:key?{Authorization:'Bearer '+key}:{}});
+    if(r.ok)names=modelList(await r.json()).filter(x=>!JSON.stringify(x.output_modalities||'').includes('video')).map(x=>x.name||x.id).filter(n=>!VID_FALLBACK.includes(n))}catch(e){}
+  imgModelCache=names.length?names:IMG_FALLBACK;return imgModelCache;
+}
+
+/* ---------- settings additions ---------- */
+(function(){
+  const vm=$('#kVidModels');
+  if(vm){
+    vm.placeholder='Video models (leave BLANK = auto-detect working models)';
+    if(!$('#btnModels')){
+      vm.insertAdjacentHTML('afterend','<button class="ghost" id="btnModels" style="margin-bottom:8px">Check available video &amp; image models</button><div class="hint" id="modelList"></div>');
+      $('#btnModels').onclick=async()=>{
+        const o=$('#modelList');o.textContent='Checking…';vidModelCache=null;imgModelCache=null;
+        const v=await discoverVideoModels(true),i=await discoverImageModels();
+        o.textContent='Video: '+v.join(', ')+'   |   Image: '+i.join(', ')+(store.get('poll')?'':'   (add your Pollinations key for the live list)');
+        fillImgModels();
+      };
+    }
+  }
+  const pk=$('#kPoll');if(pk)pk.addEventListener('change',()=>{vidModelCache=null;imgModelCache=null;fillImgModels()});
+})();
+
+/* ---------- IMAGES: key + best model + automatic fallback ---------- */
+async function genImage(prompt,w,h,model,opts={}){
+  const key=store.get('poll'),seed=opts.seed||Math.floor(Math.random()*1e6);
+  if(!key){
+    return {url:'https://image.pollinations.ai/prompt/'+enc(prompt)+'?width='+w+'&height='+h+'&seed='+seed+'&nologo=true&model=flux',model:'flux (no key — add your Pollinations key for better quality)'};
+  }
+  const avail=await discoverImageModels();
+  let order;
+  if(opts.cheap)order=['zimage','flux','klein','gptimage'].filter(m=>avail.includes(m));
+  else if(model&&model!=='auto')order=[model,...IMG_PREF.filter(m=>m!==model&&avail.includes(m))];
+  else order=IMG_PREF.filter(m=>avail.includes(m));
+  if(!order.length)order=avail.slice(0,4);
+  order=order.slice(0,4);
+  const errs=[];
+  for(const m of order){
+    try{
+      const r=await fetch('https://gen.pollinations.ai/image/'+enc(prompt)+'?width='+w+'&height='+h+'&seed='+seed+'&nologo=true&model='+enc(m),{headers:{Authorization:'Bearer '+key}});
+      const type=r.headers.get('content-type')||'';
+      if(!r.ok||!type.startsWith('image')){errs.push(m+': '+r.status+' '+apiMsg(await r.text().catch(()=>'')));if(r.status===401)break;continue}
+      return {url:URL.createObjectURL(await r.blob()),model:m};
+    }catch(e){errs.push(m+': '+e.message)}
+  }
+  throw new Error(errs.join(' | ')||'No image model available');
+}
+async function fillImgModels(){
+  const sel=$('#imgModel');if(!sel)return;
+  const cur=sel.value,names=await discoverImageModels();
+  sel.innerHTML='<option value="auto">Model: Auto (most accurate available)</option>'+names.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join('');
+  sel.value=names.includes(cur)?cur:'auto';
+}
+fillImgModels();
+
+async function enhance(p){
+  if(!store.get('groq'))return p;
+  try{return await groq([{role:'system',content:'You are an expert prompt engineer for text-to-image models. Rewrite the request as ONE precise English prompt (max 80 words). Keep EVERY element the user asked for exactly: subjects, counts, colours, positions, and any text in quotes. Add concrete detail: subject appearance, setting, composition and camera angle, lighting, art style, quality. Never add anything that contradicts the request. Reply with ONLY the prompt.'},{role:'user',content:p}],{max:300,temperature:.5})||p}
+  catch(e){return p}
+}
+async function chatImage(p){
+  const d=addMsg('bot','<div class="ld">Composing your image…</div>');
+  try{
+    const full=await enhance(p),sel=$('#imgModel'),r=await genImage(full,1024,1024,sel?sel.value:'auto'),im=new Image();
+    im.className='chatimg';
+    im.onload=()=>{d.innerHTML='';d.appendChild(im);d.insertAdjacentHTML('beforeend','<div class="lk"><a href="'+r.url+'" download="vision-image.png">Save image</a></div><div class="mh">'+esc(r.model)+' · '+esc(full)+'</div>');log.scrollTop=log.scrollHeight};
+    im.onerror=()=>{d.textContent='The image could not be displayed. Try again.'};
+    im.src=r.url;
+  }catch(e){d.textContent='⚠ '+e.message}
+}
+async function createImage(n){
+  const p=$('#imgPrompt').value.trim();if(!p)return toast('Describe the image first.');
+  const out=$('#imgOut');out.innerHTML='<div class="ld">Preparing…</div>';
+  const [w,h]=SHAPES[$('#imgShape').value],style=STYLES[$('#imgStyle').value],model=$('#imgModel').value;
+  const base=$('#imgEnh').checked?await enhance(p):p,full=base+(style?', '+style:'');
+  out.innerHTML='<div class="'+(n>1?'grid4':'grid1')+'"></div><div class="mh">'+esc(full)+'</div>';const g=out.firstChild;
+  for(let i=0;i<n;i++){
+    const box=document.createElement('div');box.className='ib';box.innerHTML='<div class="ld">Generating…</div>';g.appendChild(box);
+    try{
+      const r=await genImage(full,n>1?768:w,n>1?768:h,model);
+      await new Promise(res=>{const im=new Image();im.onload=()=>{box.innerHTML='';box.appendChild(im);box.insertAdjacentHTML('beforeend','<a class="dl" href="'+r.url+'" download="vision-image.png">Save</a><div class="mh">'+esc(r.model)+'</div>');res()};im.onerror=()=>{box.textContent='Could not display image.';res()};im.src=r.url});
+    }catch(e){box.textContent='⚠ '+e.message}
+    await sleep(300);
+  }
+}
+$('#imgBtn').onclick=()=>createImage(1);$('#img4Btn').onclick=()=>createImage(4);
+
+/* ---------- VIDEO: auto-detect models, show every error, flipbook fallback ---------- */
+async function fetchPollVideo(full,model,dur,key){
+  const d=/veo/i.test(model)?Math.min(8,dur):dur;
+  const url='https://gen.pollinations.ai/image/'+enc(full)+'?model='+enc(model)+'&duration='+d+'&seed='+Math.floor(Math.random()*1e6)+'&nologo=true';
+  const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),300000);
+  try{
+    const res=await fetch(url,{headers:{Authorization:'Bearer '+key},signal:ctl.signal});
+    const type=res.headers.get('content-type')||'';
+    if(!res.ok||!type.startsWith('video')){
+      const e=new Error(model+' → '+res.status+' '+apiMsg(await res.text().catch(()=>'')));e.status=res.status;throw e;
+    }
+    return await res.blob();
+  }catch(e){if(e.name==='AbortError')throw new Error(model+' took too long');throw e}
+  finally{clearTimeout(to)}
+}
+async function aiVideo(p,dur,st){
+  const key=store.get('poll');if(!key)throw new Error('No Pollinations key set in Settings.');
+  const custom=(store.get('vidmodels')||'').split(',').map(s=>s.trim()).filter(Boolean);
+  let models=custom;
+  if(!models.length){
+    st.textContent='Finding available video models…';
+    const cheap=s=>/fast|mini|ltx|lite/i.test(s)?0:1;
+    models=[...await discoverVideoModels()].sort((a,b)=>cheap(a)-cheap(b)).slice(0,4);
+  }
+  st.textContent='Improving your prompt…';const full=await enhance(p);const errs=[];
+  for(let i=0;i<models.length;i++){
+    st.textContent='Rendering with '+models[i]+' (try '+(i+1)+' of '+models.length+') — 1–3 minutes…';
+    try{
+      const u=URL.createObjectURL(await fetchPollVideo(full,models[i],dur,key));
+      $('#vidOut').innerHTML='<video src="'+u+'" autoplay loop muted playsinline controls></video><div class="lk"><a href="'+u+'" download="vision-ai-video.mp4">Download video</a></div><div class="mh">'+esc(models[i])+' · '+esc(full)+'</div>';
+      return;
+    }catch(e){errs.push(e.message);if(e.status===401)break}
+  }
+  throw new Error(errs.join(' | '));
+}
+async function framesVideo(p,mode,n,st){
+  let frames=[];
+  if(mode==='zoom'){
+    st.textContent='Generating source image…';const full=await enhance(p),r=await genImage(full,768,768,'auto');frames=[await loadImgRetry(r.url)];
+  }else{
+    st.textContent='Planning the scene…';const base=await baseScene(p),seed=Math.floor(Math.random()*1e6),phs=phrases(n),out=new Array(n);let i=0,done=0;
+    const worker=async()=>{while(i<n){const k=i++;try{const r=await genImage(base+', '+phs[k],448,448,'auto',{seed,cheap:true});out[k]=await loadImgRetry(r.url)}catch(e){}done++;st.textContent='Generating frame '+done+' of '+n+'…'}};
+    await Promise.all([worker(),worker(),worker()]);frames=out.filter(Boolean);
+    if(frames.length<3)throw new Error('Too few frames loaded — image service busy or key limit reached. Try again.');
+  }
+  st.textContent='Assembling video…';await renderVideo(frames,mode);
+}
+async function createVideo(){
+  const p=$('#vidPrompt').value.trim();if(!p)return toast('Describe the action first.');
+  const mode=$('#vidMode').value,n=+$('#vidFrames').value,dur=+$('#vidDur').value||6,st=$('#vidStatus');
+  $('#vidOut').innerHTML='';$('#vidBtn').disabled=true;let fellBack=false;
+  try{
+    let done=false;
+    if(mode==='ai'){
+      try{await aiVideo(p,dur,st);done=true}
+      catch(e){fellBack=true;st.textContent='⚠ AI video failed: '+e.message.slice(0,450)+' — building a flipbook instead…';await sleep(3500)}
+    }
+    if(!done)await framesVideo(p,mode==='ai'?'flip':mode,n,st);
+    await addNarration(st);
+    if(!fellBack)st.textContent='Done.';
+  }catch(e){st.textContent='⚠ '+e.message}
+  $('#vidBtn').disabled=false;
+}
+$('#vidBtn').onclick=createVideo;
+
+/* ---------- AKINATOR: real adaptive engine ---------- */
+const AKI_SYS=`You are the Genie in a game exactly like Akinator. The player secretly thinks of a real or fictional character (actors, singers, athletes, politicians, historical figures, anime, cartoon, movie, TV and video-game characters, Indian and global). You must find who it is by asking short yes/no questions, one at a time.
+STRATEGY: Keep the set of still-possible characters in your head. Each question must split that set roughly in half. Start broad (real or fictional? human? male or female? alive? which country, industry or medium?) then narrow (profession, famous work, appearance, abilities, era, language). Use every answer. "probably" and "don't know" are soft evidence, and the player can make mistakes, so stay flexible when answers conflict. NEVER repeat a question, never ask something already answered or implied by earlier answers, and never ask two things in one question. Avoid generic filler questions.
+GUESSING: Guess only when you have narrowed to one or two likely candidates (usually after 10 to 25 questions). A guess must be a specific character name. Never repeat a guess that was already wrong.
+OUTPUT: Reply with ONLY one JSON object and no markdown.
+Question: {"candidates":["top 3 current candidates"],"confidence":0-100,"type":"question","text":"the yes/no question?"}
+Guess: {"candidates":["..."],"confidence":0-100,"type":"guess","name":"Character name","description":"one short line about who they are"}`;
+let aki=null;
+const AKI_ANS=[['Yes','yes'],['Probably','probably yes'],["Don't know","don't know"],['Probably not','probably not'],['No','no']];
+function akiBuild(){
+  if($('#akiCard'))return;
+  $('#p-games').insertAdjacentHTML('beforeend','<div class="card" id="akiCard" style="display:none"><h3>🧞 VISION Genie — think of a character</h3><div class="hint" id="akiMeta"></div><div class="out" id="akiQ" style="font-size:20px;min-height:64px;margin:8px 0"></div><div class="row" id="akiBtns"></div><div class="row" style="margin-top:12px"><button class="ghost" id="akiBack">⟵ Undo</button><button class="ghost" id="akiNew">New game</button></div></div>');
+  $('#akiBack').onclick=akiUndo;$('#akiNew').onclick=akiStart;
+}
+function akiStart(){
+  akiBuild();aki={qa:[],wrongs:[],cur:'',busy:false};
+  $('#akiCard').style.display='block';
+  $('#akiMeta').textContent='Powered by your Groq key. Real or fictional — anyone works.';
+  $('#akiQ').textContent="Think of a character, real or fictional. Don't tell me who!";
+  $('#akiBtns').innerHTML='<button class="btn" id="akiGo">I\'m ready</button>';
+  $('#akiGo').onclick=akiNext;
+  $('#akiCard').scrollIntoView({behavior:'smooth'});
+}
+function akiParse(raw){const m=String(raw).match(/\{[\s\S]*\}/);if(m){try{return JSON.parse(m[0])}catch(e){}}return null}
+function akiMessages(n,note){
+  const hist=aki.qa.length?aki.qa.map((x,i)=>(i+1)+'. '+x.q+' → '+x.a).join('\n'):'(none yet)';
+  let u='Questions asked so far:\n'+hist+'\n\nWrong guesses so far (never guess these): '+(aki.wrongs.join(', ')||'none')+'\n\nThis will be question number '+n+'.';
+  if(n>=20)u+=' You are running low on questions: guess now unless you are truly unsure.';
+  if(n>=26)u+=' You MUST make a guess now.';
+  if(note)u+='\n\nNOTE: '+note;
+  return [{role:'system',content:AKI_SYS},{role:'user',content:u}];
+}
+async function akiNext(){
+  if(!aki||aki.busy)return;aki.busy=true;
+  const q=$('#akiQ'),b=$('#akiBtns');b.innerHTML='';
+  q.innerHTML='<span class="dots"><i></i><i></i><i></i></span>';
+  const n=aki.qa.length+1;
+  $('#akiMeta').textContent='Question '+n+(aki.wrongs.length?' · wrong guesses: '+aki.wrongs.length:'');
+  try{
+    let note='',res=null;
+    const norm=s=>String(s).toLowerCase().replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim();
+    for(let t=0;t<4&&!res;t++){
+      const j=akiParse(await groq(akiMessages(n,note),{max:800,temperature:.5}));
+      if(!j){note='Your last reply was not valid JSON. Reply with ONLY the JSON object.';continue}
+      if(j.type==='guess'&&j.name){
+        if(aki.wrongs.some(w=>norm(w)===norm(j.name))){note='You already guessed '+j.name+' and it was wrong. Ask a new question or guess someone else.';continue}
+        if(n<8&&t<3){note='Too early to guess. Ask more questions first.';continue}
+        res={guess:j};
+      }else{
+        const text=String(j.text||'').trim();
+        if(!text){note='Put the yes/no question in "text".';continue}
+        if(aki.qa.some(x=>norm(x.q)===norm(text))){note='You already asked: "'+text+'". Ask a DIFFERENT question.';continue}
+        res={question:text};
+      }
+    }
+    if(!res)throw new Error('The genie got confused. Press Undo or New game.');
+    if(res.question){
+      aki.cur=res.question;q.textContent=res.question;speak(res.question);
+      b.innerHTML=AKI_ANS.map((a,i)=>'<button class="chip" data-i="'+i+'">'+a[0]+'</button>').join('');
+      b.querySelectorAll('button').forEach(x=>x.onclick=()=>{if(aki.busy)return;aki.qa.push({q:aki.cur,a:AKI_ANS[+x.dataset.i][1]});akiNext()});
+    }else{
+      const g=res.guess;aki.curGuess=g.name;
+      q.innerHTML='I think it is… <b style="color:var(--gold)">'+esc(g.name)+'</b>'+(g.description?'<br><small>'+esc(g.description)+'</small>':'');
+      speak('Is it '+g.name+'?');
+      b.innerHTML='<button class="btn sm" id="akiYes">Yes, correct!</button><button class="ghost" id="akiNo">No, wrong</button>';
+      $('#akiYes').onclick=()=>{q.innerHTML='🎉 I win! I guessed <b>'+esc(g.name)+'</b> in '+aki.qa.length+' questions.';b.innerHTML='<button class="btn sm" id="akiAgain">Play again</button>';$('#akiAgain').onclick=akiStart;speak('I win!')};
+      $('#akiNo').onclick=()=>{
+        aki.wrongs.push(g.name);
+        if(aki.wrongs.length>=4){q.textContent='🏆 You beat me! I could not guess your character.';b.innerHTML='<button class="btn sm" id="akiAgain">Play again</button>';$('#akiAgain').onclick=akiStart}
+        else akiNext();
+      };
+    }
+  }catch(e){q.textContent='⚠ '+e.message;b.innerHTML='<button class="ghost" id="akiRetry">Try again</button>';$('#akiRetry').onclick=akiNext}
+  aki.busy=false;
+}
+function akiUndo(){
+  if(!aki||aki.busy)return;
+  if(!aki.qa.length)return akiStart();
+  aki.qa.pop();akiNext();
+}
+
+/* ---------- hooks: games tab + chat commands ---------- */
+const _startGame0=startGame;
+startGame=async function(desc,kind){
+  if(/akinator|20 questions|twenty questions|guess(es)? (my |the )?(character|person)/i.test(desc||'')){
+    go('games');$('#gameOut').style.display='none';$('#gameStatus').textContent='Genie mode — uses your Groq key.';akiStart();return;
+  }
+  const ac=$('#akiCard');if(ac)ac.style.display='none';
+  return _startGame0(desc,kind||'game');
+};
+(function(){
+  const chips=document.querySelector('#p-games .chips');
+  if(chips&&!document.getElementById('akiChip')){
+    const c=document.createElement('button');c.className='chip';c.id='akiChip';c.textContent='🧞 Akinator Genie';c.onclick=()=>startGame('akinator');chips.appendChild(c);
+  }
+})();
+const _route2=route;
+route=async function(t){
+  if(/^(?:play|start|make|build|create|open|run|let'?s play|i want(?: to play)?)\b.*\b(akinator|20 questions|twenty questions)\b/i.test(t)||/^akinator$/i.test(t.trim())){
+    botSay('Summoning the Genie — opening the Games tab.',{silent:true});startGame('akinator');return true;
+  }
+  return _route2(t);
+};
+/* ================= END MEDIA PACK 2 ================= */
 </script>
 </body>
 </html>
