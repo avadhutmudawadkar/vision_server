@@ -1307,6 +1307,93 @@ $('#vidMode').innerHTML='<option value="story">🎞 Storyboard animation (free)<
 $('#vidMode').value='story';
 const _pk=$('#kPoll');if(_pk)_pk.addEventListener('change',()=>{aiBlocked=false});
 /* ================= END PACK 3 ================= */
+ /* ================= PACK 4: storyboard with built-in voice reading the subtitles ================= */
+(function(){
+  if(!$('#vidAutoVoice'))$('#vidNarr').insertAdjacentHTML('afterend','<label class="tg" style="margin-top:8px"><input type="checkbox" id="vidAutoVoice" checked> Speak the on-screen subtitles automatically (voice recorded into the video)</label>');
+})();
+let _vac=null;
+function getAC(){_vac=_vac||new (window.AudioContext||window.webkitAudioContext)();return _vac}
+function wrapLines(x,text,maxW){
+  const words=String(text).split(/\s+/),lines=[];let cur='';
+  for(const w of words){const t=cur?cur+' '+w:w;if(x.measureText(t).width>maxW&&cur){lines.push(cur);cur=w}else cur=t}
+  if(cur)lines.push(cur);return lines.slice(0,3);
+}
+function recordCanvasVoice(cv,draw,total,voices,starts){
+  return new Promise(async resolve=>{
+    const ac=getAC();try{await ac.resume()}catch(e){}
+    const dest=ac.createMediaStreamDestination(),stream=cv.captureStream(30);
+    dest.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
+    const type=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(t=>MediaRecorder.isTypeSupported(t));
+    const rec=new MediaRecorder(stream,type?{mimeType:type,videoBitsPerSecond:4e6}:undefined),chunks=[];
+    rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);
+    rec.onstop=()=>resolve(new Blob(chunks,{type:'video/webm'}));
+    rec.start();const t0=performance.now(),a0=ac.currentTime;
+    voices.forEach((b,i)=>{if(!b)return;const s=ac.createBufferSource();s.buffer=b;s.connect(dest);s.start(a0+starts[i]/1000+.25)});
+    (function tick(now){const t=Math.min(1,(now-t0)/total);draw(t);if(t<1)requestAnimationFrame(tick);else setTimeout(()=>rec.stop(),200)})(t0);
+  });
+}
+async function storyVideo(p,st){
+  const W=768,H=432,SC=6,errs=[];let scenes;
+  st.textContent='Writing the storyboard…';
+  try{
+    if(!store.get('groq'))throw 0;
+    const raw=await groq([{role:'system',content:'You are a storyboard artist and narrator. Break the idea into exactly '+SC+' consecutive scenes of a short animated film. Reply with ONLY a JSON array: [{"image":"detailed visual prompt; repeat the SAME character and art-style description in every scene","caption":"one natural narration sentence for this scene, 6 to 12 words, flowing as a story"}]. No markdown.'},{role:'user',content:p}],{max:1200,temperature:.6});
+    scenes=JSON.parse(raw.match(/\[[\s\S]*\]/)[0]).filter(s=>s&&s.image).slice(0,SC);
+    if(scenes.length<3)throw 0;
+  }catch(e){const base=await baseScene(p);scenes=phrases(SC).map(ph=>({image:base+', '+ph,caption:''}))}
+
+  const seed=Math.floor(Math.random()*1e6),imgs=new Array(scenes.length);let k=0,done=0;
+  const wk=async()=>{while(k<scenes.length){const i=k++;try{const r=await genImage(String(scenes[i].image),1024,576,'auto',{seed,cheap:true});imgs[i]=await loadImgRetry(r.url)}catch(e){errs.push(e.message)}done++;st.textContent='Painting scene '+done+' of '+scenes.length+'…'}};
+  await Promise.all([wk(),wk()]);
+  const ok=imgs.map((im,i)=>im?{img:im.img,ok:im.ok,cap:String(scenes[i].caption||'')}:null).filter(Boolean);
+  if(ok.length<2)throw new Error('Could not paint enough scenes: '+(errs[0]||'image service busy')+' (try again, or pick flux/zimage in the Image tab).');
+
+  /* voice for each subtitle */
+  const wantVoice=$('#vidAutoVoice')&&$('#vidAutoVoice').checked&&!($('#vidNarr').value||'').trim();
+  const voices=new Array(ok.length).fill(null);let vProv='';
+  if(wantVoice){
+    for(let i=0;i<ok.length;i++){
+      if(!ok[i].cap)continue;
+      st.textContent='Recording voice for scene '+(i+1)+' of '+ok.length+'…';
+      try{
+        const r=await makeVoice(ok[i].cap,'auto','defer');
+        if(r.blob){voices[i]=await getAC().decodeAudioData(await r.blob.arrayBuffer());vProv=r.provider}
+      }catch(e){errs.push('voice: '+e.message)}
+    }
+  }
+  /* each scene lasts at least 3s, longer if its voice line is longer */
+  const durs=ok.map((s,i)=>Math.max(3000,voices[i]?Math.ceil(voices[i].duration*1000)+900:3000));
+  const starts=[];durs.reduce((a,d,i)=>(starts[i]=a,a+d),0);
+  const total=durs.reduce((a,b)=>a+b,0);
+
+  st.textContent='Animating'+(voices.some(Boolean)?' and mixing voice (keep this tab open, ~'+Math.round(total/1000)+'s)':'')+'…';
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;const x=cv.getContext('2d');
+  const cover=(f,i,u)=>{const im=f.img,z=i%2?1.16-.16*u:1+.16*u,s=Math.max(W/im.naturalWidth,H/im.naturalHeight)*z,dw=im.naturalWidth*s,dh=im.naturalHeight*s,px=(u-.5)*(i%2?-1:1)*(dw-W)*.35;x.drawImage(im,(W-dw)/2+px,(H-dh)/2,dw,dh)};
+  const cap=t=>{if(!t)return;x.font='600 24px sans-serif';x.textAlign='center';const lines=wrapLines(x,t,W-90),lh=30,bh=lines.length*lh+16;x.fillStyle='rgba(0,0,0,.6)';x.fillRect(30,H-bh-18,W-60,bh);x.fillStyle='#ffe9b8';lines.forEach((l,q)=>x.fillText(l,W/2,H-bh-18+8+lh*(q+.8)))};
+  const draw=t=>{
+    const tm=t*total;let i=0;while(i<ok.length-1&&tm>=starts[i+1])i++;
+    const u=Math.min(1,(tm-starts[i])/durs[i]),f=Math.min(.25,600/durs[i]);
+    x.globalAlpha=1;x.fillStyle='#000';x.fillRect(0,0,W,H);cover(ok[i],i,u);
+    if(u>1-f&&ok[i+1]){x.globalAlpha=(u-(1-f))/f;cover(ok[i+1],i+1,0);x.globalAlpha=1}
+    cap(ok[i].cap);
+  };
+  const out=$('#vidOut'),hasVoice=voices.some(Boolean);
+  if(ok.every(f=>f.ok)&&window.MediaRecorder&&cv.captureStream){
+    const blob=hasVoice?await recordCanvasVoice(cv,draw,total+400,voices,starts):await recordCanvas(cv,draw,total),url=URL.createObjectURL(blob);
+    out.innerHTML='<video src="'+url+'" '+(hasVoice?'':'autoplay loop muted ')+'playsinline controls style="width:100%;border-radius:10px"></video><div class="lk"><a href="'+url+'" download="vision-storyboard.webm">Download video (.webm)</a></div>'
+      +(hasVoice?'<div class="mh">🔊 Voice by '+esc(vProv)+' is built into this video. Press play.</div>':'')
+      +'<div class="mh">'+esc(String(p))+'</div>';
+  }else{
+    out.innerHTML='<div class="mh">Plays live (the image host blocked exporting a file).</div>';out.appendChild(cv);
+    const tok=renderVideo.tok=Symbol(),t0=performance.now();(function loop(now){if(renderVideo.tok!==tok)return;draw(((now-t0)%total)/total);requestAnimationFrame(loop)})(t0);
+  }
+  /* no AI voice available: speak with the browser voice, synced to scenes */
+  if(wantVoice&&!hasVoice&&ok.some(s=>s.cap)){
+    out.insertAdjacentHTML('beforeend','<div class="row"><button class="ghost" id="playVoiceB">▶ Play with browser voice</button></div><div class="mh">No AI voice key worked, so this uses your browser voice. It is NOT saved inside the downloaded file.'+(errs.find(e=>/^voice/.test(e))?' ('+esc(errs.find(e=>/^voice/.test(e)).slice(0,160))+')':'')+'</div>');
+    $('#playVoiceB').onclick=()=>{const v=out.querySelector('video');speechSynthesis.cancel();if(v){v.muted=true;v.currentTime=0;v.play()}ok.forEach((s,i)=>setTimeout(()=>browserSpeak(s.cap),starts[i]+250))};
+  }
+}
+/* ================= END PACK 4 ================= */
 </script>
 </body>
 </html>
