@@ -33,6 +33,11 @@ ENV_TAVILY = os.environ.get("TAVILY_API_KEY", "")
 ENV_FINETUNED_URL = os.environ.get("FINETUNED_URL", "")
 CHAT_MODEL = os.environ.get("CHAT_MODEL", "openai/gpt-oss-120b")
 
+# Cloudflare Workers AI (free FLUX images). Optional: you can also set these in the app's Settings.
+ENV_CF_ACCOUNT = os.environ.get("CF_ACCOUNT_ID", "")
+ENV_CF_TOKEN = os.environ.get("CF_API_TOKEN", "")
+CF_IMAGE_MODEL = os.environ.get("CF_IMAGE_MODEL", "@cf/black-forest-labs/flux-1-schnell")
+
 STOPWORDS = set("the a an is are was were be been being to of and or but in on at for with as by from this that it its i you your my me he she they we do does did can could would should what how why when who".split())
 PERSONAL = re.compile(r"\b(my|i am|i'm|i like|i love|i prefer|i hate|i work|i study|i live|i have|i want|i need|i use|mine|our)\b", re.I)
 
@@ -367,6 +372,49 @@ def search():
         "answer": data.get("answer"),
         "results": [{"title": x.get("title", ""), "url": x.get("url", ""), "content": (x.get("content") or "")[:300]} for x in data.get("results", [])[:5]],
     })
+
+
+@app.route("/cf-image", methods=["POST"])
+def cf_image():
+    """Generate an image with Cloudflare Workers AI (FLUX.1 schnell) and return it as base64.
+    The browser cannot call Cloudflare directly, so this server does it on its behalf."""
+    d = request.get_json(silent=True) or {}
+    prompt = (d.get("prompt") or "").strip()
+    account = (d.get("account_id") or ENV_CF_ACCOUNT).strip()
+    token = (d.get("api_token") or ENV_CF_TOKEN).strip()
+
+    if not prompt:
+        return jsonify({"error": "No prompt provided"}), 400
+    if not account or not token:
+        return jsonify({"error": "No Cloudflare Account ID / API token. Add them in Settings."}), 400
+    if not re.fullmatch(r"[A-Za-z0-9]+", account):
+        return jsonify({"error": "That Cloudflare Account ID does not look right."}), 400
+
+    try:
+        steps = max(1, min(8, int(d.get("steps", 6))))
+    except Exception:
+        steps = 6
+
+    try:
+        res = http.post(
+            "https://api.cloudflare.com/client/v4/accounts/" + account + "/ai/run/" + CF_IMAGE_MODEL,
+            headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+            json={"prompt": prompt[:2000], "steps": steps},
+            timeout=90,
+        )
+        data = res.json()
+    except Exception as e:
+        return jsonify({"error": "Cloudflare request failed: " + str(e)}), 502
+
+    if res.status_code != 200 or not data.get("success", False):
+        errs = data.get("errors") or []
+        msg = errs[0].get("message") if errs and isinstance(errs[0], dict) else ("HTTP " + str(res.status_code))
+        return jsonify({"error": "Cloudflare: " + str(msg)}), 400
+
+    img = (data.get("result") or {}).get("image")
+    if not img:
+        return jsonify({"error": "Cloudflare returned no image."}), 502
+    return jsonify({"image": img})
 
 
 if __name__ == "__main__":
