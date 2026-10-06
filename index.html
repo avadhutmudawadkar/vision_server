@@ -1737,7 +1737,29 @@ genImage=async function(prompt,w,h,model,opts={}){
 const _createImage10=createImage;
 createImage=async function(n){window._imgN=n;try{return await _createImage10(n)}finally{window._imgN=0}};
 /* ================= END PACK 10 ================= */
-
+/* ================= PACK 11: reliable prompt improver ================= */
+const QUALITY_TAIL=', highly detailed, sharp focus, realistic textures, natural lighting, professional photography, high resolution';
+const ANTI_MARK=', clean image, no text, no watermark, no logo';
+const wantsText=s=>/["“”]|\b(text|poster|logo|sign|title|caption|word|words|letter|letters|typography|banner|label)\b/i.test(s);
+async function enhance(p){
+  const base=String(p||'').trim();
+  if(!base)return base;
+  const tail=wantsText(base)?'':ANTI_MARK;
+  if(store.get('groq')){
+    const sys='You are an expert prompt engineer for text-to-image models. Rewrite the request as ONE precise English prompt (max 80 words). Keep EVERY element the user asked for exactly: subjects, counts, colours, positions, and any text in quotes. Add concrete detail: subject appearance, setting, composition and camera angle, lighting, art style, quality. Never add anything that contradicts the request. Reply with ONLY the prompt.';
+    for(let a=0;a<2;a++){
+      try{
+        const r=await groq([{role:'system',content:sys},{role:'user',content:base}],{max:1500,temperature:.5});
+        const out=String(r||'').replace(/^["'\s]+|["'\s]+$/g,'');
+        if(out.length>base.length+20)return out+tail;     /* must really be richer than the input */
+      }catch(e){}
+      if(a===0)await sleep(1500);
+    }
+    toast('Prompt improver unavailable — used the quality template instead.');
+  }
+  return base+QUALITY_TAIL+tail;
+}
+/* ================= END PACK 11 ================= */
 </script>
 </body>
 </html>
