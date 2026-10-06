@@ -2258,6 +2258,54 @@ async function genImageChain(prompt,w,h,model,opts={}){
   throw new Error(errs.join(' | ')||'No image engine available. Add a key in Settings.');
 }
 /* ================= END PACK 15 ================= */
+ /* ================= PACK 16: clearer cfImage2 errors ================= */
+async function cfImage2(prompt,w,h){
+  const acc=store.get('cfacc'),tok=store.get('cftok');
+  if(!acc||!tok)throw new Error('Add your Cloudflare Account ID and API token in Settings.');
+  try{await api('/')}catch(e){}
+  let d=null,last=null;
+  for(let a=0;a<3&&!d;a++){
+    if(a)await sleep(4000*a);
+    try{d=await api('/cf-image2','POST',{prompt:String(prompt).slice(0,1800),account_id:acc,api_token:tok,width:w,height:h})}
+    catch(e){
+      last=e;
+      if(!/failed to fetch|networkerror|load failed|bad response|took too long|502|503|504/i.test(e.message))throw e;
+    }
+  }
+  if(!d){
+    let alive=false;try{await api('/');alive=true}catch(e){}
+    throw new Error(alive
+      ?'Your server is online but did not accept /cf-image2: it has not been updated with the new route yet, the deploy failed, or the request timed out. Check Render → Events and Logs.'
+      :'Your VISION server did not answer ('+(last&&last.message)+'). It may be asleep, restarting or out of free hours: wait 30–60 seconds and try again.');
+  }
+  const bin=atob(d.image),bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+  return {url:URL.createObjectURL(new Blob([bytes],{type:'image/png'})),model:'Cloudflare FLUX.2 klein 4B'};
+}
+/* ================= END PACK 16 ================= */
+ /* ================= PACK 17: reliable prompt improver ================= */
+const QUALITY_TAIL=', highly detailed, sharp focus, realistic textures, natural lighting, professional photography, high resolution';
+const ANTI_MARK=', clean image, no text, no watermark, no logo';
+const wantsText=s=>/["“”]|\b(text|poster|logo|sign|title|caption|word|words|letter|letters|typography|banner|label)\b/i.test(s);
+async function enhance(p){
+  const base=String(p||'').trim();
+  if(!base)return base;
+  const tail=wantsText(base)?'':ANTI_MARK;
+  if(store.get('groq')){
+    const sys='You are an expert prompt engineer for text-to-image models. Rewrite the request as ONE precise English prompt (max 80 words). Keep EVERY element the user asked for exactly: subjects, counts, colours, positions, and any text in quotes. Add concrete detail: subject appearance, setting, composition and camera angle, lighting, art style, quality. Never add anything that contradicts the request. Reply with ONLY the prompt.';
+    for(let a=0;a<2;a++){
+      try{
+        const r=await groq([{role:'system',content:sys},{role:'user',content:base}],{max:1500,temperature:.5});
+        const out=String(r||'').replace(/^["'\s]+|["'\s]+$/g,'');
+        if(out.length>base.length+20)return out+tail;     /* must really be richer than the input */
+      }catch(e){}
+      if(a===0)await sleep(1500);
+    }
+    toast('Prompt improver unavailable — used the quality template instead.');
+  }
+  return base+QUALITY_TAIL+tail;
+}
+/* ================= END PACK 17 ================= */
 </script>
 </body>
 </html>
