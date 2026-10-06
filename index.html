@@ -1759,7 +1759,67 @@ async function enhance(p){
   }
   return base+QUALITY_TAIL+tail;
 }
-/* ================= END PACK 11 ================= */
+/* ================= END PACK 12 ================= */
+ /* ================= PACK 12 (new): Cloudflare that never silently falls back ================= */
+(function(){
+  const sel=$('#imgEngine');if(!sel)return;
+  if(!sel.querySelector('option[value="cf-only"]'))
+    sel.insertAdjacentHTML('beforeend','<option value="cf-only">Cloudflare FLUX ONLY (no fallback)</option><option value="poll-only">Pollinations ONLY (no fallback)</option>');
+  const saved=store.get('engine');
+  if(saved&&sel.querySelector('option[value="'+saved+'"]'))sel.value=saved;
+  sel.addEventListener('change',()=>store.set('engine',sel.value));
+})();
+
+/* Cloudflare via your Render server: wake it first, retry on network failures, explain failures */
+async function cfImage(prompt,steps=6){
+  const acc=store.get('cfacc'),tok=store.get('cftok');
+  if(!acc||!tok)throw new Error('Add your Cloudflare Account ID and API token in Settings.');
+  try{await api('/')}catch(e){}                       /* wakes a sleeping server */
+  let d=null,last=null;
+  for(let a=0;a<3&&!d;a++){
+    if(a)await sleep(4000*a);
+    try{d=await api('/cf-image','POST',{prompt:String(prompt).slice(0,1800),account_id:acc,api_token:tok,steps})}
+    catch(e){
+      last=e;
+      if(!/failed to fetch|networkerror|load failed|bad response|took too long|502|503|504/i.test(e.message))throw e;   /* a real answer from the server: stop */
+    }
+  }
+  if(!d){
+    let alive=false;try{await api('/');alive=true}catch(e){}
+    throw new Error(alive
+      ?'Your server is online but the image request failed ('+(last&&last.message)+'). Check Render → Logs for WORKER TIMEOUT and set the Start Command to: gunicorn app:app --workers 1 --threads 8 --timeout 120'
+      :'Your VISION server did not answer ('+(last&&last.message)+'). It may be asleep, restarting or out of free hours: wait 30–60 seconds and try again.');
+  }
+  const bin=atob(d.image),bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+  return {url:URL.createObjectURL(new Blob([bytes],{type:'image/jpeg'})),model:'Cloudflare FLUX'};
+}
+
+/* engine chain: "ONLY" modes use that engine or show its error; others fall back as before */
+let _hfDead=false;
+async function genImageChain(prompt,w,h,model,opts={}){
+  const eng=(($('#imgEngine')||{}).value)||'auto',seed=opts.seed||Math.floor(Math.random()*1e6);
+  const only=/-only$/.test(eng)?eng.replace('-only',''):null;
+  const names={poll:'Pollinations',cf:'Cloudflare',hf:'Hugging Face'};
+  const hasKey={poll:!!store.get('poll'),cf:!!(store.get('cfacc')&&store.get('cftok')),hf:!!store.get('hftok')};
+  const run=e=>e==='poll'?pollKeyed(prompt,w,h,model,seed):e==='cf'?cfImage(prompt,8):hfImage(prompt,w,h);
+  const note=(e,x)=>{if(e==='hf'&&/410|deprecated/i.test(x.message))_hfDead=true};
+
+  if(only){
+    if(!hasKey[only])throw new Error(names[only]+': add its key(s) in Settings first.');
+    try{return await run(only)}catch(x){note(only,x);throw new Error(names[only]+': '+String(x.message).slice(0,360))}
+  }
+  const base=['poll','cf','hf'].filter(e=>hasKey[e]&&!(e==='hf'&&_hfDead));
+  const order=(eng==='auto'||!base.includes(eng))?base:[eng,...base.filter(x=>x!==eng)];
+  const errs=[];
+  for(const e of order){
+    try{return await run(e)}catch(x){note(e,x);errs.push(names[e]+': '+String(x.message).slice(0,170))}
+  }
+  const k=await keylessImage(prompt,w,h,seed);
+  if(k)return k;
+  throw new Error(errs.join(' | ')||'No image engine available. Add a key in Settings.');
+}
+/* ================= END PACK 12 (new) ================= */
 </script>
 </body>
 </html>
