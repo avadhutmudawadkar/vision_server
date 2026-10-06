@@ -1,5 +1,4 @@
 import os
-import base64
 import re
 import math
 import time
@@ -417,109 +416,6 @@ def cf_image():
         return jsonify({"error": "Cloudflare returned no image."}), 502
     return jsonify({"image": img})
 
-@app.route("/cf-img2img", methods=["POST"])
-def cf_img2img():
-    """Restyle an uploaded image with Cloudflare Workers AI (Stable Diffusion img2img)."""
-    d = request.get_json(silent=True) or {}
-    prompt = (d.get("prompt") or "").strip()
-    image_b64 = (d.get("image_b64") or "").strip()
-    account = (d.get("account_id") or ENV_CF_ACCOUNT).strip()
-    token = (d.get("api_token") or ENV_CF_TOKEN).strip()
 
-    if not prompt or not image_b64:
-        return jsonify({"error": "Prompt and image are required."}), 400
-    if not account or not token:
-        return jsonify({"error": "No Cloudflare Account ID / API token. Add them in Settings."}), 400
-    if not re.fullmatch(r"[A-Za-z0-9]+", account):
-        return jsonify({"error": "That Cloudflare Account ID does not look right."}), 400
-    if len(image_b64) > 3000000:
-        return jsonify({"error": "Image too large."}), 413
-
-    try:
-        strength = max(0.05, min(1.0, float(d.get("strength", 0.6))))
-    except Exception:
-        strength = 0.6
-
-    payload = {"prompt": prompt[:1500], "image_b64": image_b64, "strength": strength, "num_steps": 20}
-    for k in ("width", "height"):
-        try:
-            v = int(d.get(k, 0))
-            if 256 <= v <= 1024:
-                payload[k] = v - (v % 8)
-        except Exception:
-            pass
-
-    try:
-        res = http.post(
-            "https://api.cloudflare.com/client/v4/accounts/" + account + "/ai/run/@cf/runwayml/stable-diffusion-v1-5-img2img",
-            headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
-            json=payload,
-            timeout=120,
-        )
-    except Exception as e:
-        return jsonify({"error": "Cloudflare request failed: " + str(e)}), 502
-
-    if res.headers.get("Content-Type", "").startswith("image/"):
-        return jsonify({"image": base64.b64encode(res.content).decode()})
-
-    try:
-        data = res.json()
-    except Exception:
-        return jsonify({"error": "Cloudflare returned an unexpected response."}), 502
-    result = data.get("result")
-    if isinstance(result, dict) and result.get("image"):
-        return jsonify({"image": result["image"]})
-    errs = data.get("errors") or []
-    msg = errs[0].get("message") if errs and isinstance(errs[0], dict) else ("HTTP " + str(res.status_code))
-    return jsonify({"error": "Cloudflare: " + str(msg)}), 400
-    @app.route("/cf-image2", methods=["POST"])
-def cf_image2():
-    """FLUX.2 [klein] 4B on Cloudflare Workers AI (multipart form). Uses the caller's own credentials."""
-    d = request.get_json(silent=True) or {}
-    prompt = (d.get("prompt") or "").strip()
-    account = (d.get("account_id") or "").strip()
-    token = (d.get("api_token") or "").strip()
-
-    if not prompt:
-        return jsonify({"error": "No prompt provided"}), 400
-    if not account or not token:
-        return jsonify({"error": "No Cloudflare Account ID / API token. Add them in Settings."}), 400
-    if not re.fullmatch(r"[A-Za-z0-9]+", account):
-        return jsonify({"error": "That Cloudflare Account ID does not look right."}), 400
-
-    def dim(v, default):
-        try:
-            n = int(v)
-        except Exception:
-            return default
-        n = max(256, min(1344, n))
-        return n - (n % 16)
-
-    w, h = dim(d.get("width"), 1024), dim(d.get("height"), 1024)
-    if w * h > 1400000:  # keep image size (and cost) modest
-        s = (1400000 / float(w * h)) ** 0.5
-        w, h = max(256, int(w * s) // 16 * 16), max(256, int(h * s) // 16 * 16)
-
-    try:
-        res = http.post(
-            "https://api.cloudflare.com/client/v4/accounts/" + account + "/ai/run/@cf/black-forest-labs/flux-2-klein-4b",
-            headers={"Authorization": "Bearer " + token},
-            files={"prompt": (None, prompt[:2000]), "width": (None, str(w)), "height": (None, str(h))},
-            timeout=100,
-        )
-        data = res.json()
-    except Exception as e:
-        return jsonify({"error": "Cloudflare request failed: " + str(e)}), 502
-
-    if res.status_code != 200 or not data.get("success", False):
-        errs = data.get("errors") or []
-        msg = errs[0].get("message") if errs and isinstance(errs[0], dict) else ("HTTP " + str(res.status_code))
-        return jsonify({"error": "Cloudflare: " + str(msg)}), 400
-
-    result = data.get("result")
-    img = result.get("image") if isinstance(result, dict) else None
-    if not img:
-        return jsonify({"error": "Cloudflare returned no image."}), 502
-    return jsonify({"image": img})
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
