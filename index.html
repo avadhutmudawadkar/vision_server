@@ -2205,6 +2205,59 @@ async function genImageChain(prompt,w,h,model,opts={}){
   throw new Error(errs.join(' | ')||'No image engine available. Add a key in Settings.');
 }
 /* ================= END PACK 14 ================= */
+ /* ================= PACK 15: Cloudflare FLUX.2 [klein] 4B as a separate engine ================= */
+(function(){
+  const sel=$('#imgEngine');if(!sel)return;
+  if(!sel.querySelector('option[value="cf2"]'))
+    sel.insertAdjacentHTML('beforeend','<option value="cf2">Cloudflare FLUX.2 klein first (new)</option><option value="cf2-only">Cloudflare FLUX.2 klein ONLY (no fallback)</option>');
+  const s=store.get('engine');if(s&&sel.querySelector('option[value="'+s+'"]'))sel.value=s;
+})();
+
+async function cfImage2(prompt,w,h){
+  const acc=store.get('cfacc'),tok=store.get('cftok');
+  if(!acc||!tok)throw new Error('Add your Cloudflare Account ID and API token in Settings.');
+  try{await api('/')}catch(e){}
+  let d=null,last=null;
+  for(let a=0;a<3&&!d;a++){
+    if(a)await sleep(4000*a);
+    try{d=await api('/cf-image2','POST',{prompt:String(prompt).slice(0,1800),account_id:acc,api_token:tok,width:w,height:h})}
+    catch(e){
+      last=e;
+      if(!/failed to fetch|networkerror|load failed|bad response|took too long|502|503|504/i.test(e.message))throw e;
+    }
+  }
+  if(!d)throw new Error('Your VISION server did not answer ('+(last&&last.message)+'). It may be waking up: wait 30 seconds and try again. Also check the server was updated with the /cf-image2 route.');
+  const bin=atob(d.image),bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+  return {url:URL.createObjectURL(new Blob([bytes],{type:'image/png'})),model:'Cloudflare FLUX.2 klein 4B'};
+}
+
+async function genImageChain(prompt,w,h,model,opts={}){
+  const eng=(($('#imgEngine')||{}).value)||'auto',seed=opts.seed||Math.floor(Math.random()*1e6);
+  const only=/-only$/.test(eng)?eng.replace('-only',''):null,first=eng.replace('-only','');
+  const names={poll:'Pollinations',cf:'Cloudflare',cf2:'Cloudflare FLUX.2 klein',hf:'Hugging Face'};
+  const hasCf=!!(store.get('cfacc')&&store.get('cftok'));
+  const hasKey={poll:!!store.get('poll'),cf:hasCf,cf2:hasCf,hf:!!store.get('hftok')};
+  const run=e=>e==='poll'?pollKeyed(prompt,w,h,model,seed):e==='cf'?cfImage(prompt,8):e==='cf2'?cfImage2(prompt,w,h):hfImage(prompt,w,h);
+  const note=(e,x)=>{if(e==='hf'&&/410|deprecated/i.test(x.message))_hfDead=true};
+
+  if(only){
+    if(!hasKey[only])throw new Error(names[only]+': add its key in Settings first.');
+    try{return await run(only)}catch(x){note(only,x);throw new Error(names[only]+': '+String(x.message).slice(0,320))}
+  }
+  const base=['poll','cf','hf'].filter(e=>hasKey[e]&&!(e==='hf'&&_hfDead));
+  let order=base;
+  if(first==='cf2'&&hasKey.cf2)order=['cf2',...base];
+  else if(base.includes(first))order=[first,...base.filter(x=>x!==first)];
+  const errs=[];
+  for(const e of order){
+    try{return await run(e)}catch(x){note(e,x);errs.push(names[e]+': '+String(x.message).slice(0,170))}
+  }
+  const k=await keylessImage(prompt,w,h,seed);
+  if(k)return k;
+  throw new Error(errs.join(' | ')||'No image engine available. Add a key in Settings.');
+}
+/* ================= END PACK 15 ================= */
 </script>
 </body>
 </html>
