@@ -1820,6 +1820,91 @@ async function genImageChain(prompt,w,h,model,opts={}){
   throw new Error(errs.join(' | ')||'No image engine available. Add a key in Settings.');
 }
 /* ================= END PACK 12 (new) ================= */
+ /* ================= PACK 13: God's Eye View tab ================= */
+(function(){
+  if($('#p-geye'))return;
+  const nav=document.querySelector('nav'),b=document.createElement('button');
+  b.dataset.t='geye';b.innerHTML='<span class="ic">🌐</span><span>Eye</span>';b.onclick=()=>go('geye');
+  nav.insertBefore(b,nav.querySelector('[data-t="settings"]')||null);
+  document.querySelector('main').insertAdjacentHTML('beforeend',
+    '<section class="panel" id="p-geye"><div class="card"><h3>🌐 God&#39;s Eye View</h3>'
+   +'<input id="geUrl" placeholder="Address where God&#39;s Eye View is running, e.g. http://localhost:4173">'
+   +'<div class="row"><button class="btn" id="geOpen">Open in new tab</button><button class="ghost" id="geEmbed">Show here</button><button class="ghost" id="geFull">Full screen</button><button class="ghost" id="geClose">Close</button></div>'
+   +'<div class="hint" id="geStatus">Not part of VISION itself: it runs on its own server (your computer). Start it first, then open it here.</div>'
+   +'<iframe id="geFrame" title="God&#39;s Eye View" allow="fullscreen; microphone; autoplay; clipboard-write" referrerpolicy="no-referrer" style="display:none;width:100%;height:min(78vh,720px);margin-top:10px;border:1px solid var(--line);border-radius:12px;background:#000"></iframe>'
+   +'<details class="hint" style="margin-top:12px"><summary>How to start it (no keys needed)</summary>'
+   +'<p><b>Easiest:</b> install Pinokio (8.2 or later) on a Windows, Mac or Linux computer, open God&#39;s Eye View in Pinokio, press Install, then Start.</p>'
+   +'<p><b>Terminal:</b> Node.js 24.14+ or 26, then<br><code>git clone https://github.com/bilawalsidhu/gods-eye-view.git</code><br><code>cd gods-eye-view</code><br><code>npm ci</code><br><code>npm run dev</code><br>and use <code>http://localhost:4173</code>.</p>'
+   +'<p>Data can be delayed, incomplete or wrong. Do not use it for navigation, emergencies or other safety-critical decisions.</p></details></div></section>');
+  const url=$('#geUrl');url.value=store.get('geyeurl','http://localhost:4173');
+  url.onchange=()=>{store.set('geyeurl',url.value.trim());toast('Saved.')};
+})();
+function geAddr(){
+  let u=($('#geUrl').value||'').trim();if(!u)return null;
+  if(!/^https?:\/\//i.test(u))u='http://'+u;
+  try{const x=new URL(u);return /^https?:$/.test(x.protocol)?x.href:null}catch(e){return null}
+}
+$('#geOpen').onclick=()=>{const u=geAddr();if(!u)return toast('Enter a valid address first.');window.open(u,'_blank','noopener')};
+$('#geEmbed').onclick=()=>{
+  const u=geAddr(),st=$('#geStatus');if(!u)return toast('Enter a valid address first.');
+  if(location.protocol==='https:'&&/^http:/i.test(u)&&!/^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(u)){
+    st.textContent='VISION is on https, so the browser blocks embedding a plain http:// address (only localhost is allowed). Use "Open in new tab" or an https:// address.';return;
+  }
+  const f=$('#geFrame');f.src=u;f.style.display='block';
+  st.textContent='Loading… if the frame stays blank, God\'s Eye View is not running or does not allow embedding: use "Open in new tab".';
+};
+$('#geFull').onclick=()=>{const f=$('#geFrame');if(f.style.display==='none')return toast('Press "Show here" first.');(f.requestFullscreen||f.webkitRequestFullscreen||(()=>{})).call(f)};
+$('#geClose').onclick=()=>{const f=$('#geFrame');f.src='about:blank';f.style.display='none';$('#geStatus').textContent='Closed.'};
+const _routeGE=route;
+route=async function(t){
+  if(/^(?:open|show|launch|start)\s+(?:the\s+)?(?:god'?s?[\s-]*eye(?:\s*view)?|spy\s*globe|3d\s*globe)\b/i.test(t.trim())){
+    go('geye');botSay("Opening God's Eye View.",{silent:true});return true;
+  }
+  return _routeGE(t);
+};
+/* ================= END PACK 13 ================= */
+ /* ================= PACK 14: God's Eye View status check + setup guide ================= */
+const GE_STEPS=`FIRST-TIME SETUP (once per computer — Windows, Mac or Linux)
+1. Install Node.js (version 24.14 or newer, or 26): https://nodejs.org
+2. Install Git: https://git-scm.com
+3. Open Terminal (Mac/Linux) or Command Prompt (Windows) and run:
+   git clone https://github.com/bilawalsidhu/gods-eye-view.git
+   cd gods-eye-view
+   npm ci
+   npm run dev
+4. Leave that window open, then open http://localhost:4173
+
+EVERY LATER TIME
+   Open a terminal in the gods-eye-view folder and run:  npm run dev
+
+EASIER OPTION
+   Install Pinokio (8.2 or later) from https://pinokio.co , open God's Eye View in it, then press Install and Start.
+
+No API keys are needed to start. Data can be delayed or wrong: do not use it for navigation or emergencies.`;
+(function(){
+  const card=document.querySelector('#p-geye .card');if(!card||$('#geCheck'))return;
+  $('#geClose').insertAdjacentHTML('afterend','<button class="ghost" id="geCheck">Check if it is running</button>');
+  const det=card.querySelector('details');
+  const html='<details class="hint" id="geGuide" open style="margin-top:12px"><summary>First time on this device? Setup guide (about 10 minutes, once)</summary>'
+    +'<div class="out" id="geSteps" style="font-size:14px;margin:8px 0"></div><button class="ghost" id="geCopy">Copy these steps</button></details>';
+  if(det)det.outerHTML=html;else card.insertAdjacentHTML('beforeend',html);
+  $('#geSteps').textContent=GE_STEPS;
+  $('#geCopy').onclick=()=>navigator.clipboard.writeText(GE_STEPS).then(()=>toast('Steps copied — send them to a friend.')).catch(()=>toast('Could not copy.'));
+  $('#geStatus').textContent='God\'s Eye View runs on YOUR computer, not on VISION\'s server. Start it first (see the setup guide below), then press "Open in new tab".';
+})();
+async function geProbe(u){
+  const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),3500);
+  try{await fetch(u,{mode:'no-cors',cache:'no-store',signal:ctl.signal});return true}
+  catch(e){return false}finally{clearTimeout(to)}
+}
+$('#geCheck').onclick=async()=>{
+  const u=geAddr(),st=$('#geStatus');if(!u)return toast('Enter a valid address first.');
+  st.textContent='Checking '+u+' …';
+  st.textContent=(await geProbe(u))
+    ?'✅ Running at '+u+'. Press "Open in new tab".'
+    :'❌ Not detected at '+u+'. If you have not set it up on this device, follow the setup guide below. If it is running, your browser may have blocked this check: try "Open in new tab".';
+};
+/* ================= END PACK 14 ================= */
 </script>
 </body>
 </html>
