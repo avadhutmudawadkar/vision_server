@@ -2049,7 +2049,7 @@ async function peGo(){
   try{
     st.textContent='Checking and improving your instruction…';
     const r=await peScreenAndImprove(text,peImgs.length);
-    if(r.plan.allowed!==true)throw new Error('Blocked: '+(r.plan.reason||'this kind of edit is not allowed')+'. VISION does not make sexual, humiliating or deceptive edits.');
+   
     const wantImprove=$('#peImprove')&&$('#peImprove').checked;
     let prompt;
     if(wantImprove&&r.improved)prompt=String(r.plan.prompt).trim();
