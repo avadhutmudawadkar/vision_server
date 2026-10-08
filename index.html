@@ -1905,6 +1905,113 @@ $('#geCheck').onclick=async()=>{
     :'❌ Not detected at '+u+'. If you have not set it up on this device, follow the setup guide below. If it is running, your browser may have blocked this check: try "Open in new tab".';
 };
 /* ================= END PACK 14 ================= */
+ /* ================= PACK 15: Photo Edit (multi-photo, Cloudflare FLUX.2 klein 4B) ================= */
+let peImgs=[];
+const PE_LABELS=['A','B','C','D'];
+(function(){
+  if($('#sub-edit'))return;
+  const b=document.createElement('button');b.dataset.sub='edit';b.textContent='Photo Edit';b.onclick=()=>subSwitch('edit');
+  document.querySelector('#p-create .seg').appendChild(b);
+  document.getElementById('p-create').insertAdjacentHTML('beforeend',
+   '<div class="card subp" id="sub-edit"><h3>Photo edit (up to 4 photos)</h3>'
+  +'<div class="hint" style="margin-bottom:8px">Only use photos of people who agree to it. Do not make misleading fakes of real people. Sexual, humiliating or deceptive edits are blocked. Refer to your photos as Photo A, B, C or D.</div>'
+  +'<div class="row"><button class="ghost" id="peAdd">📎 Add photo(s)</button><button class="ghost" id="peClear">Clear all</button></div>'
+  +'<input type="file" id="peFile" accept="image/*" multiple hidden>'
+  +'<div id="peThumbs" class="row" style="margin:8px 0"></div>'
+  +'<textarea id="peText" rows="3" placeholder="e.g. Make the two people in Photo A shake hands"></textarea>'
+  +'<div class="chips" id="peChips"></div>'
+  +'<div class="row"><select id="peShape"><option value="1024x1024">Square</option><option value="1216x832" selected>Landscape</option><option value="832x1216">Portrait</option></select><label class="tg"><input type="checkbox" id="peMark" checked> Mark result as &quot;AI edited&quot;</label></div>'
+  +'<button class="btn" id="peGo">Edit photo</button><div class="hint" id="peStatus"></div><div id="peOut"></div></div>');
+  ['Make the two people in Photo A shake hands','Put the person from Photo A and the person from Photo B in one photo, shaking hands','Add a third person standing between them','Change the background to a sunny beach'].forEach(s=>{
+    const c=document.createElement('button');c.className='chip';c.textContent=s;c.onclick=()=>{$('#peText').value=s};$('#peChips').appendChild(c);
+  });
+})();
+async function peLoad(f){
+  if(!f||!f.type.startsWith('image/'))throw new Error('Please choose image files.');
+  const u=URL.createObjectURL(f),im=new Image();im.src=u;
+  try{await im.decode()}catch(e){URL.revokeObjectURL(u);throw new Error('Could not read '+f.name+' (try JPG or PNG).')}
+  const s=Math.min(1,496/Math.max(im.naturalWidth,im.naturalHeight)),c=document.createElement('canvas');
+  c.width=Math.max(8,Math.round(im.naturalWidth*s));c.height=Math.max(8,Math.round(im.naturalHeight*s));
+  c.getContext('2d').drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);return c;
+}
+function peRender(){
+  const box=$('#peThumbs');
+  box.innerHTML=peImgs.map((p,i)=>'<div class="ib" style="max-width:140px"><img src="'+p.cv.toDataURL('image/jpeg',.6)+'" alt=""><div class="mh">Photo '+PE_LABELS[i]+' · <a href="#" data-rm="'+i+'" style="color:var(--gold)">remove</a></div></div>').join('');
+  box.querySelectorAll('[data-rm]').forEach(a=>a.onclick=e=>{e.preventDefault();peImgs.splice(+a.dataset.rm,1);peRender()});
+}
+$('#peAdd').onclick=()=>{if(peImgs.length>=4)return toast('Maximum 4 photos.');$('#peFile').click()};
+$('#peClear').onclick=()=>{peImgs=[];peRender();$('#peOut').innerHTML='';$('#peStatus').textContent=''};
+$('#peFile').onchange=async e=>{
+  const all=[...e.target.files];e.target.value='';
+  if(all.length>4-peImgs.length)toast('Only the first '+(4-peImgs.length)+' photo(s) were added (maximum 4).');
+  for(const f of all.slice(0,4-peImgs.length)){try{peImgs.push({cv:await peLoad(f),name:f.name})}catch(err){toast(err.message)}}
+  peRender();
+};
+
+const PE_SYS=`You prepare photo-edit requests for an image model that can take up to 4 reference photos. The photos are numbered from 0 in the order uploaded: Photo A = image 0, Photo B = image 1, Photo C = image 2, Photo D = image 3.
+Reply with ONLY one JSON object, no markdown: {"allowed":true,"reason":"","prompt":"..."} or {"allowed":false,"reason":"short reason","prompt":""}.
+Set "allowed" to false if the request: is sexual, nude, fetish, or about removing or changing clothing in a revealing way; humiliates, harasses or defames a person; puts a person into violence, crime or compromising scenes; creates fake news, fake evidence, fake endorsements or fake events involving politicians, celebrities or other identifiable public figures; or involves children in any romantic or sexual way. Ordinary edits are allowed: handshakes, hugs, adding a person, group photos, changing background or outfit style, restyling.
+If allowed, write "prompt" as ONE clear instruction (max 70 words) that refers to the photos as "image 0", "image 1" and so on. Always include: keep every person's face, hair, skin tone, age and body proportions the same as in the reference photos; natural realistic hands and poses; consistent lighting, scale and perspective; no text, no watermark. For a handshake, describe both people facing each other with right hands clasped naturally. If people from different photos should be together, place them side by side in one natural scene.`;
+
+async function cfEdit(prompt,imgs,w,h){
+  const acc=store.get('cfacc'),tok=store.get('cftok');
+  if(!acc||!tok)throw new Error('Add your Cloudflare Account ID and API token in Settings.');
+  try{await api('/')}catch(e){}
+  const images=imgs.map(c=>c.toDataURL('image/jpeg',.92).split(',')[1]);
+  let d=null,last=null;
+  for(let a=0;a<3&&!d;a++){
+    if(a)await sleep(4000*a);
+    try{d=await api('/cf-edit','POST',{prompt,images,width:w,height:h,account_id:acc,api_token:tok})}
+    catch(e){last=e;if(!/failed to fetch|networkerror|load failed|bad response|took too long|502|503|504/i.test(e.message))throw e}
+  }
+  if(!d){
+    let alive=false;try{await api('/');alive=true}catch(e){}
+    throw new Error(alive?'Your server is online but did not accept /cf-edit: it has not been updated with the new route yet, or the request timed out. Check Render Events and Logs, and set the Start Command to: gunicorn app:app --workers 1 --threads 8 --timeout 120':'Your VISION server did not answer ('+(last&&last.message)+'). It may be asleep: wait 30–60 seconds and try again.');
+  }
+  const bin=atob(d.image),bytes=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+  return URL.createObjectURL(new Blob([bytes],{type:'image/png'}));
+}
+async function peGo(){
+  const st=$('#peStatus'),out=$('#peOut'),text=$('#peText').value.trim();
+  if(!peImgs.length)return toast('Add at least one photo first.');
+  if(!text)return toast('Tell me what to change.');
+  if(!store.get('groq'))return toast('This needs your Groq key (Settings).');
+  $('#peGo').disabled=true;out.innerHTML='';
+  try{
+    st.textContent='Checking and preparing your request…';
+    let plan=null;
+    for(let t=0;t<2&&!plan;t++){
+      try{
+        const raw=await groq([{role:'system',content:PE_SYS},{role:'user',content:'Number of photos: '+peImgs.length+'\nUser request: '+text}],{max:1200,temperature:.2});
+        plan=JSON.parse(raw.replace(/```(?:json)?/gi,'').match(/\{[\s\S]*\}/)[0]);
+      }catch(e){}
+    }
+    if(!plan)throw new Error('Could not check this request. Try rephrasing it.');
+    if(plan.allowed!==true)throw new Error('Blocked: '+(plan.reason||'this kind of edit is not allowed')+'. VISION does not make sexual, humiliating or deceptive edits.');
+    const prompt=String(plan.prompt||'').slice(0,700);
+    if(prompt.length<10)throw new Error('Could not build an edit prompt. Try rephrasing it.');
+    st.textContent='Editing (about 20–60 seconds)…';
+    const [w,h]=$('#peShape').value.split('x').map(Number);
+    const url=await cfEdit(prompt,peImgs.map(p=>p.cv),w,h);
+    const im=new Image();im.src=url;await im.decode();
+    const c=document.createElement('canvas');c.width=im.naturalWidth;c.height=im.naturalHeight;const x=c.getContext('2d');x.drawImage(im,0,0);
+    if($('#peMark').checked){
+      const fs=Math.max(12,Math.round(c.height*.025)),pad=fs*.5;x.font='600 '+fs+'px sans-serif';x.textAlign='right';x.textBaseline='bottom';
+      const t='AI edited',tw=x.measureText(t).width;x.fillStyle='rgba(0,0,0,.45)';x.fillRect(c.width-tw-pad*2.2,c.height-fs-pad*1.8,tw+pad*2,fs+pad*1.4);
+      x.fillStyle='#fff';x.fillText(t,c.width-pad*1.2,c.height-pad);
+    }
+    c.toBlob(b=>{
+      const u=URL.createObjectURL(b);
+      out.innerHTML='<div class="ib"><img src="'+u+'" alt=""><div class="row" style="margin-top:8px"><a class="dl" href="'+u+'" download="vision-photo-edit.png">Save</a><button class="ghost" id="peKeep">Use as Photo A (keep editing)</button><button class="ghost" id="peAgain">Try again</button></div></div><div class="mh">Cloudflare FLUX.2 klein 4B · '+esc(prompt.slice(0,200))+'</div>';
+      $('#peAgain').onclick=peGo;
+      $('#peKeep').onclick=()=>{const s=Math.min(1,496/Math.max(c.width,c.height)),k=document.createElement('canvas');k.width=Math.round(c.width*s);k.height=Math.round(c.height*s);k.getContext('2d').drawImage(c,0,0,k.width,k.height);peImgs=[{cv:k,name:'result'}];peRender();toast('Result is now Photo A.')};
+    },'image/png');
+    st.textContent='Done.';
+  }catch(e){st.textContent='⚠ '+e.message}
+  $('#peGo').disabled=false;
+}
+$('#peGo').onclick=peGo;
+/* ================= END PACK 15 ================= */
 </script>
 </body>
 </html>
