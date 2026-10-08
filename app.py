@@ -1,4 +1,5 @@
 import os
+import base64
 import re
 import math
 import time
@@ -416,6 +417,79 @@ def cf_image():
         return jsonify({"error": "Cloudflare returned no image."}), 502
     return jsonify({"image": img})
 
+@app.route("/cf-edit", methods=["POST"])
+def cf_edit():
+    """Edit/combine photos with FLUX.2 [klein] 4B on Cloudflare Workers AI (up to 4 reference images)."""
+    d = request.get_json(silent=True) or {}
+    prompt = (d.get("prompt") or "").strip()
+    account = (d.get("account_id") or "").strip()
+    token = (d.get("api_token") or "").strip()
+    images = d.get("images") or []
 
+    if not prompt:
+        return jsonify({"error": "No prompt provided"}), 400
+    if not isinstance(images, list) or not (1 <= len(images) <= 4):
+        return jsonify({"error": "Send 1 to 4 photos."}), 400
+    if not account or not token:
+        return jsonify({"error": "No Cloudflare Account ID / API token. Add them in Settings."}), 400
+    if not re.fullmatch(r"[A-Za-z0-9]+", account):
+        return jsonify({"error": "That Cloudflare Account ID does not look right."}), 400
+
+    files = {"prompt": (None, prompt[:2000])}
+    total = 0
+    for i, b64 in enumerate(images):
+        try:
+            raw = base64.b64decode(b64, validate=True)
+        except Exception:
+            return jsonify({"error": "Photo " + str(i + 1) + " is not valid image data."}), 400
+        total += len(raw)
+        if len(raw) > 1500000 or total > 4500000:
+            return jsonify({"error": "Photos are too large."}), 413
+        files["input_image_" + str(i)] = ("photo" + str(i) + ".jpg", raw, "image/jpeg")
+
+    def dim(v, default):
+        try:
+            n = int(v)
+        except Exception:
+            return default
+        n = max(256, min(1344, n))
+        return n - (n % 16)
+
+    w, h = dim(d.get("width"), 1024), dim(d.get("height"), 1024)
+    if w * h > 1400000:
+        s = (1400000 / float(w * h)) ** 0.5
+        w, h = max(256, int(w * s) // 16 * 16), max(256, int(h * s) // 16 * 16)
+    files["width"] = (None, str(w))
+    files["height"] = (None, str(h))
+
+    try:
+        res = http.post(
+            "https://api.cloudflare.com/client/v4/accounts/" + account + "/ai/run/@cf/black-forest-labs/flux-2-klein-4b",
+            headers={"Authorization": "Bearer " + token},
+            files=files,
+            timeout=int(os.environ.get("CF_EDIT_TIMEOUT", "100")),
+        )
+    except http.exceptions.Timeout:
+        return jsonify({"error": "Cloudflare took too long. Try again."}), 504
+    except Exception as e:
+        return jsonify({"error": "Could not reach Cloudflare: " + str(e)}), 502
+
+    if res.headers.get("Content-Type", "").startswith("image/"):
+        return jsonify({"image": base64.b64encode(res.content).decode()})
+    try:
+        data = res.json()
+    except Exception:
+        return jsonify({"error": "Cloudflare returned an unreadable response (HTTP " + str(res.status_code) + ")."}), 502
+    result = data.get("result")
+    if isinstance(result, dict) and result.get("image"):
+        return jsonify({"image": result["image"]})
+    errs = data.get("errors") or []
+    if errs and isinstance(errs[0], dict):
+        msg = str(errs[0].get("message", "unknown error"))
+        if errs[0].get("code"):
+            msg += " (code " + str(errs[0]["code"]) + ")"
+    else:
+        msg = "HTTP " + str(res.status_code)
+    return jsonify({"error": "Cloudflare: " + msg}), 400
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
