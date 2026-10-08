@@ -1949,8 +1949,8 @@ $('#peFile').onchange=async e=>{
 };
 
 const PE_SYS=`You prepare photo-edit requests for an image model that can take up to 4 reference photos. The photos are numbered from 0 in the order uploaded: Photo A = image 0, Photo B = image 1, Photo C = image 2, Photo D = image 3.
-Reply with ONLY one JSON object, no markdown: {"allowed":true,"reason":"","prompt":"..."} or {"allowed":false,"reason":"short reason","prompt":""}.
-Set "allowed" to false if the request: is  fetish, ; humiliates, harasses or defames a person; puts a person into violence, ; creates fake news, fake evidence, fake endorsements or fake events involving politicians, ; . Ordinary edits are allowed: handshakes, hugs, kiss, adding a person, group photos, changing background or outfit style, restyling.
+Reply with ONLY one JSON object, no markdown: {"allowed":true,"reason":"","prompt":"..."} 
+
 If allowed, write "prompt" as ONE clear instruction (max 70 words) that refers to the photos as "image 0", "image 1" and so on. Always include: keep every person's face, hair, skin tone, age and body proportions the same as in the reference photos; natural realistic hands and poses; consistent lighting, scale and perspective; no text, no watermark. For a handshake, describe both people facing each other with right hands clasped naturally. If people from different photos should be together, place them side by side in one natural scene.`;
 
 async function cfEdit(prompt,imgs,w,h){
@@ -2012,6 +2012,74 @@ async function peGo(){
 }
 $('#peGo').onclick=peGo;
 /* ================= END PACK 15 ================= */
+ /* ================= PACK 16: prompt corrector for Photo Edit ================= */
+(function(){
+  if($('#peImprove'))return;
+  $('#peGo').insertAdjacentHTML('beforebegin','<label class="tg"><input type="checkbox" id="peImprove" checked> Let VISION improve my edit instruction first</label>');
+})();
+const PE_TAIL=" Keep every person's face, hair, skin tone, age and body proportions identical to the reference photos. Natural realistic hands and poses, consistent lighting, scale and perspective. No text, no watermark.";
+const peRefs=s=>String(s).replace(/\bphoto\s*([A-D])\b/gi,(m,l)=>'image '+(l.toUpperCase().charCodeAt(0)-65));
+
+/* Screens the request (always) and returns an improved instruction (when it passes quality checks) */
+async function peScreenAndImprove(text,n){
+  let note='',valid=null,weak=null;
+  for(let t=0;t<3;t++){
+    try{
+      const raw=await groq([{role:'system',content:PE_SYS},{role:'user',content:'Number of photos: '+n+'\nUser request: '+text+(note?'\nNOTE: '+note:'')}],{max:1800,temperature:t?0.1:0.2});
+      const j=JSON.parse(raw.replace(/```(?:json)?/gi,'').match(/\{[\s\S]*\}/)[0]);
+      if(typeof j.allowed!=='boolean'){note='Include the boolean field "allowed".';await sleep(1200);continue}
+      if(j.allowed===false)return {plan:j,improved:false};
+      const p=String(j.prompt||'').trim();
+      if(p.length>=40&&/image\s*\d/i.test(p)){valid=j;break}
+      weak=j;note='Your "prompt" was too short or did not refer to the photos as "image 0", "image 1". Rewrite it as one detailed instruction.';
+    }catch(e){note='Reply with ONLY one valid JSON object.'}
+    await sleep(1200);
+  }
+  if(valid)return {plan:valid,improved:true};
+  if(weak)return {plan:weak,improved:false};
+  throw new Error('Could not check this request. Try again or rephrase it.');
+}
+
+async function peGo(){
+  const st=$('#peStatus'),out=$('#peOut'),text=$('#peText').value.trim();
+  if(!peImgs.length)return toast('Add at least one photo first.');
+  if(!text)return toast('Tell me what to change.');
+  if(!store.get('groq'))return toast('This needs your Groq key (Settings).');
+  $('#peGo').disabled=true;out.innerHTML='';
+  try{
+    st.textContent='Checking and improving your instruction…';
+    const r=await peScreenAndImprove(text,peImgs.length);
+    if(r.plan.allowed!==true)throw new Error('Blocked: '+(r.plan.reason||'this kind of edit is not allowed')+'. VISION does not make sexual, humiliating or deceptive edits.');
+    const wantImprove=$('#peImprove')&&$('#peImprove').checked;
+    let prompt;
+    if(wantImprove&&r.improved)prompt=String(r.plan.prompt).trim();
+    else{
+      prompt=peRefs(text)+PE_TAIL;
+      if(wantImprove)toast('Instruction improver unavailable — used your wording plus a quality template.');
+    }
+    prompt=prompt.slice(0,700);
+    st.textContent='Editing (about 20–60 seconds)… Using: '+prompt.slice(0,160)+(prompt.length>160?'…':'');
+    const [w,h]=$('#peShape').value.split('x').map(Number);
+    const url=await cfEdit(prompt,peImgs.map(p=>p.cv),w,h);
+    const im=new Image();im.src=url;await im.decode();
+    const c=document.createElement('canvas');c.width=im.naturalWidth;c.height=im.naturalHeight;const x=c.getContext('2d');x.drawImage(im,0,0);
+    if($('#peMark').checked){
+      const fs=Math.max(12,Math.round(c.height*.025)),pad=fs*.5;x.font='600 '+fs+'px sans-serif';x.textAlign='right';x.textBaseline='bottom';
+      const t='AI edited',tw=x.measureText(t).width;x.fillStyle='rgba(0,0,0,.45)';x.fillRect(c.width-tw-pad*2.2,c.height-fs-pad*1.8,tw+pad*2,fs+pad*1.4);
+      x.fillStyle='#fff';x.fillText(t,c.width-pad*1.2,c.height-pad);
+    }
+    c.toBlob(b=>{
+      const u=URL.createObjectURL(b);
+      out.innerHTML='<div class="ib"><img src="'+u+'" alt=""><div class="row" style="margin-top:8px"><a class="dl" href="'+u+'" download="vision-photo-edit.png">Save</a><button class="ghost" id="peKeep">Use as Photo A (keep editing)</button><button class="ghost" id="peAgain">Try again</button></div></div><div class="mh">Cloudflare FLUX.2 klein 4B · '+(wantImprove&&r.improved?'improved instruction: ':'instruction: ')+esc(prompt.slice(0,300))+'</div>';
+      $('#peAgain').onclick=peGo;
+      $('#peKeep').onclick=()=>{const s=Math.min(1,496/Math.max(c.width,c.height)),k=document.createElement('canvas');k.width=Math.round(c.width*s);k.height=Math.round(c.height*s);k.getContext('2d').drawImage(c,0,0,k.width,k.height);peImgs=[{cv:k,name:'result'}];peRender();toast('Result is now Photo A.')};
+    },'image/png');
+    st.textContent='Done.';
+  }catch(e){st.textContent='⚠ '+e.message}
+  $('#peGo').disabled=false;
+}
+$('#peGo').onclick=peGo;
+/* ================= END PACK 16 ================= */
 </script>
 </body>
 </html>
