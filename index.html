@@ -2080,6 +2080,181 @@ async function peGo(){
 }
 $('#peGo').onclick=peGo;
 /* ================= END PACK 16 ================= */
+ /* ================= PACK 17: Map & navigation (OpenStreetMap + Leaflet) ================= */
+let mpMap=null,mpMarker=null,mpStart=null,mpRouteLayer=null,mpSel=null,mpLast=0;
+const MP_LEAFLET='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
+
+(function(){
+  if($('#p-map'))return;
+  const nav=document.querySelector('nav'),b=document.createElement('button');
+  b.dataset.t='map';b.innerHTML='<span class="ic">🧭</span><span>Map</span>';b.onclick=()=>mpOpen();
+  nav.insertBefore(b,nav.querySelector('[data-t="settings"]')||null);
+  const css=document.createElement('link');css.rel='stylesheet';css.href=MP_LEAFLET+'leaflet.min.css';document.head.appendChild(css);
+  const st=document.createElement('style');
+  st.textContent='#mpBox{width:100%;height:min(58vh,520px);border:1px solid var(--line);border-radius:12px;margin-top:10px;background:#0b0508}'
+   +'.mpdark .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.9)}'
+   +'.mppin{font-size:28px;line-height:28px;text-align:center;filter:drop-shadow(0 2px 3px rgba(0,0,0,.6))}'
+   +'.mpres{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;margin:6px 0;border:1px solid var(--line);border-radius:10px;background:rgba(0,0,0,.25);cursor:pointer;font-size:15px}'
+   +'.mpres:hover{border-color:var(--gold)}.mpres small{display:block;color:var(--muted)}'
+   +'.mpsteps{font-size:14px;margin:8px 0;padding-left:22px}.mpsteps li{margin:3px 0}.leaflet-container{font:inherit}';
+  document.head.appendChild(st);
+  document.querySelector('main').insertAdjacentHTML('beforeend',
+    '<section class="panel" id="p-map"><div class="card"><h3>🧭 Map &amp; navigation</h3>'
+   +'<div class="row"><input id="mpQ" placeholder="Search a place, e.g. Shaniwar Wada, Pune" style="margin:0"><button class="btn" id="mpGo">Search</button><button class="ghost" id="mpMe">📍 My location</button></div>'
+   +'<label class="tg" style="margin-top:8px"><input type="checkbox" id="mpOsm"> Use OpenStreetMap search (finds landmarks and addresses). I have read and accept its <a href="https://operations.osmfoundation.org/policies/nominatim/" target="_blank" rel="noopener" style="color:var(--gold)">usage policy</a>.</label>'
+   +'<div class="hint" id="mpStatus"></div><div id="mpList"></div>'
+   +'<div class="row" style="margin-top:6px"><input id="mpFrom" placeholder="From (leave blank = my location)" style="margin:0"><select id="mpMode"><option value="car">🚗 Car</option><option value="bike">🚲 Bike</option><option value="foot">🚶 Walk</option></select><button class="ghost" id="mpRoute">Get directions</button></div>'
+   +'<div class="row" style="margin-top:6px"><button class="ghost" id="mpG">Open in Google Maps</button><button class="ghost" id="mpO">Open in OpenStreetMap</button><button class="ghost" id="mpClr">Clear</button><label class="tg" style="margin:0"><input type="checkbox" id="mpDark"> Dark map</label></div>'
+   +'<div id="mpSum" class="out"></div><ol class="mpsteps" id="mpSteps"></ol><div id="mpBox"></div>'
+   +'<div class="hint">Map data © OpenStreetMap contributors · <a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noopener" style="color:var(--gold)">Fix the map</a>. Routes are a guide only: follow road signs and never use this while driving. For live turn-by-turn, use "Open in Google Maps".</div></div></section>');
+  $('#mpOsm').checked=store.get('mposm','0')==='1';$('#mpOsm').onchange=e=>store.set('mposm',e.target.checked?'1':'0');
+  $('#mpDark').checked=store.get('mpdark','1')==='1';
+  $('#mpDark').onchange=e=>{store.set('mpdark',e.target.checked?'1':'0');$('#mpBox').classList.toggle('mpdark',e.target.checked)};
+  $('#mpBox').classList.toggle('mpdark',$('#mpDark').checked);
+})();
+
+const mpIcon=emoji=>L.divIcon({className:'',html:'<div class="mppin">'+emoji+'</div>',iconSize:[28,28],iconAnchor:[14,26]});
+async function mpInit(){
+  if(!window.L)await loadScript(MP_LEAFLET+'leaflet.min.js');
+  if(mpMap)return;
+  mpMap=L.map('mpBox').setView([20,0],2);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(mpMap);
+  mpMap.on('click',e=>mpPick(e.latlng.lat,e.latlng.lng,'Dropped pin ('+e.latlng.lat.toFixed(5)+', '+e.latlng.lng.toFixed(5)+')',true));
+}
+async function mpOpen(){
+  go('map');
+  try{await mpInit();setTimeout(()=>mpMap.invalidateSize(),200)}
+  catch(e){$('#mpStatus').textContent='⚠ Could not load the map library ('+e.message+'). Check your connection.'}
+}
+function mpPick(lat,lon,label,keepZoom){
+  mpSel={lat,lon,label};
+  if(mpMarker)mpMap.removeLayer(mpMarker);
+  mpMarker=L.marker([lat,lon],{icon:mpIcon('📍')}).addTo(mpMap).bindPopup(esc(label)).openPopup();
+  mpMap.flyTo([lat,lon],keepZoom?Math.max(mpMap.getZoom(),14):15);
+}
+function mpCache(){try{return JSON.parse(store.get('mpcache','{}'))||{}}catch(e){return {}}}
+function mpSaveCache(c){try{const k=Object.keys(c);if(k.length>40)k.slice(0,k.length-40).forEach(x=>delete c[x]);store.set('mpcache',JSON.stringify(c))}catch(e){}}
+async function mpGeo(q){
+  const osm=$('#mpOsm').checked,key=(osm?'o|':'m|')+q.trim().toLowerCase(),cache=mpCache();
+  if(cache[key])return cache[key];
+  let out;
+  if(osm){
+    const wait=1300-(Date.now()-mpLast);if(wait>0)await sleep(wait);mpLast=Date.now();
+    const r=await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q='+encodeURIComponent(q));
+    if(!r.ok)throw new Error('OpenStreetMap search error '+r.status+(r.status===429?' (too many searches: wait a minute)':''));
+    out=(await r.json()).map(x=>({lat:+x.lat,lon:+x.lon,name:(x.display_name||'').split(',')[0],label:x.display_name||''}));
+  }else{
+    const r=await fetch('https://geocoding-api.open-meteo.com/v1/search?count=5&language=en&format=json&name='+encodeURIComponent(q));
+    if(!r.ok)throw new Error('Place search error '+r.status);
+    const d=await r.json();
+    out=(d.results||[]).map(x=>({lat:x.latitude,lon:x.longitude,name:x.name,label:[x.name,x.admin2,x.admin1,x.country].filter(Boolean).join(', ')}));
+  }
+  cache[key]=out;mpSaveCache(cache);return out;
+}
+async function mpSearch(q){
+  q=(q||$('#mpQ').value||'').trim();if(!q){toast('Type a place first.');return}
+  const st=$('#mpStatus'),list=$('#mpList');
+  $('#mpGo').disabled=true;st.textContent='Searching…';list.innerHTML='';
+  try{
+    await mpInit();
+    const res=await mpGeo(q);
+    if(!res.length){st.textContent='No match found. '+($('#mpOsm').checked?'Try adding the city or country.':'This search mostly finds cities and towns. Tick the OpenStreetMap option above to find landmarks and addresses.');return res}
+    st.textContent=res.length+' result'+(res.length>1?'s':'')+'. Tap one to jump to it:';
+    list.innerHTML=res.map((x,i)=>'<div class="mpres" data-i="'+i+'"><span>📍</span><div>'+esc(x.name)+'<small>'+esc(x.label)+'</small></div></div>').join('');
+    list.querySelectorAll('.mpres').forEach(el=>el.onclick=()=>{const x=res[+el.dataset.i];mpPick(x.lat,x.lon,x.label)});
+    mpPick(res[0].lat,res[0].lon,res[0].label);
+    return res;
+  }catch(e){st.textContent='⚠ '+e.message}
+  finally{$('#mpGo').disabled=false}
+}
+function mpLocate(){
+  return new Promise((res,rej)=>{
+    if(!navigator.geolocation)return rej(new Error('This browser has no location support.'));
+    navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude,lon:p.coords.longitude}),
+      e=>rej(new Error(e.code===1?'Location permission was denied. Allow it in your browser settings, or type a start place.':'Could not get your location.')),
+      {enableHighAccuracy:true,timeout:15000});
+  });
+}
+const mpDist=m=>m<1000?(Math.max(10,Math.round(m/10)*10)+' m'):((m/1000).toFixed(1)+' km');
+const mpTime=s=>{const m=Math.round(s/60);return m<60?m+' min':Math.floor(m/60)+' h '+(m%60)+' min'};
+function mpStepText(s){
+  const m=s.maneuver||{},t=m.type||'',mod=m.modifier||'',name=s.name?' onto '+s.name:'';
+  const turn={'left':'Turn left','right':'Turn right','slight left':'Bear left','slight right':'Bear right','sharp left':'Sharp left','sharp right':'Sharp right','straight':'Continue straight','uturn':'Make a U-turn'}[mod];
+  let txt;
+  if(t==='depart')txt='Start'+(s.name?' on '+s.name:'');
+  else if(t==='arrive')txt='Arrive at your destination';
+  else if(t==='roundabout'||t==='rotary')txt='Enter the roundabout'+(m.exit?', take exit '+m.exit:'')+name;
+  else if(t==='merge')txt='Merge'+name;
+  else if(t==='fork')txt=(turn||'Keep')+' at the fork'+name;
+  else txt=(turn||'Continue')+name;
+  return txt+' ('+mpDist(s.distance||0)+')';
+}
+async function mpDirections(){
+  const st=$('#mpStatus');
+  if(!mpSel){toast('Search and pick a destination first.');return}
+  $('#mpRoute').disabled=true;st.textContent='Finding a route…';
+  try{
+    await mpInit();
+    let from;const ft=$('#mpFrom').value.trim();
+    if(ft){const r=await mpGeo(ft);if(!r.length)throw new Error('Could not find the start place "'+ft+'".');from={lat:r[0].lat,lon:r[0].lon}}
+    else from=await mpLocate();
+    const mode=$('#mpMode').value;
+    const wait=1300-(Date.now()-mpLast);if(wait>0)await sleep(wait);mpLast=Date.now();
+    const r=await fetch('https://routing.openstreetmap.de/routed-'+mode+'/route/v1/driving/'+from.lon+','+from.lat+';'+mpSel.lon+','+mpSel.lat+'?overview=full&geometries=geojson&steps=true');
+    if(!r.ok)throw new Error('Routing service error '+r.status);
+    const d=await r.json();
+    if(d.code!=='Ok'||!d.routes||!d.routes[0])throw new Error('No route found between these places for that travel mode.');
+    const rt=d.routes[0];
+    if(mpRouteLayer)mpMap.removeLayer(mpRouteLayer);if(mpStart)mpMap.removeLayer(mpStart);
+    mpRouteLayer=L.geoJSON(rt.geometry,{style:{color:'#f5c518',weight:5,opacity:.9}}).addTo(mpMap);
+    mpStart=L.marker([from.lat,from.lon],{icon:mpIcon('🟢')}).addTo(mpMap);
+    mpMap.fitBounds(mpRouteLayer.getBounds(),{padding:[30,30]});
+    $('#mpSum').textContent=({car:'🚗',bike:'🚲',foot:'🚶'}[mode])+' '+mpDist(rt.distance)+' · about '+mpTime(rt.duration)+' to '+(mpSel.label||'').split(',')[0];
+    $('#mpSteps').innerHTML=((rt.legs&&rt.legs[0]&&rt.legs[0].steps)||[]).map(s=>'<li>'+esc(mpStepText(s))+'</li>').join('');
+    st.textContent='Route ready.';
+  }catch(e){st.textContent='⚠ '+e.message}
+  finally{$('#mpRoute').disabled=false}
+}
+function mpClear(){
+  if(!mpMap)return;
+  [mpMarker,mpStart,mpRouteLayer].forEach(l=>{if(l)mpMap.removeLayer(l)});
+  mpMarker=mpStart=mpRouteLayer=mpSel=null;
+  $('#mpList').innerHTML='';$('#mpSum').textContent='';$('#mpSteps').innerHTML='';$('#mpStatus').textContent='';
+}
+$('#mpGo').onclick=()=>mpSearch();
+$('#mpQ').addEventListener('keydown',e=>{if(e.key==='Enter')mpSearch()});
+$('#mpRoute').onclick=mpDirections;
+$('#mpClr').onclick=mpClear;
+$('#mpMe').onclick=async()=>{
+  const st=$('#mpStatus');st.textContent='Getting your location…';
+  try{await mpInit();const p=await mpLocate();mpPick(p.lat,p.lon,'You are here',false);st.textContent='Found you.'}
+  catch(e){st.textContent='⚠ '+e.message}
+};
+$('#mpG').onclick=()=>{
+  if(!mpSel)return toast('Pick a place first.');
+  const tm={car:'driving',bike:'bicycling',foot:'walking'}[$('#mpMode').value];
+  window.open('https://www.google.com/maps/dir/?api=1&destination='+mpSel.lat+','+mpSel.lon+'&travelmode='+tm,'_blank','noopener');
+};
+$('#mpO').onclick=()=>{
+  if(!mpSel)return toast('Pick a place first.');
+  window.open('https://www.openstreetmap.org/?mlat='+mpSel.lat+'&mlon='+mpSel.lon+'#map='+16+'/'+mpSel.lat+'/'+mpSel.lon,'_blank','noopener');
+};
+
+/* chat commands */
+const _routeMp=route;
+route=async function(t){
+  const s=t.trim();let m;
+  if(m=s.match(/^(?:navigate|directions?|route)\s+to\s+(.+)/i)){
+    await mpOpen();$('#mpQ').value=m[1];botSay('Opening the map for "'+m[1]+'".',{silent:true});
+    const r=await mpSearch(m[1]);if(r&&r.length)await mpDirections();return true;
+  }
+  if((m=s.match(/^(?:show|find|locate)\s+(.+?)\s+on\s+(?:the\s+)?map$/i))||(m=s.match(/^(?:open|show)\s+(?:the\s+)?map\s+(?:of|for)\s+(.+)/i))||(m=s.match(/^map\s+of\s+(.+)/i))){
+    await mpOpen();$('#mpQ').value=m[1];botSay('Locating "'+m[1]+'" on the map.',{silent:true});await mpSearch(m[1]);return true;
+  }
+  if(/^(?:open|show|launch)\s+(?:the\s+)?(?:map|maps|navigation)$/i.test(s)){await mpOpen();botSay('Opening the map.',{silent:true});return true}
+  return _routeMp(t);
+};
+/* ================= END PACK 17================= */
 </script>
 </body>
 </html>
