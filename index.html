@@ -2255,6 +2255,370 @@ route=async function(t){
   return _routeMp(t);
 };
 /* ================= END PACK 17================= */
+ /* ================= PACK 20: Street View, 3D view and more map tools ================= */
+let mp3=null,mp3Mark=null,mpView='2d',mpOrbit=false,mlyViewer=null,mpBaseLayer=null,mpStdLayer=null,mpBase='std';
+let mpMeasure=false,mpMPts=[],mpMLine=null,mpMGroup=null,mpNearLayer=null,mpNearLast=0;
+const MAPLIBRE='https://unpkg.com/maplibre-gl@4.7.1/dist/';
+const MLYJS='https://unpkg.com/mapillary-js@4.1.2/dist/';
+const mpHav=(a,b,c,d)=>{const R=6371000,t=x=>x*Math.PI/180,dl=t(c-a),dn=t(d-b),h=Math.sin(dl/2)**2+Math.cos(t(a))*Math.cos(t(c))*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(h))};
+const MP_CATS={
+  food:['🍽','["amenity"~"restaurant|cafe|fast_food|food_court"]'],fuel:['⛽','["amenity"="fuel"]'],atm:['🏧','["amenity"~"atm|bank"]'],
+  hospital:['🏥','["amenity"~"hospital|clinic|doctors"]'],pharmacy:['💊','["amenity"="pharmacy"]'],hotel:['🏨','["tourism"~"hotel|guest_house|hostel"]'],
+  parking:['🅿️','["amenity"="parking"]'],bus:['🚌','["highway"="bus_stop"]'],train:['🚉','["railway"="station"]'],
+  shop:['🛒','["shop"~"supermarket|convenience|mall"]'],park:['🌳','["leisure"="park"]'],toilets:['🚻','["amenity"="toilets"]'],ev:['🔌','["amenity"="charging_station"]']
+};
+const MP_BASES={
+  sat:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'}],
+  topo:['https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17,subdomains:'abc',attribution:'Map data: &copy; OpenStreetMap contributors, SRTM | Style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)'}]
+};
+const mpBaseCache={};
+
+/* ---------- UI ---------- */
+(function(){
+  if($('#mpV3d')||!$('#mpBox'))return;
+  const st=document.createElement('style');
+  st.textContent='#mp3d,#mpSvWrap{display:none;width:100%;height:min(58vh,520px);margin-top:10px;border:1px solid var(--line);border-radius:12px;background:#0b0508;position:relative;overflow:hidden}'
+   +'#mpSv{width:100%;height:100%}#mpSvFrame{display:none;width:100%;height:100%;border:0}'
+   +'#mpSvNote{position:absolute;left:0;right:0;bottom:0;padding:6px 10px;font-size:13px;background:rgba(0,0,0,.65);color:var(--text);z-index:5}'
+   +'.mpbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}.mpbar .on{background:rgba(224,49,63,.4);border-color:var(--gold);color:#fff}'
+   +'.mpbar select,.mpbar input[type=password]{margin:0;width:auto;flex:1 1 150px}#mpInfo{white-space:pre-wrap;font-size:15px;margin-top:8px}';
+  document.head.appendChild(st);
+  const box=$('#mpBox');
+  box.insertAdjacentHTML('beforebegin',
+    '<div class="mpbar"><b>View:</b><button class="ghost on" id="mpV2d">🗺 Map</button><button class="ghost" id="mpV3d">🏙 3D</button><button class="ghost" id="mpVst">🛣 Street</button>'
+   +'<select id="mpBaseSel"><option value="std">Standard</option><option value="sat">Satellite</option><option value="topo">Terrain / topo</option></select><button class="ghost" id="mpFs">⛶ Full screen</button></div>'
+   +'<div class="mpbar" id="mp3dBar" style="display:none"><label class="tg" style="margin:0"><input type="checkbox" id="mpTer" checked> Terrain relief</label><button class="ghost" id="mpOrb">⟳ Orbit</button><label class="tg" style="margin:0">Tilt <input type="range" id="mpTilt" min="0" max="80" value="60" style="width:110px"></label></div>'
+   +'<div class="mpbar"><b>Street view:</b><button class="ghost" id="mpSvG">Google Street View ↗</button><button class="ghost" id="mpSvE">Google embed (unofficial)</button><button class="ghost" id="mpSvM">Mapillary (free)</button><input type="password" id="mpMlyTok" placeholder="Mapillary token (free, optional)"></div>'
+   +'<div class="mpbar"><b>Tools:</b><button class="ghost" id="mpMeas">📏 Measure</button><button class="ghost" id="mpWhat">ℹ What is here?</button><button class="ghost" id="mpSave">⭐ Save</button><button class="ghost" id="mpShare">🔗 Share</button><button class="ghost" id="mpCoord">📋 Coordinates</button><button class="ghost" id="mpAsk">🤖 Ask VISION</button></div>'
+   +'<div class="mpbar"><b>Nearby:</b><select id="mpCat"><option value="food">🍽 Food &amp; cafes</option><option value="fuel">⛽ Fuel</option><option value="atm">🏧 ATM &amp; banks</option><option value="hospital">🏥 Hospitals &amp; clinics</option><option value="pharmacy">💊 Pharmacies</option><option value="hotel">🏨 Hotels</option><option value="parking">🅿️ Parking</option><option value="bus">🚌 Bus stops</option><option value="train">🚉 Train stations</option><option value="shop">🛒 Shops &amp; malls</option><option value="park">🌳 Parks</option><option value="toilets">🚻 Toilets</option><option value="ev">🔌 EV charging</option></select>'
+   +'<select id="mpRad"><option value="500">500 m</option><option value="1000" selected>1 km</option><option value="2000">2 km</option><option value="5000">5 km</option></select><button class="ghost" id="mpNear">Find nearby</button></div>');
+  box.insertAdjacentHTML('afterend',
+    '<div id="mp3d"></div><div id="mpSvWrap"><div id="mpSv"></div><iframe id="mpSvFrame" title="Street View" allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe><div id="mpSvNote"></div></div>'
+   +'<div id="mpInfo" class="out"></div><div id="mpNearList"></div>'
+   +'<details class="hint" style="margin-top:8px"><summary>⭐ Saved places</summary><div id="mpSaved"></div></details>');
+  $('#mpMlyTok').value=store.get('mlytoken');$('#mpMlyTok').onchange=e=>{store.set('mlytoken',e.target.value.trim());toast('Saved.')};
+  $('#mpBaseSel').value=store.get('mpbase','std');
+})();
+
+function mpPoint(){
+  if(mpSel)return mpSel;
+  if(mpMap){const c=mpMap.getCenter();return {lat:c.lat,lon:c.lng,label:'Map center'}}
+  return null;
+}
+function mpSetView(v){
+  mpView=v;
+  if(v!=='3d'){mpOrbit=false;const b=$('#mpOrb');if(b)b.classList.remove('on')}
+  $('#mpBox').style.display=v==='2d'?'block':'none';
+  $('#mp3d').style.display=v==='3d'?'block':'none';
+  $('#mpSvWrap').style.display=v==='st'?'block':'none';
+  $('#mp3dBar').style.display=v==='3d'?'flex':'none';
+  [['2d','mpV2d'],['3d','mpV3d'],['st','mpVst']].forEach(([k,id])=>$('#'+id).classList.toggle('on',k===v));
+}
+
+/* ---------- base layers ---------- */
+const _mpInit20=mpInit;
+mpInit=async function(){
+  const first=!mpMap;
+  await _mpInit20();
+  if(first&&mpMap){
+    mpMap.eachLayer(l=>{if(l instanceof L.TileLayer&&!mpStdLayer)mpStdLayer=l});
+    mpBaseLayer=mpStdLayer;mpApplyBase(store.get('mpbase','std'));
+  }
+};
+function mpApplyBase(b){
+  if(!mpMap||!mpStdLayer)return;
+  if(b!=='std'&&!MP_BASES[b])b='std';
+  mpBase=b;store.set('mpbase',b);
+  if(mpBaseLayer)mpMap.removeLayer(mpBaseLayer);
+  if(b==='std')mpBaseLayer=mpStdLayer;
+  else{mpBaseCache[b]=mpBaseCache[b]||L.tileLayer(MP_BASES[b][0],MP_BASES[b][1]);mpBaseLayer=mpBaseCache[b]}
+  mpBaseLayer.addTo(mpMap);if(mpBaseLayer.bringToBack)mpBaseLayer.bringToBack();
+  $('#mpBox').classList.toggle('mpdark',b==='std'&&$('#mpDark').checked);
+}
+$('#mpBaseSel').onchange=e=>mpApplyBase(e.target.value);
+$('#mpDark').onchange=e=>{store.set('mpdark',e.target.checked?'1':'0');$('#mpBox').classList.toggle('mpdark',mpBase==='std'&&e.target.checked)};
+
+/* ---------- 3D view (MapLibre + OpenFreeMap) ---------- */
+async function mp3dInit(){
+  if(!window.maplibregl){
+    if(!document.getElementById('mlCss')){const l=document.createElement('link');l.id='mlCss';l.rel='stylesheet';l.href=MAPLIBRE+'maplibre-gl.css';document.head.appendChild(l)}
+    await loadScript(MAPLIBRE+'maplibre-gl.js');
+  }
+  if(mp3)return;
+  const c=mpSel?[mpSel.lon,mpSel.lat]:(mpMap?[mpMap.getCenter().lng,mpMap.getCenter().lat]:[0,20]);
+  mp3=new maplibregl.Map({container:'mp3d',style:'https://tiles.openfreemap.org/styles/liberty',center:c,zoom:16,pitch:60,bearing:-20,maxPitch:85});
+  mp3.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-right');
+  mp3.addControl(new maplibregl.ScaleControl(),'bottom-left');
+  mp3.on('pitch',()=>{const t=$('#mpTilt');if(t)t.value=Math.round(mp3.getPitch())});
+  await Promise.race([new Promise(r=>mp3.once('load',r)),sleep(20000)]);
+  try{
+    mp3.addSource('mpdem',{type:'raster-dem',tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],encoding:'terrarium',tileSize:256,maxzoom:15,attribution:'Terrain: Mapzen / AWS Terrain Tiles'});
+    mpApplyTerrain();
+  }catch(e){}
+}
+function mpApplyTerrain(){
+  if(!mp3||!mp3.getSource('mpdem'))return;
+  try{mp3.setTerrain($('#mpTer').checked?{source:'mpdem',exaggeration:1.4}:null)}catch(e){}
+}
+function mp3dRoute(){
+  if(!mp3||!mpRouteLayer)return;
+  try{
+    const gj=mpRouteLayer.toGeoJSON();
+    if(mp3.getSource('mproute'))mp3.getSource('mproute').setData(gj);
+    else{mp3.addSource('mproute',{type:'geojson',data:gj});mp3.addLayer({id:'mproute',type:'line',source:'mproute',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#f5c518','line-width':6}})}
+  }catch(e){}
+}
+function mp3dGo(){
+  if(!mp3)return;
+  const c=mpSel?[mpSel.lon,mpSel.lat]:(mpMap?[mpMap.getCenter().lng,mpMap.getCenter().lat]:[0,20]);
+  if(mp3Mark){mp3Mark.remove();mp3Mark=null}
+  if(mpSel)mp3Mark=new maplibregl.Marker({color:'#e0313f'}).setLngLat(c).addTo(mp3);
+  mp3.flyTo({center:c,zoom:mpSel?16.2:Math.max(14,mpMap?mpMap.getZoom():14),pitch:60,bearing:-20,essential:true});
+  mp3dRoute();
+}
+function mpOrbitLoop(){if(!mpOrbit||!mp3||mpView!=='3d')return;mp3.setBearing(mp3.getBearing()+.15);requestAnimationFrame(mpOrbitLoop)}
+$('#mpV2d').onclick=()=>{mpSetView('2d');setTimeout(()=>{if(mpMap)mpMap.invalidateSize()},100)};
+$('#mpV3d').onclick=async()=>{
+  const st=$('#mpStatus');
+  try{
+    await mpInit();
+    st.textContent='Loading 3D map…';
+    mpSetView('3d');
+    await mp3dInit();
+    mp3.resize();mp3dGo();
+    st.textContent='3D: drag to move, right-click drag or two fingers to tilt and rotate. Buildings appear when zoomed in close.';
+  }catch(e){mpSetView('2d');st.textContent='⚠ 3D view failed: '+e.message}
+};
+$('#mpTer').onchange=mpApplyTerrain;
+$('#mpTilt').oninput=e=>{if(mp3)mp3.setPitch(+e.target.value)};
+$('#mpOrb').onclick=()=>{mpOrbit=!mpOrbit;$('#mpOrb').classList.toggle('on',mpOrbit);if(mpOrbit)mpOrbitLoop()};
+
+/* ---------- street view ---------- */
+async function mlyNearest(p,tok){
+  for(const d of [0.0005,0.0012,0.0025]){
+    const r=await fetch('https://graph.mapillary.com/images?access_token='+encodeURIComponent(tok)+'&fields=id,computed_geometry&limit=60&bbox='+[p.lon-d,p.lat-d,p.lon+d,p.lat+d].join(','));
+    if(r.status===400||r.status===401||r.status===403)throw new Error('Mapillary rejected the token (HTTP '+r.status+'). Check it in your Mapillary developer dashboard.');
+    if(!r.ok)throw new Error('Mapillary error '+r.status);
+    const j=await r.json(),a=(j.data||[]).filter(x=>x.computed_geometry&&x.computed_geometry.coordinates);
+    if(a.length){
+      const dist=x=>mpHav(p.lat,p.lon,x.computed_geometry.coordinates[1],x.computed_geometry.coordinates[0]);
+      a.sort((x,y)=>dist(x)-dist(y));return a[0];
+    }
+  }
+  return null;
+}
+async function mlyShow(id,tok){
+  if(!document.getElementById('mlyCss')){const l=document.createElement('link');l.id='mlyCss';l.rel='stylesheet';l.href=MLYJS+'mapillary.css';document.head.appendChild(l)}
+  if(!window.mapillary)await loadScript(MLYJS+'mapillary.js');
+  if(mlyViewer)await mlyViewer.moveTo(id);
+  else mlyViewer=new window.mapillary.Viewer({accessToken:tok,container:'mpSv',imageId:id});
+  setTimeout(()=>{try{mlyViewer.resize()}catch(e){}},250);
+}
+$('#mpSvG').onclick=()=>{
+  const p=mpPoint();if(!p)return toast('Search a place first.');
+  window.open('https://www.google.com/maps/@?api=1&map_action=pano&viewpoint='+p.lat+','+p.lon,'_blank','noopener');
+};
+$('#mpSvE').onclick=()=>{
+  const p=mpPoint();if(!p)return toast('Search a place first.');
+  mpSetView('st');$('#mpSv').style.display='none';
+  const f=$('#mpSvFrame');f.style.display='block';
+  f.src='https://maps.google.com/maps?q=&layer=c&cbll='+p.lat+','+p.lon+'&cbp=11,0,0,0,0&output=svembed';
+  $('#mpSvNote').textContent='Unofficial Google embed. If the frame is blank, Google is blocking it: use the "Google Street View" button instead.';
+};
+$('#mpSvM').onclick=async()=>{
+  const p=mpPoint();if(!p)return toast('Search a place first.');
+  const tok=($('#mpMlyTok').value||'').trim(),note=$('#mpSvNote');
+  mpSetView('st');$('#mpSvFrame').style.display='none';$('#mpSv').style.display='block';
+  if(!tok){note.textContent='Add your free Mapillary token in the box above (see the setup steps), or use the Google buttons.';return}
+  note.textContent='Looking for street photos near here…';
+  try{
+    const near=await mlyNearest(p,tok);
+    if(!near){note.textContent='No free Mapillary photos within about 250 m of this spot. Try Google Street View.';return}
+    await mlyShow(near.id,tok);
+    note.textContent='Mapillary street photos (volunteer-collected). Click the arrows or the road to move along.';
+  }catch(e){note.textContent='⚠ '+e.message}
+};
+$('#mpVst').onclick=()=>{
+  if(($('#mpMlyTok').value||'').trim()){$('#mpSvM').click();return}
+  mpSetView('st');$('#mpSv').style.display='none';$('#mpSvFrame').style.display='none';
+  $('#mpSvNote').textContent='Pick a street view option above. "Google Street View" opens in a new tab and needs no key.';
+};
+
+/* ---------- nearby places ---------- */
+async function mpNearbyGo(){
+  const p=mpPoint();if(!p)return toast('Search a place or click the map first.');
+  const [ico,flt]=MP_CATS[$('#mpCat').value],rad=+$('#mpRad').value;
+  const wait=3000-(Date.now()-mpNearLast);if(wait>0)await sleep(wait);mpNearLast=Date.now();
+  $('#mpNear').disabled=true;$('#mpStatus').textContent='Searching nearby…';
+  try{
+    await mpInit();
+    const q='[out:json][timeout:25];nwr(around:'+rad+','+p.lat+','+p.lon+')'+flt+';out center 80;';
+    const r=await fetch('https://overpass-api.de/api/interpreter',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)});
+    if(!r.ok)throw new Error('Nearby search is busy (HTTP '+r.status+'). Try again in a minute.');
+    const j=await r.json();
+    const items=(j.elements||[]).map(e=>{
+      const la=e.lat!=null?e.lat:(e.center&&e.center.lat),lo=e.lon!=null?e.lon:(e.center&&e.center.lon);
+      if(la==null||lo==null)return null;
+      return {lat:la,lon:lo,name:(e.tags&&(e.tags.name||e.tags.brand||e.tags.operator))||'(unnamed)',d:mpHav(p.lat,p.lon,la,lo)};
+    }).filter(Boolean).sort((a,b)=>a.d-b.d).slice(0,30);
+    if(mpNearLayer)mpMap.removeLayer(mpNearLayer);
+    mpNearLayer=L.layerGroup().addTo(mpMap);
+    items.forEach(it=>{it.m=L.marker([it.lat,it.lon],{icon:mpIcon(ico)}).addTo(mpNearLayer).bindPopup(esc(it.name)+'<br>'+mpDist(it.d))});
+    $('#mpNearList').innerHTML=items.length?items.map((it,i)=>'<div class="mpres" data-i="'+i+'"><span>'+ico+'</span><div>'+esc(it.name)+'<small>'+mpDist(it.d)+' away</small></div></div>').join(''):'<div class="hint">Nothing found in that radius. Try a bigger one.</div>';
+    $('#mpNearList').querySelectorAll('.mpres').forEach(el=>el.onclick=()=>{
+      const it=items[+el.dataset.i];mpSetView('2d');mpMap.invalidateSize();mpMap.flyTo([it.lat,it.lon],17);it.m.openPopup();
+    });
+    $('#mpStatus').textContent=items.length+' place'+(items.length===1?'':'s')+' found nearby. Tap one in the list or on the map.';
+    mpSetView('2d');mpMap.invalidateSize();
+  }catch(e){$('#mpStatus').textContent='⚠ '+e.message}
+  finally{$('#mpNear').disabled=false}
+}
+$('#mpNear').onclick=mpNearbyGo;
+
+/* ---------- measure ---------- */
+function mpMeasAdd(lat,lon){
+  mpMPts.push([lat,lon]);
+  if(!mpMGroup)mpMGroup=L.layerGroup().addTo(mpMap);
+  L.circleMarker([lat,lon],{radius:5,color:'#f5c518',fillColor:'#e0313f',fillOpacity:1}).addTo(mpMGroup);
+  if(mpMLine)mpMGroup.removeLayer(mpMLine);
+  mpMLine=L.polyline(mpMPts,{color:'#e0313f',weight:4,dashArray:'6 6'}).addTo(mpMGroup);
+  let t=0;for(let i=1;i<mpMPts.length;i++)t+=mpHav(mpMPts[i-1][0],mpMPts[i-1][1],mpMPts[i][0],mpMPts[i][1]);
+  $('#mpInfo').textContent='📏 Straight-line distance: '+mpDist(t)+' ('+mpMPts.length+' points). Click more points, or press Measure again to finish.';
+}
+$('#mpMeas').onclick=async()=>{
+  await mpInit();
+  mpMeasure=!mpMeasure;$('#mpMeas').classList.toggle('on',mpMeasure);
+  mpMap.getContainer().style.cursor=mpMeasure?'crosshair':'';
+  if(mpMeasure){mpSetView('2d');mpMap.invalidateSize();mpMPts=[];if(mpMGroup)mpMGroup.clearLayers();mpMLine=null;$('#mpInfo').textContent='📏 Click points on the map to measure a distance.'}
+};
+
+/* ---------- info, save, share, ask ---------- */
+async function mpReverse(p){
+  const wait=1300-(Date.now()-mpLast);if(wait>0)await sleep(wait);mpLast=Date.now();
+  const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat='+p.lat+'&lon='+p.lon);
+  if(!r.ok)throw new Error(r.status);
+  return (await r.json()).display_name||null;
+}
+$('#mpWhat').onclick=async()=>{
+  const p=mpPoint();if(!p)return toast('Search a place or click the map first.');
+  const out=$('#mpInfo');out.textContent='Looking up info…';
+  const get=u=>fetch(u).then(r=>{if(!r.ok)throw new Error(r.status);return r.json()});
+  const [el,wx,ad]=await Promise.allSettled([
+    get('https://api.open-meteo.com/v1/elevation?latitude='+p.lat+'&longitude='+p.lon),
+    get('https://api.open-meteo.com/v1/forecast?latitude='+p.lat+'&longitude='+p.lon+'&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&daily=sunrise,sunset,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=1'),
+    $('#mpOsm').checked?mpReverse(p):Promise.resolve(null)
+  ]);
+  let t='📍 '+(p.label||'Selected point')+'\nCoordinates: '+p.lat.toFixed(5)+', '+p.lon.toFixed(5);
+  if(ad.status==='fulfilled'&&ad.value)t+='\nAddress: '+ad.value;
+  if(el.status==='fulfilled'&&el.value&&el.value.elevation)t+='\nElevation: '+Math.round(el.value.elevation[0])+' m above sea level';
+  if(wx.status==='fulfilled'&&wx.value&&wx.value.current){
+    const c=wx.value.current,d=wx.value.daily||{},cond=(typeof WMO!=='undefined'&&WMO[c.weather_code])||'';
+    t+='\nWeather now: '+(cond?cond+', ':'')+c.temperature_2m+'°C (feels '+c.apparent_temperature+'°C), humidity '+c.relative_humidity_2m+'%, wind '+c.wind_speed_10m+' km/h';
+    if(d.temperature_2m_max)t+='\nToday: '+d.temperature_2m_min[0]+'–'+d.temperature_2m_max[0]+'°C, rain chance '+d.precipitation_probability_max[0]+'%';
+    if(d.sunrise)t+='\nSunrise '+String(d.sunrise[0]).slice(11)+' · Sunset '+String(d.sunset[0]).slice(11);
+  }
+  out.textContent=t;
+};
+const mpSavedGet=()=>{try{return JSON.parse(store.get('mpsaved','[]'))||[]}catch(e){return []}};
+const mpSavedSet=a=>{try{store.set('mpsaved',JSON.stringify(a.slice(0,60)))}catch(e){}};
+function mpSavedRender(){
+  const a=mpSavedGet(),el=$('#mpSaved');
+  el.innerHTML=a.length?a.map((x,i)=>'<div class="mpres" data-i="'+i+'"><span>⭐</span><div>'+esc(x.name)+'<small>'+esc(x.label||'')+'</small></div><button class="ghost" data-del="'+i+'" style="margin-left:auto">✕</button></div>').join(''):'<div class="hint">Nothing saved yet. Pick a place and press ⭐ Save.</div>';
+  el.querySelectorAll('.mpres').forEach(r=>r.onclick=async e=>{
+    if(e.target.dataset&&e.target.dataset.del!==undefined){const a2=mpSavedGet();a2.splice(+e.target.dataset.del,1);mpSavedSet(a2);mpSavedRender();return}
+    const x=mpSavedGet()[+r.dataset.i];if(!x)return;
+    await mpInit();mpSetView('2d');mpMap.invalidateSize();mpPick(x.lat,x.lon,x.label||x.name);
+  });
+}
+$('#mpSave').onclick=()=>{
+  if(!mpSel)return toast('Pick a place first.');
+  const a=mpSavedGet();
+  if(!a.some(x=>x.lat===mpSel.lat&&x.lon===mpSel.lon))a.unshift({name:(mpSel.label||'Place').split(',')[0],label:mpSel.label,lat:mpSel.lat,lon:mpSel.lon});
+  mpSavedSet(a);mpSavedRender();toast('Saved.');
+};
+mpSavedRender();
+$('#mpShare').onclick=async()=>{
+  const p=mpPoint();if(!p)return toast('Pick a place first.');
+  const url='https://www.openstreetmap.org/?mlat='+p.lat+'&mlon='+p.lon+'#map=17/'+p.lat+'/'+p.lon,title=(p.label||'Place').split(',')[0];
+  if(navigator.share){try{await navigator.share({title,text:title,url});return}catch(e){}}
+  navigator.clipboard.writeText(url).then(()=>toast('Link copied.')).catch(()=>toast('Could not copy.'));
+};
+$('#mpCoord').onclick=()=>{
+  const p=mpPoint();if(!p)return toast('Pick a place first.');
+  navigator.clipboard.writeText(p.lat.toFixed(6)+', '+p.lon.toFixed(6)).then(()=>toast('Coordinates copied.')).catch(()=>toast('Could not copy.'));
+};
+$('#mpAsk').onclick=async()=>{
+  const p=mpPoint();if(!p)return toast('Pick a place first.');
+  if(!store.get('groq'))return toast('This needs your Groq key (Settings).');
+  const out=$('#mpInfo');out.textContent='Asking VISION…';
+  try{
+    out.textContent=await groq([{role:'system',content:'You are a friendly local guide. In at most 120 words, tell a traveller what this place is, why it is notable, the best time to visit and one practical tip. If you are not sure what the place is, say so instead of guessing.'},{role:'user',content:'Place: '+(p.label||'unknown')+' (coordinates '+p.lat.toFixed(5)+', '+p.lon.toFixed(5)+')'}],{max:900,temperature:.4});
+  }catch(e){out.textContent='⚠ '+e.message}
+};
+$('#mpFs').onclick=()=>{
+  const el=$({'2d':'#mpBox','3d':'#mp3d','st':'#mpSvWrap'}[mpView]);
+  const f=el&&(el.requestFullscreen||el.webkitRequestFullscreen);if(f)f.call(el);
+};
+document.addEventListener('fullscreenchange',()=>setTimeout(()=>{
+  if(mpMap)mpMap.invalidateSize();if(mp3)mp3.resize();if(mlyViewer){try{mlyViewer.resize()}catch(e){}}
+},200));
+
+/* ---------- hooks into Pack 19 ---------- */
+const _mpPick20=mpPick;
+mpPick=function(lat,lon,label,keepZoom){
+  if(mpMeasure&&typeof label==='string'&&label.indexOf('Dropped pin')===0){mpMeasAdd(lat,lon);return}
+  _mpPick20(lat,lon,label,keepZoom);
+  if(mpView==='3d')mp3dGo();
+};
+const _mpClear20=mpClear;
+mpClear=function(){
+  _mpClear20();
+  if(mpMap){
+    if(mpNearLayer){mpMap.removeLayer(mpNearLayer);mpNearLayer=null}
+    if(mpMGroup)mpMGroup.clearLayers();
+  }
+  mpMPts=[];mpMLine=null;
+  $('#mpNearList').innerHTML='';$('#mpInfo').textContent='';
+  if(mp3Mark){mp3Mark.remove();mp3Mark=null}
+  if(mp3&&mp3.getLayer&&mp3.getLayer('mproute')){mp3.removeLayer('mproute');mp3.removeSource('mproute')}
+};
+$('#mpClr').onclick=mpClear;
+const _mpDir20=mpDirections;
+mpDirections=async function(){await _mpDir20();if(mp3)mp3dRoute()};
+$('#mpRoute').onclick=mpDirections;
+const _mpSearch20=mpSearch;
+mpSearch=async function(q){
+  q=(q||($('#mpQ')&&$('#mpQ').value)||'').trim();
+  const m=q.match(/^(-?\d{1,3}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)$/);
+  if(m){
+    const lat=+m[1],lon=+m[2];
+    if(Math.abs(lat)<=90&&Math.abs(lon)<=180){
+      await mpInit();mpSetView('2d');mpMap.invalidateSize();
+      $('#mpList').innerHTML='';$('#mpStatus').textContent='Going to coordinates.';
+      mpPick(lat,lon,'Coordinates '+lat.toFixed(5)+', '+lon.toFixed(5));
+      return [{lat,lon,name:'Coordinates',label:'Coordinates'}];
+    }
+  }
+  return _mpSearch20(q);
+};
+
+/* chat commands */
+const _routeMp20=route;
+route=async function(t){
+  let m;const s=t.trim();
+  if((m=s.match(/^(?:3d|3-d)\s*(?:view|map)\s+(?:of|for|at|in)\s+(.+)/i))||(m=s.match(/^show\s+(.+?)\s+in\s+3d$/i))){
+    await mpOpen();$('#mpQ').value=m[1];botSay('Opening 3D view of "'+m[1]+'".',{silent:true});
+    const r=await mpSearch(m[1]);if(r&&r.length)$('#mpV3d').click();return true;
+  }
+  if(m=s.match(/^street\s*view\s+(?:of|for|at|in)\s+(.+)/i)){
+    await mpOpen();$('#mpQ').value=m[1];botSay('Opening street view for "'+m[1]+'".',{silent:true});
+    const r=await mpSearch(m[1]);
+    if(r&&r.length){if(($('#mpMlyTok').value||'').trim())$('#mpSvM').click();else $('#mpSvE').click()}
+    return true;
+  }
+  return _routeMp20(t);
+};
+/* ================= END PACK 18 ================= */
 </script>
 </body>
 </html>
