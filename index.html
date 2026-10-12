@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0508">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>VISION</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600&display=swap" rel="stylesheet">
@@ -2619,6 +2621,929 @@ route=async function(t){
   return _routeMp20(t);
 };
 /* ================= END PACK 18 ================= */
+ /* ================= PACK 22: Space tab ================= */
+try{(function(){
+  if($('#p-space'))return;
+  const nav=document.querySelector('nav'),btn=document.createElement('button');
+  btn.dataset.t='space';btn.innerHTML='<span class="ic">🚀</span><span>Space</span>';btn.onclick=()=>go('space');
+  nav.insertBefore(btn,nav.querySelector('[data-t="settings"]')||null);
+  const css=document.createElement('style');
+  css.textContent='@media(max-width:720px){nav{overflow-x:auto;justify-content:flex-start;scrollbar-width:none}nav::-webkit-scrollbar{display:none}nav button{flex:0 0 66px}}'
+    +'#spMap{width:100%;height:300px;border:1px solid var(--line);border-radius:12px;margin-top:8px}'
+    +'.spdark .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.9)}'
+    +'.spimg{width:100%;border-radius:10px;margin:8px 0;display:block}'
+    +'.spitem{padding:8px 10px;margin:6px 0;border:1px solid var(--line);border-radius:10px;background:rgba(0,0,0,.25);font-size:15px;overflow-wrap:anywhere}'
+    +'.spitem small{display:block;color:var(--muted)}.spitem a{color:var(--gold);text-decoration:none}.spmoon{font-size:56px;line-height:1;flex:0 0 70px}';
+  document.head.appendChild(css);
+  document.querySelector('main').insertAdjacentHTML('beforeend',
+    '<section class="panel" id="p-space">'
+   +'<div class="card"><h3>🚀 Space</h3><input id="spKey" type="password" placeholder="NASA API key (optional, free at api.nasa.gov — DEMO_KEY is used otherwise)"><div class="hint">Live data from free public services. Times are shown in your local time zone.</div></div>'
+   +'<div class="card"><h3>🛰 International Space Station — live</h3><div class="out" id="spIss">Loading…</div><div class="row" style="margin-top:8px"><button class="ghost" id="spFar">How far is it from me?</button></div><div id="spMap"></div></div>'
+   +'<div class="card"><h3>🌙 Moon tonight</h3><div class="row" style="align-items:center;flex-wrap:nowrap"><div class="spmoon" id="spMoonIco"></div><div class="out" id="spMoon" style="flex:1 1 auto"></div></div></div>'
+   +'<div class="card"><h3>🌌 NASA picture of the day</h3><div id="spApod" class="out">Loading…</div></div>'
+   +'<div class="card"><h3>🚀 Upcoming launches</h3><div id="spLaunch">Loading…</div></div>'
+   +'<div class="card"><h3>☄ Near-Earth asteroids today</h3><div id="spNeo">Loading…</div></div>'
+   +'<div class="card"><h3>📰 Space news</h3><div id="spNews">Loading…</div></div>'
+   +'<div class="card"><h3>🤖 Ask VISION about space</h3><input id="spQ" placeholder="e.g. Why does the Moon have phases?"><button class="btn sm" id="spAsk">Ask</button><div class="out" id="spAns"></div></div>'
+   +'</section>');
+
+  const J=u=>fetch(u).then(r=>{if(!r.ok){const e=new Error('HTTP '+r.status);e.status=r.status;throw e}return r.json()});
+  const safe=u=>/^https?:\/\//i.test(u||'')?u:'#';
+  const KEY=()=>($('#spKey').value||'').trim()||'DEMO_KEY';
+  const hav=(a,b,c,d)=>{const R=6371,t=x=>x*Math.PI/180,dl=t(c-a),dn=t(d-b),h=Math.sin(dl/2)**2+Math.cos(t(a))*Math.cos(t(c))*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(h))};
+  async function cached(key,ttl,fn){
+    let c=null;try{c=JSON.parse(store.get('spc_'+key,'null'))}catch(e){}
+    if(c&&Date.now()-c.t<ttl)return {d:c.d};
+    try{const d=await fn();try{store.set('spc_'+key,JSON.stringify({t:Date.now(),d}))}catch(e){}return {d}}
+    catch(e){if(c)return {d:c.d,stale:true,err:e.message};throw e}
+  }
+  $('#spKey').value=store.get('nasakey');
+  $('#spKey').onchange=()=>{store.set('nasakey',$('#spKey').value.trim());toast('Saved.');apod();neo()};
+
+  /* ---------- ISS ---------- */
+  let map=null,marker=null,trail=null,pts=[],timer=null,last=null,centered=false;
+  async function ensureLeaflet(){
+    if(window.L)return;
+    if(!document.querySelector('link[href*="leaflet"]')){const l=document.createElement('link');l.rel='stylesheet';l.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';document.head.appendChild(l)}
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js');
+  }
+  async function issInit(){
+    await ensureLeaflet();
+    if(map)return;
+    map=L.map('spMap',{worldCopyJump:true}).setView([20,0],2);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:8,attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
+    $('#spMap').classList.add('spdark');
+    marker=L.marker([0,0],{icon:L.divIcon({className:'',html:'<div style="font-size:30px;filter:drop-shadow(0 2px 3px #000)">🛰</div>',iconSize:[30,30],iconAnchor:[15,15]})}).addTo(map);
+    trail=L.polyline([],{color:'#f5c518',weight:2,opacity:.8}).addTo(map);
+  }
+  function splitLine(a){
+    const out=[];let cur=[];
+    for(let i=0;i<a.length;i++){
+      if(i&&Math.abs(a[i][1]-a[i-1][1])>180){out.push(cur);cur=[]}
+      cur.push(a[i]);
+    }
+    if(cur.length)out.push(cur);
+    return out;
+  }
+  async function issTick(){
+    try{
+      const d=await J('https://api.wheretheiss.at/v1/satellites/25544');
+      last=d;await issInit();
+      const ll=[d.latitude,d.longitude];
+      marker.setLatLng(ll);pts.push(ll);if(pts.length>80)pts.shift();
+      trail.setLatLngs(splitLine(pts));
+      if(!centered){map.setView(ll,3);centered=true}
+      $('#spIss').textContent='Latitude '+d.latitude.toFixed(2)+'°, longitude '+d.longitude.toFixed(2)+'°\nAltitude '+Math.round(d.altitude)+' km · speed '+Math.round(d.velocity).toLocaleString()+' km/h\nSunlight: '+d.visibility+'\nUpdated '+new Date(d.timestamp*1000).toLocaleTimeString();
+    }catch(e){$('#spIss').textContent='⚠ Could not reach the ISS tracker ('+e.message+'). Retrying…'}
+  }
+  $('#spFar').onclick=()=>{
+    if(!last)return toast('Wait for the ISS position first.');
+    if(!navigator.geolocation)return toast('This browser has no location support.');
+    navigator.geolocation.getCurrentPosition(p=>{
+      const km=hav(p.coords.latitude,p.coords.longitude,last.latitude,last.longitude);
+      $('#spIss').textContent=$('#spIss').textContent.split('\n\nFrom you')[0]+'\n\nFrom you: about '+Math.round(km).toLocaleString()+' km away'+(km<2300?' — it is above your horizon right now (look up if it is dark and clear!).':' — below your horizon.');
+    },()=>toast('Location permission was denied.'),{timeout:12000});
+  };
+
+  /* ---------- Moon (calculated here, approximate) ---------- */
+  function moonInfo(d){
+    const SYN=29.530588853,REF=Date.UTC(2000,0,6,18,14)/86400000;
+    let age=(d.getTime()/86400000-REF)%SYN;if(age<0)age+=SYN;
+    const frac=age/SYN,illum=Math.round((1-Math.cos(2*Math.PI*frac))/2*100),i=Math.floor(frac*8+0.5)%8;
+    const names=['New Moon','Waxing Crescent','First Quarter','Waxing Gibbous','Full Moon','Waning Gibbous','Last Quarter','Waning Crescent'];
+    const emo=['🌑','🌒','🌓','🌔','🌕','🌖','🌗','🌘'];
+    const toFull=age<SYN/2?SYN/2-age:SYN*1.5-age;
+    return {name:names[i],emoji:emo[i],illum,age,nextFull:new Date(d.getTime()+toFull*86400000),nextNew:new Date(d.getTime()+(SYN-age)*86400000)};
+  }
+  function moonRender(){
+    const m=moonInfo(new Date()),f=x=>x.toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'});
+    $('#spMoonIco').textContent=m.emoji;
+    $('#spMoon').textContent=m.name+'\nAbout '+m.illum+'% lit · age '+m.age.toFixed(1)+' days\nNext full moon: '+f(m.nextFull)+'\nNext new moon: '+f(m.nextNew)+'\n(calculated, accurate to about a day)';
+  }
+
+  /* ---------- NASA picture of the day ---------- */
+  async function apod(){
+    const box=$('#spApod');
+    try{
+      const r=await cached('apod',6*3600e3,()=>J('https://api.nasa.gov/planetary/apod?api_key='+encodeURIComponent(KEY())));
+      const d=r.d;
+      let h='<b>'+esc(d.title||'')+'</b> <small>'+esc(d.date||'')+(d.copyright?' · © '+esc(String(d.copyright).replace(/\s+/g,' ').trim()):'')+'</small>';
+      if(d.media_type==='image')h+='<a href="'+esc(safe(d.hdurl||d.url))+'" target="_blank" rel="noopener"><img class="spimg" src="'+esc(safe(d.url))+'" alt="'+esc(d.title||'')+'"></a>';
+      else h+='<div class="spitem"><a href="'+esc(safe(d.url))+'" target="_blank" rel="noopener">▶ Open today\'s video</a></div>';
+      h+='<details><summary>Read the explanation</summary><div style="margin-top:6px">'+esc(d.explanation||'')+'</div></details>'
+        +'<div class="row" style="margin-top:8px"><button class="ghost" id="spApodSimple">Explain it simply</button></div><div class="out" id="spApodTxt"></div>'
+        +(r.stale?'<div class="hint">Showing saved data ('+esc(r.err)+')</div>':'');
+      box.innerHTML=h;
+      $('#spApodSimple').onclick=async()=>{
+        if(!store.get('groq'))return toast('This needs your Groq key (Settings).');
+        const o=$('#spApodTxt');o.textContent='Asking VISION…';
+        try{o.textContent=await groq([{role:'system',content:'Explain astronomy to a curious 12-year-old in 3 short sentences. Be accurate and simple.'},{role:'user',content:'Title: '+(d.title||'')+'\n'+String(d.explanation||'').slice(0,1800)}],{max:700,temperature:.4})}
+        catch(e){o.textContent='⚠ '+e.message}
+      };
+    }catch(e){box.textContent='⚠ NASA picture unavailable ('+e.message+'). DEMO_KEY has tight limits: a free key from api.nasa.gov fixes this.'}
+  }
+
+  /* ---------- launches ---------- */
+  async function launches(){
+    const box=$('#spLaunch');
+    try{
+      const r=await cached('launch',45*60e3,async()=>{
+        const j=await J('https://ll.thespacedevs.com/2.2.0/launch/upcoming/?limit=6&ordering=net');
+        return (j.results||[]).map(l=>({name:l.name,net:l.net,status:(l.status&&l.status.name)||'',prov:(l.launch_service_provider&&l.launch_service_provider.name)||'',loc:(l.pad&&l.pad.location&&l.pad.location.name)||(l.pad&&l.pad.name)||''}));
+      });
+      box.innerHTML=r.d.map(l=>'<div class="spitem"><b>'+esc(l.name)+'</b><small>'+esc(new Date(l.net).toLocaleString())+(l.status?' · '+esc(l.status):'')+'</small><small>'+esc([l.prov,l.loc].filter(Boolean).join(' · '))+'</small></div>').join('')
+        +(r.stale?'<div class="hint">Showing saved data ('+esc(r.err)+')</div>':'')
+        +'<div class="hint">Data: Launch Library 2. The free tier allows 15 requests per hour, so VISION saves the list for 45 minutes.</div>';
+    }catch(e){box.textContent='⚠ Launch list unavailable ('+e.message+').'+(e.status===429?' The free hourly limit was reached; try again later.':'')}
+  }
+
+  /* ---------- asteroids ---------- */
+  async function neo(){
+    const box=$('#spNeo'),day=new Date().toISOString().slice(0,10);
+    try{
+      const r=await cached('neo_'+day+'_'+KEY(),3*3600e3,async()=>{
+        const j=await J('https://api.nasa.gov/neo/rest/v1/feed?start_date='+day+'&end_date='+day+'&api_key='+encodeURIComponent(KEY()));
+        const arr=(j.near_earth_objects&&j.near_earth_objects[day])||[];
+        return arr.map(a=>{const c=(a.close_approach_data&&a.close_approach_data[0])||{};return {name:a.name,url:a.nasa_jpl_url,hazard:!!a.is_potentially_hazardous_asteroid,size:a.estimated_diameter&&a.estimated_diameter.meters&&a.estimated_diameter.meters.estimated_diameter_max,miss:+((c.miss_distance||{}).kilometers||0),vel:+((c.relative_velocity||{}).kilometers_per_hour||0)}}).sort((x,y)=>x.miss-y.miss).slice(0,6);
+      });
+      box.innerHTML=r.d.length?r.d.map(a=>'<div class="spitem"><a href="'+esc(safe(a.url))+'" target="_blank" rel="noopener">'+esc(a.name)+'</a>'+(a.hazard?' ⚠':'')+'<small>Size up to '+Math.round(a.size||0)+' m · passes at '+Math.round(a.miss).toLocaleString()+' km ('+(a.miss/384400).toFixed(1)+'× Moon distance)</small><small>Speed '+Math.round(a.vel).toLocaleString()+' km/h</small></div>').join('')+(r.stale?'<div class="hint">Showing saved data ('+esc(r.err)+')</div>':''):'<div class="hint">No asteroids listed for today.</div>';
+    }catch(e){box.textContent='⚠ Asteroid list unavailable ('+e.message+').'}
+  }
+
+  /* ---------- news (titles and links only) ---------- */
+  async function news(){
+    const box=$('#spNews');
+    try{
+      const r=await cached('news',30*60e3,async()=>{const j=await J('https://api.spaceflightnewsapi.net/v4/articles/?limit=6');return (j.results||[]).map(a=>({t:a.title,u:a.url,s:a.news_site,d:a.published_at}))});
+      box.innerHTML=r.d.map(a=>'<div class="spitem"><a href="'+esc(safe(a.u))+'" target="_blank" rel="noopener">'+esc(a.t)+'</a><small>'+esc(a.s||'')+' · '+esc(new Date(a.d).toLocaleDateString())+'</small></div>').join('')+(r.stale?'<div class="hint">Showing saved data ('+esc(r.err)+')</div>':'');
+    }catch(e){box.textContent='⚠ News unavailable ('+e.message+').'}
+  }
+
+  /* ---------- ask VISION ---------- */
+  $('#spAsk').onclick=async()=>{
+    const q=$('#spQ').value.trim();if(!q)return toast('Type a question first.');
+    if(!store.get('groq'))return toast('This needs your Groq key (Settings).');
+    const o=$('#spAns');o.textContent='Thinking…';
+    try{o.textContent=await groq([{role:'system',content:'You are a friendly astronomy teacher. Answer in under 120 words, accurately and simply. If you are not sure, say so.'},{role:'user',content:q}],{max:900,temperature:.4})}
+    catch(e){o.textContent='⚠ '+e.message}
+  };
+  $('#spQ').addEventListener('keydown',e=>{if(e.key==='Enter')$('#spAsk').click()});
+
+  /* ---------- open / close ---------- */
+  let loaded=false;
+  function openSpace(){
+    moonRender();
+    if(!loaded){loaded=true;apod();launches();neo();news()}
+    issTick();clearInterval(timer);
+    timer=setInterval(()=>{if(!document.hidden)issTick()},8000);
+    setTimeout(()=>{if(map)map.invalidateSize()},300);
+  }
+  function closeSpace(){clearInterval(timer);timer=null}
+  const _go=go;
+  go=function(n){_go(n);if(n==='space')openSpace();else closeSpace()};
+
+  const _route=route;
+  route=async function(t){
+    const s=t.trim();
+    if(/^(?:where(?:'s| is) the (?:iss|space station)|iss (?:location|position)|show (?:me )?(?:the )?iss)\b/i.test(s)||/^(?:open|show)\s+(?:the\s+)?space(?:\s*tab)?$/i.test(s)){go('space');botSay('Opening the Space tab.',{silent:true});return true}
+    if(/^(?:what(?:'s| is)\s+)?(?:the\s+)?moon\s*phase/i.test(s)){const m=moonInfo(new Date());botSay(m.emoji+' '+m.name+' — about '+m.illum+'% lit (age '+m.age.toFixed(1)+' days). Next full moon: '+m.nextFull.toLocaleDateString()+'.');return true}
+    return _route(t);
+  };
+})()}catch(e){console.error('PACK 22 (Space) failed:',e)}
+/* ================= END PACK 22 ================= */
+
+/* ================= PACK 23: Presentation maker ================= */
+try{(function(){
+  if($('#sub-slides'))return;
+  const seg=document.querySelector('#p-create .seg');if(!seg)return;
+  const b=document.createElement('button');b.dataset.sub='slides';b.textContent='Slides';b.onclick=()=>subSwitch('slides');seg.appendChild(b);
+  const st=document.createElement('style');
+  st.textContent='.seg{flex-wrap:wrap}.seg button{flex:1 1 90px}.slc{display:block;padding:10px;margin:8px 0;border:1px solid var(--line);border-radius:10px;background:rgba(0,0,0,.25)}.slc textarea,.slc input{margin:6px 0 0;font-size:15px}';
+  document.head.appendChild(st);
+  document.getElementById('p-create').insertAdjacentHTML('beforeend',
+    '<div class="card subp" id="sub-slides"><h3>Presentation maker</h3>'
+   +'<textarea id="slTopic" rows="3" placeholder="Topic, or paste your notes. e.g. Photosynthesis for Class 8"></textarea>'
+   +'<div class="row"><select id="slN"><option value="5">5 slides</option><option value="7" selected>7 slides</option><option value="10">10 slides</option><option value="12">12 slides</option></select>'
+   +'<select id="slAud"><option>School students</option><option>College / exam revision</option><option>Business</option><option>General audience</option></select>'
+   +'<select id="slTheme"><option value="vision">Theme: VISION dark gold</option><option value="ocean">Theme: Ocean (light)</option><option value="sunset">Theme: Sunset</option><option value="forest">Theme: Forest (light)</option></select></div>'
+   +'<label class="tg"><input type="checkbox" id="slNotes" checked> Include speaker notes</label>'
+   +'<button class="btn" id="slGo">Write slides</button><div class="hint" id="slSt">Groq writes the outline. You can edit everything before downloading the PowerPoint file.</div>'
+   +'<div id="slEd"></div></div>');
+
+  const TH={
+    vision:{bg:'0B0508',title:'F5C518',text:'FFECC9',accent:'E0313F'},
+    ocean:{bg:'F4F8FF',title:'12355B',text:'1F2937',accent:'2D9CDB'},
+    sunset:{bg:'2B1B3D',title:'FFB86B',text:'FDF2E9',accent:'FF5E78'},
+    forest:{bg:'F3F8F1',title:'1B4332',text:'1F2A24',accent:'40916C'}
+  };
+  const LAYOUTS=['bullets','two_column','quote','section'];
+  const SYS='You are an expert presentation designer. Reply with ONLY one JSON object, no markdown: {"title":"deck title","subtitle":"short subtitle","slides":[{"layout":"bullets","title":"slide title (max 7 words)","bullets":["each point max 14 words"],"notes":"2 or 3 sentences the speaker can say"}]}. '
+    +'Write exactly the requested number of content slides (the title slide and the thank-you slide are added automatically). Start with an overview slide and end with a summary or key takeaways. '
+    +'Layouts: "bullets" (3 to 6 points), "two_column" (4 to 6 points, split in two columns), "section" (a divider: bullets[0] is one line), "quote" (bullets[0] is a real quote and bullets[1] who said it; use ONLY if you are certain it is real, otherwise use bullets). '
+    +'Be accurate. Do not invent statistics, dates, names or quotes. Match the audience level.';
+  let deck=null;
+
+  function renderEd(){
+    const box=$('#slEd');
+    if(!deck){box.innerHTML='';return}
+    let h='<div class="slc"><b>Deck</b><input data-d="title" value="'+esc(deck.title)+'" placeholder="Title"><input data-d="subtitle" value="'+esc(deck.subtitle||'')+'" placeholder="Subtitle"></div>';
+    deck.slides.forEach((s,i)=>{
+      h+='<div class="slc" data-i="'+i+'"><div class="row"><b style="flex:0 0 auto">Slide '+(i+1)+'</b><select data-k="layout">'
+        +LAYOUTS.map(l=>'<option value="'+l+'"'+(s.layout===l?' selected':'')+'>'+l.replace('_',' ')+'</option>').join('')
+        +'</select><button class="ghost" data-del="'+i+'">Remove</button></div>'
+        +'<input data-k="title" value="'+esc(s.title)+'" placeholder="Slide title">'
+        +'<textarea data-k="bullets" rows="4" placeholder="One point per line">'+esc((s.bullets||[]).join('\n'))+'</textarea>'
+        +'<textarea data-k="notes" rows="2" placeholder="Speaker notes">'+esc(s.notes||'')+'</textarea></div>';
+    });
+    h+='<div class="row"><button class="ghost" id="slAdd">+ Add slide</button><button class="btn" id="slDl">Download .pptx</button></div>';
+    box.innerHTML=h;
+  }
+  $('#slEd').addEventListener('input',e=>{
+    const t=e.target;if(!deck)return;
+    if(t.dataset.d){deck[t.dataset.d]=t.value;return}
+    const c=t.closest('[data-i]');if(!c||!t.dataset.k)return;
+    const s=deck.slides[+c.dataset.i];if(!s)return;
+    s[t.dataset.k]=t.dataset.k==='bullets'?t.value.split('\n').map(x=>x.trim()).filter(Boolean):t.value;
+  });
+  $('#slEd').addEventListener('click',e=>{
+    const t=e.target;if(!deck)return;
+    if(t.dataset.del!==undefined){deck.slides.splice(+t.dataset.del,1);renderEd();return}
+    if(t.id==='slAdd'){deck.slides.push({layout:'bullets',title:'New slide',bullets:['Point one','Point two'],notes:''});renderEd();return}
+    if(t.id==='slDl')download();
+  });
+
+  async function gen(topicOverride){
+    const topic=(topicOverride||$('#slTopic').value).trim();
+    if(!topic)return toast('Type a topic or paste your notes first.');
+    if(!store.get('groq'))return toast('This needs your Groq key (Settings).');
+    const n=+$('#slN').value,aud=$('#slAud').value,msg=$('#slSt');
+    $('#slGo').disabled=true;msg.textContent='Writing your slides…';
+    try{
+      let d=null,note='';
+      for(let t=0;t<3&&!d;t++){
+        try{
+          const raw=await groq([{role:'system',content:SYS},{role:'user',content:'Topic or notes:\n'+topic.slice(0,6000)+'\n\nAudience: '+aud+'\nNumber of content slides: '+n+(note?'\nNOTE: '+note:'')}],{max:4500,temperature:t?0.3:0.5});
+          const j=JSON.parse(raw.replace(/```(?:json)?/gi,'').match(/\{[\s\S]*\}/)[0]);
+          const sl=(j.slides||[]).filter(s=>s&&s.title).map(s=>({
+            layout:LAYOUTS.includes(s.layout)?s.layout:'bullets',
+            title:String(s.title).slice(0,90),
+            bullets:(Array.isArray(s.bullets)?s.bullets:[]).map(x=>String(x).slice(0,220)).slice(0,8),
+            notes:String(s.notes||'').slice(0,700)
+          }));
+          if(sl.length>=2)d={title:String(j.title||topic).slice(0,100),subtitle:String(j.subtitle||'').slice(0,140),slides:sl.slice(0,n+2)};
+          else note='Return at least '+n+' slides in the "slides" array.';
+        }catch(e){note='Reply with ONLY one valid JSON object.'}
+      }
+      if(!d)throw new Error('Could not write the slides. Try again or simplify the topic.');
+      deck=d;renderEd();msg.textContent='Ready. Edit anything below, then press Download.';
+    }catch(e){msg.textContent='⚠ '+e.message}
+    $('#slGo').disabled=false;
+  }
+  $('#slGo').onclick=()=>gen();
+
+  async function download(){
+    const msg=$('#slSt');
+    try{
+      msg.textContent='Building your PowerPoint file…';
+      if(!window.PptxGenJS)await loadScript('https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/dist/pptxgen.bundle.js');
+      const t=TH[$('#slTheme').value]||TH.vision,F='Calibri',withNotes=$('#slNotes').checked;
+      const p=new PptxGenJS();p.layout='LAYOUT_WIDE';p.title=deck.title||'Presentation';
+      let s=p.addSlide();s.background={color:t.bg};
+      s.addShape(p.ShapeType.rect,{x:0.7,y:2.2,w:0.18,h:2.4,fill:{color:t.accent},line:{color:t.accent}});
+      s.addText(deck.title||'Untitled',{x:1.2,y:2.1,w:11.2,h:1.7,fontFace:F,fontSize:44,bold:true,color:t.title,valign:'middle',fit:'shrink'});
+      if(deck.subtitle)s.addText(deck.subtitle,{x:1.2,y:3.9,w:11.2,h:0.9,fontFace:F,fontSize:22,color:t.text,valign:'top'});
+      deck.slides.forEach(sl=>{
+        s=p.addSlide();s.background={color:t.bg};
+        const bl=(sl.bullets||[]).filter(Boolean),chars=bl.join('').length,fs=chars>420?17:chars>300?19:22;
+        const pts=a=>a.map(x=>({text:x,options:{bullet:true,breakLine:true,paraSpaceAfter:8}}));
+        if(sl.layout==='section'){
+          s.addText(sl.title,{x:0.8,y:2.3,w:11.7,h:1.5,fontFace:F,fontSize:40,bold:true,color:t.title,align:'center',valign:'middle',fit:'shrink'});
+          s.addShape(p.ShapeType.rect,{x:5.9,y:3.9,w:1.5,h:0.06,fill:{color:t.accent},line:{color:t.accent}});
+          if(bl[0])s.addText(bl[0],{x:1.5,y:4.1,w:10.3,h:1,fontFace:F,fontSize:22,color:t.text,align:'center',valign:'top'});
+        }else if(sl.layout==='quote'){
+          s.addText('\u201C'+(bl[0]||sl.title)+'\u201D',{x:1.2,y:1.6,w:10.9,h:3.2,fontFace:F,fontSize:34,italic:true,color:t.title,align:'center',valign:'middle',fit:'shrink'});
+          if(bl[1])s.addText('\u2014 '+bl[1],{x:1.2,y:4.9,w:10.9,h:0.8,fontFace:F,fontSize:20,color:t.text,align:'center'});
+          s.addShape(p.ShapeType.rect,{x:5.9,y:1.2,w:1.5,h:0.06,fill:{color:t.accent},line:{color:t.accent}});
+        }else{
+          s.addText(sl.title,{x:0.6,y:0.4,w:12.1,h:0.9,fontFace:F,fontSize:32,bold:true,color:t.title,valign:'middle',fit:'shrink'});
+          s.addShape(p.ShapeType.rect,{x:0.6,y:1.35,w:1.6,h:0.06,fill:{color:t.accent},line:{color:t.accent}});
+          if(sl.layout==='two_column'&&bl.length>1){
+            const h=Math.ceil(bl.length/2);
+            s.addText(pts(bl.slice(0,h)),{x:0.8,y:1.7,w:5.7,h:5,fontFace:F,fontSize:fs,color:t.text,valign:'top'});
+            s.addText(pts(bl.slice(h)),{x:6.9,y:1.7,w:5.7,h:5,fontFace:F,fontSize:fs,color:t.text,valign:'top'});
+          }else s.addText(pts(bl),{x:0.8,y:1.7,w:11.7,h:5,fontFace:F,fontSize:fs,color:t.text,valign:'top'});
+        }
+        if(withNotes&&sl.notes)s.addNotes(sl.notes);
+        s.slideNumber={x:12.3,y:7.05,fontFace:F,fontSize:12,color:t.text};
+      });
+      s=p.addSlide();s.background={color:t.bg};
+      s.addText('Thank you',{x:0.8,y:2.4,w:11.7,h:1.4,fontFace:F,fontSize:48,bold:true,color:t.title,align:'center',valign:'middle'});
+      s.addText('Questions?',{x:0.8,y:3.9,w:11.7,h:0.9,fontFace:F,fontSize:26,color:t.text,align:'center'});
+      const name=String(deck.title||'presentation').replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'_').slice(0,50)||'presentation';
+      await p.writeFile({fileName:name+'.pptx'});
+      msg.textContent='Downloaded '+name+'.pptx. Open it in PowerPoint, Google Slides or LibreOffice.';
+    }catch(e){msg.textContent='⚠ Could not build the file: '+e.message}
+  }
+
+  const _route=route;
+  route=async function(t){
+    const m=t.trim().match(/^(?:make|create|build|generate)\s+(?:me\s+)?(?:a\s+|an\s+)?(?:ppt|pptx|powerpoint|presentation|slide\s*deck|slides?)\s+(?:on|about|for)\s+(.+)/i);
+    if(m){go('create');subSwitch('slides');$('#slTopic').value=m[1];botSay('Opening the slide maker for "'+m[1]+'".',{silent:true});gen(m[1]);return true}
+    return _route(t);
+  };
+})()}catch(e){console.error('PACK 23 (Slides) failed:',e)}
+/* ================= END PACK 23 ================= */
+
+/* ================= PACK 24: Chess vs computer ================= */
+try{(function(){
+  if($('#chessCard'))return;
+  const CH_JS='https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.js';
+  const GLY={k:'\u265A',q:'\u265B',r:'\u265C',b:'\u265D',n:'\u265E',p:'\u265F'},VS='\uFE0E';
+  const LV=[null,
+    {n:'1 · Beginner',d:1,ms:300,bl:.45,no:60},
+    {n:'2 · Casual',d:1,ms:400,bl:.15,no:30},
+    {n:'3 · Club player',d:2,ms:1500,bl:0,no:15},
+    {n:'4 · Strong',d:3,ms:4000,bl:0,no:5},
+    {n:'5 · Expert (slow)',d:6,ms:8000,bl:0,no:0}];
+
+  /* ---------- the engine (runs inside a Web Worker) ---------- */
+  function chessWorkerBody(){
+    const PV={p:100,n:320,b:330,r:500,q:900,k:0};
+    const T={
+      p:[0,0,0,0,0,0,0,0,50,50,50,50,50,50,50,50,10,10,20,30,30,20,10,10,5,5,10,25,25,10,5,5,0,0,0,20,20,0,0,0,5,-5,-10,0,0,-10,-5,5,5,10,10,-20,-20,10,10,5,0,0,0,0,0,0,0,0],
+      n:[-50,-40,-30,-30,-30,-30,-40,-50,-40,-20,0,0,0,0,-20,-40,-30,0,10,15,15,10,0,-30,-30,5,15,20,20,15,5,-30,-30,0,15,20,20,15,0,-30,-30,5,10,15,15,10,5,-30,-40,-20,0,5,5,0,-20,-40,-50,-40,-30,-30,-30,-30,-40,-50],
+      b:[-20,-10,-10,-10,-10,-10,-10,-20,-10,0,0,0,0,0,0,-10,-10,0,5,10,10,5,0,-10,-10,5,5,10,10,5,5,-10,-10,0,10,10,10,10,0,-10,-10,10,10,10,10,10,10,-10,-10,5,0,0,0,0,5,-10,-20,-10,-10,-10,-10,-10,-10,-20],
+      r:[0,0,0,0,0,0,0,0,5,10,10,10,10,10,10,5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,0,0,0,5,5,0,0,0],
+      q:[-20,-10,-10,-5,-5,-10,-10,-20,-10,0,0,0,0,0,0,-10,-10,0,5,5,5,5,0,-10,-5,0,5,5,5,5,0,-5,0,0,5,5,5,5,0,-5,-10,5,5,5,5,5,0,-10,-10,0,5,0,0,0,0,-10,-20,-10,-10,-5,-5,-10,-10,-20],
+      k:[-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-20,-30,-30,-40,-40,-30,-30,-20,-10,-20,-20,-20,-20,-20,-20,-10,20,20,0,0,0,0,20,20,20,30,10,0,0,10,30,20],
+      ke:[-50,-40,-30,-20,-20,-30,-40,-50,-30,-20,-10,0,0,-10,-20,-30,-30,-10,20,30,30,20,-10,-30,-30,-10,30,40,40,30,-10,-30,-30,-10,30,40,40,30,-10,-30,-30,-10,20,30,30,20,-10,-30,-30,-30,0,0,0,0,-30,-30,-50,-30,-30,-30,-30,-30,-30,-50]
+    };
+    let nodes=0,deadline=0,stop=false;
+    function evalPos(g){
+      const b=g.board();let s=0,mat=0;
+      for(let r=0;r<8;r++)for(let c=0;c<8;c++){const p=b[r][c];if(p&&p.type!=='k'&&p.type!=='p')mat+=PV[p.type]}
+      const end=mat<2600;
+      for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+        const p=b[r][c];if(!p)continue;
+        const idx=p.color==='w'?r*8+c:(7-r)*8+c,tbl=p.type==='k'?(end?T.ke:T.k):T[p.type],v=PV[p.type]+tbl[idx];
+        s+=p.color==='w'?v:-v;
+      }
+      return g.turn()==='w'?s:-s;
+    }
+    function order(ms){
+      for(const m of ms)m.sc=(m.captured?10*PV[m.captured]-PV[m.piece]/10:0)+(m.promotion?800:0);
+      ms.sort((a,b)=>b.sc-a.sc);return ms;
+    }
+    function q(g,alpha,beta,d){
+      nodes++;if((nodes&2047)===0&&Date.now()>deadline)stop=true;if(stop)return 0;
+      const st=evalPos(g);if(st>=beta)return beta;if(st>alpha)alpha=st;if(d===0)return st;
+      const ms=order(g.moves({verbose:true}).filter(m=>m.captured||m.promotion));
+      for(const m of ms){
+        g.move(m);const sc=-q(g,-beta,-alpha,d-1);g.undo();
+        if(stop)return 0;if(sc>=beta)return beta;if(sc>alpha)alpha=sc;
+      }
+      return alpha;
+    }
+    function s(g,d,alpha,beta,ply){
+      nodes++;if((nodes&2047)===0&&Date.now()>deadline)stop=true;if(stop)return 0;
+      const ms=order(g.moves({verbose:true}));
+      if(!ms.length)return g.in_check()?-30000+ply:0;
+      if(d<=0)return q(g,alpha,beta,3);
+      for(const m of ms){
+        g.move(m);const sc=-s(g,d-1,-beta,-alpha,ply+1);g.undo();
+        if(stop)return 0;if(sc>=beta)return beta;if(sc>alpha)alpha=sc;
+      }
+      return alpha;
+    }
+    function think(fen,maxD,ms,bl,no){
+      const g=new Chess(fen);let root=order(g.moves({verbose:true}));
+      if(!root.length)return null;
+      if(Math.random()<bl)return {m:root[Math.floor(Math.random()*root.length)],score:0,depth:0};
+      deadline=Date.now()+ms;stop=false;nodes=0;
+      let best=root[0],bestScore=-1e9,done=0;
+      for(let d=1;d<=maxD;d++){
+        let alpha=-1e9,cur=null,curScore=-1e9;
+        for(const m of root){
+          g.move(m);let sc=-s(g,d-1,-1e9,-alpha,1);g.undo();
+          if(stop)break;
+          sc+=Math.random()*no;
+          if(sc>curScore){curScore=sc;cur=m}
+          if(sc>alpha)alpha=sc;
+        }
+        if(stop&&d>1)break;
+        if(cur){best=cur;bestScore=curScore;done=d;root=[cur].concat(root.filter(x=>x!==cur))}
+        if(Math.abs(bestScore)>29000||stop)break;
+      }
+      return {m:best,score:bestScore,depth:done};
+    }
+    self.onmessage=function(e){
+      const d=e.data;
+      try{
+        const r=think(d.fen,d.depth,d.ms,d.bl,d.no);
+        if(!r)self.postMessage({id:d.id,none:true});
+        else self.postMessage({id:d.id,from:r.m.from,to:r.m.to,promotion:r.m.promotion||null,san:r.m.san,score:r.score,depth:r.depth});
+      }catch(err){self.postMessage({id:d.id,error:String(err&&err.message||err)})}
+    };
+  }
+
+  /* ---------- UI ---------- */
+  const st=document.createElement('style');
+  st.textContent='#chBoard{display:grid;grid-template-columns:repeat(8,1fr);width:min(92vw,480px);aspect-ratio:1;margin:10px auto;border:3px solid var(--gold);border-radius:6px;overflow:hidden;user-select:none;touch-action:manipulation}'
+    +'.chsq{position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:clamp(26px,9vw,50px);line-height:1}'
+    +'.chl{background:#e8d3a8}.chd{background:#9c6b43}'
+    +'.chsel{box-shadow:inset 0 0 0 4px #f5c518}.chlast{background-image:linear-gradient(rgba(245,197,24,.45),rgba(245,197,24,.45))}'
+    +'.chchk{background-image:radial-gradient(circle,rgba(224,49,63,.9),rgba(224,49,63,0) 75%)}'
+    +'.chdot::after{content:"";position:absolute;width:26%;height:26%;border-radius:50%;background:rgba(20,120,60,.55)}'
+    +'.chcap{box-shadow:inset 0 0 0 4px rgba(224,49,63,.85)}'
+    +'.chp{pointer-events:none}.chw{color:#fff;text-shadow:0 0 2px #000,0 0 3px #000,0 1px 1px #000}.chb{color:#161616;text-shadow:0 0 1px rgba(255,255,255,.5)}'
+    +'.chr,.chf{position:absolute;font-style:normal;font-size:10px;font-weight:700;color:#5a3a22;opacity:.75;pointer-events:none}.chr{left:3px;top:2px}.chf{right:3px;bottom:1px}'
+    +'#chMoves{font-size:14px;max-height:120px;overflow-y:auto;margin-top:6px}';
+  document.head.appendChild(st);
+  document.querySelector('#p-games').insertAdjacentHTML('beforeend',
+    '<div class="card" id="chessCard" style="display:none"><h3>♟ Chess vs VISION</h3>'
+   +'<div class="row"><select id="chLevel">'+LV.slice(1).map((l,i)=>'<option value="'+(i+1)+'">Level '+l.n+'</option>').join('')+'</select>'
+   +'<select id="chSide"><option value="w">I play White</option><option value="b">I play Black</option><option value="r">Random side</option></select>'
+   +'<button class="btn sm" id="chNew">New game</button></div>'
+   +'<div class="row" style="margin-top:6px"><button class="ghost" id="chUndo">↶ Undo</button><button class="ghost" id="chHint">💡 Hint</button><button class="ghost" id="chFlip">⇅ Flip board</button></div>'
+   +'<div class="hint" id="chStatus" style="font-size:15px;margin-top:8px"></div><div id="chBoard"></div>'
+   +'<div class="hint" id="chCap"></div><div class="out" id="chMoves"></div>'
+   +'<div class="hint">Tap a piece, then a highlighted square. Pawns promote to a queen automatically.</div></div>');
+  const chips=document.querySelector('#p-games .chips');
+  if(chips){const c=document.createElement('button');c.className='chip';c.textContent='♟ Chess vs computer';c.onclick=()=>openChess();chips.appendChild(c)}
+
+  let g=null,sel=null,legal=[],last=null,flip=false,busy=false,human='w',gameId=0,worker=null,reqId=0;
+  const pending={};
+  $('#chLevel').value=store.get('chlevel','3');
+  $('#chLevel').onchange=e=>store.set('chlevel',e.target.value);
+
+  function getWorker(){
+    if(worker)return worker;
+    const src='importScripts("'+CH_JS+'");('+chessWorkerBody.toString()+')();';
+    worker=new Worker(URL.createObjectURL(new Blob([src],{type:'text/javascript'})));
+    worker.onmessage=e=>{const p=pending[e.data.id];if(p){delete pending[e.data.id];e.data.error?p.rej(new Error(e.data.error)):p.res(e.data)}};
+    worker.onerror=()=>{Object.keys(pending).forEach(k=>{pending[k].rej(new Error('The chess engine could not start (check your internet connection).'));delete pending[k]});try{worker.terminate()}catch(e){}worker=null};
+    return worker;
+  }
+  function ask(o){
+    return new Promise((res,rej)=>{const id=++reqId;pending[id]={res,rej};try{getWorker().postMessage(Object.assign({id},o))}catch(e){delete pending[id];rej(e)}});
+  }
+
+  function setStatus(t){$('#chStatus').textContent=t}
+  function draw(){
+    const board=g.board(),files='abcdefgh',inChk=g.in_check();let h='';
+    for(let rr=0;rr<8;rr++)for(let cc=0;cc<8;cc++){
+      const r=flip?7-rr:rr,c=flip?7-cc:cc,sq=files[c]+(8-r),p=board[r][c];
+      let cls='chsq '+((r+c)%2===0?'chl':'chd');
+      if(sel===sq)cls+=' chsel';
+      if(last&&(last.from===sq||last.to===sq))cls+=' chlast';
+      if(legal.some(m=>m.to===sq))cls+=p?' chcap':' chdot';
+      if(p&&p.type==='k'&&inChk&&p.color===g.turn())cls+=' chchk';
+      h+='<div class="'+cls+'" data-sq="'+sq+'">'+(p?'<span class="chp '+(p.color==='w'?'chw':'chb')+'">'+GLY[p.type]+VS+'</span>':'')
+        +(cc===0?'<i class="chr">'+(8-r)+'</i>':'')+(rr===7?'<i class="chf">'+files[c]+'</i>':'')+'</div>';
+    }
+    $('#chBoard').innerHTML=h;
+  }
+  function over(){return g.game_over()}
+  function update(){
+    const hist=g.history({verbose:true});
+    const val={p:1,n:3,b:3,r:5,q:9};let w='',b='',diff=0;
+    hist.forEach(m=>{if(m.captured){const gl=GLY[m.captured]+VS;if(m.color==='w'){w+=gl;diff+=val[m.captured]}else{b+=gl;diff-=val[m.captured]}}});
+    $('#chCap').textContent='White took: '+(w||'—')+'   Black took: '+(b||'—')+(diff?'   ('+(diff>0?'White':'Black')+' is up '+Math.abs(diff)+')':'');
+    const san=g.history();let mv='';
+    for(let i=0;i<san.length;i+=2)mv+=(i/2+1)+'. '+san[i]+(san[i+1]?' '+san[i+1]:'')+'  ';
+    $('#chMoves').textContent=mv||'No moves yet.';
+    $('#chMoves').scrollTop=1e6;
+    if(g.in_checkmate())setStatus(g.turn()===human?'Checkmate — VISION wins. Press New game to try again.':'Checkmate — you win! 🎉');
+    else if(g.in_stalemate())setStatus('Draw by stalemate.');
+    else if(g.insufficient_material())setStatus('Draw: not enough pieces to checkmate.');
+    else if(g.in_threefold_repetition())setStatus('Draw by repetition.');
+    else if(g.game_over())setStatus('Draw.');
+    else if(!busy)setStatus((g.turn()===human?'Your move':'VISION to move')+(g.in_check()?' — check!':''));
+  }
+  async function engine(){
+    if(over())return;
+    busy=true;setStatus('VISION is thinking…');
+    const my=gameId,L=LV[+$('#chLevel').value||3];
+    try{
+      const r=await ask({fen:g.fen(),depth:L.d,ms:L.ms,bl:L.bl,no:L.no});
+      if(my!==gameId)return;
+      if(r.none)return;
+      const mv=g.move({from:r.from,to:r.to,promotion:r.promotion||'q'});
+      if(mv)last={from:mv.from,to:mv.to};
+    }catch(e){if(my===gameId)setStatus('⚠ '+e.message)}
+    finally{if(my===gameId)busy=false}
+    if(my===gameId){draw();update()}
+  }
+  function play(m){
+    const mv=g.move({from:m.from,to:m.to,promotion:'q'});
+    if(!mv)return;
+    last={from:mv.from,to:mv.to};sel=null;legal=[];
+    draw();update();
+    if(!over()&&g.turn()!==human)engine();
+  }
+  function click(sq){
+    if(busy||!g||over()||g.turn()!==human)return;
+    const mv=legal.find(m=>m.to===sq);
+    if(sel&&mv){play(mv);return}
+    const p=g.get(sq);
+    if(p&&p.color===human){sel=sq;legal=g.moves({square:sq,verbose:true})}else{sel=null;legal=[]}
+    draw();
+  }
+  $('#chBoard').addEventListener('click',e=>{const el=e.target.closest('.chsq');if(el)click(el.dataset.sq)});
+
+  function newGame(){
+    gameId++;busy=false;sel=null;legal=[];last=null;
+    g=new Chess();
+    const s=$('#chSide').value;human=s==='r'?(Math.random()<.5?'w':'b'):s;
+    flip=human==='b';
+    draw();update();
+    if(g.turn()!==human)engine();
+  }
+  $('#chNew').onclick=()=>{if(window.Chess)newGame()};
+  $('#chFlip').onclick=()=>{if(!g)return;flip=!flip;draw()};
+  $('#chUndo').onclick=()=>{
+    if(!g||busy||!g.history().length)return;
+    gameId++;g.undo();
+    if(g.turn()!==human&&g.history().length)g.undo();
+    sel=null;legal=[];last=null;
+    const h=g.history({verbose:true});if(h.length)last={from:h[h.length-1].from,to:h[h.length-1].to};
+    draw();update();
+    if(g.turn()!==human&&!over())engine();
+  };
+  $('#chHint').onclick=async()=>{
+    if(!g||busy||over()||g.turn()!==human)return;
+    busy=true;setStatus('Thinking of a hint…');const my=gameId;
+    try{
+      const r=await ask({fen:g.fen(),depth:3,ms:2500,bl:0,no:0});
+      if(my!==gameId)return;
+      if(!r.none){sel=r.from;legal=g.moves({square:r.from,verbose:true}).filter(m=>m.to===r.to);draw();setStatus('Hint: '+r.san)}
+    }catch(e){setStatus('⚠ '+e.message)}
+    finally{if(my===gameId)busy=false}
+  };
+  async function openChess(){
+    go('games');
+    const go2=$('#gameOut');if(go2)go2.style.display='none';
+    const ak=$('#akiCard');if(ak)ak.style.display='none';
+    $('#chessCard').style.display='block';
+    try{
+      if(!window.Chess)await loadScript(CH_JS);
+      if(!g)newGame();
+      $('#chessCard').scrollIntoView({behavior:'smooth'});
+    }catch(e){setStatus('⚠ Could not load the chess rules library: '+e.message)}
+  }
+
+  const _sg=startGame;
+  startGame=function(){const c=$('#chessCard');if(c)c.style.display='none';return _sg.apply(this,arguments)};
+  const _route=route;
+  route=async function(t){
+    if(/^(?:play|start|open|let'?s play)\s+(?:a\s+)?(?:game of\s+)?chess\b/i.test(t.trim())){botSay('Setting up the chess board in the Games tab.',{silent:true});openChess();return true}
+    return _route(t);
+  };
+})()}catch(e){console.error('PACK 24 (Chess) failed:',e)}
+/* ================= END PACK 24 ================= */
+
+/* ================= PACK 25: Comic maker ================= */
+try{(function(){
+  if($('#sub-comic'))return;
+  const seg=document.querySelector('#p-create .seg');if(!seg)return;
+  const b=document.createElement('button');b.dataset.sub='comic';b.textContent='Comic';b.onclick=()=>subSwitch('comic');seg.appendChild(b);
+  if(!document.getElementById('cmFonts')){const l=document.createElement('link');l.id='cmFonts';l.rel='stylesheet';l.href='https://fonts.googleapis.com/css2?family=Bangers&family=Comic+Neue:wght@400;700&display=swap';document.head.appendChild(l)}
+  const st=document.createElement('style');
+  st.textContent='.seg{flex-wrap:wrap}.seg button{flex:1 1 90px}#cmCv{width:100%;border-radius:10px;display:none;margin-top:10px;background:#fffaf0}.cmp{display:block;padding:10px;margin:8px 0;border:1px solid var(--line);border-radius:10px;background:rgba(0,0,0,.25)}.cmp textarea,.cmp input{margin:6px 0 0;font-size:15px}';
+  document.head.appendChild(st);
+  document.getElementById('p-create').insertAdjacentHTML('beforeend',
+    '<div class="card subp" id="sub-comic"><h3>Comic maker</h3>'
+   +'<textarea id="cmIdea" rows="3" placeholder="Story idea, e.g. A shy robot learns to make friends at school"></textarea>'
+   +'<div class="row"><select id="cmN"><option value="4">4 panels</option><option value="6" selected>6 panels</option><option value="8">8 panels</option></select>'
+   +'<select id="cmStyle"><option value="comic">Comic book (colour)</option><option value="manga">Manga (black and white)</option><option value="cartoon">Cute cartoon</option><option value="noir">Film noir</option></select></div>'
+   +'<button class="btn" id="cmGo">Create comic</button>'
+   +'<div class="hint" id="cmSt">Pictures come from the engine selected in the Image tab (Engine dropdown). Each panel takes a while, so keep this tab open.</div>'
+   +'<canvas id="cmCv"></canvas>'
+   +'<div class="row" id="cmBtns" style="display:none;margin-top:8px"><button class="ghost" id="cmRedraw">Redraw page with my text edits</button><button class="btn" id="cmSave">Download PNG</button></div>'
+   +'<div id="cmEd"></div></div>');
+
+  const STY={
+    comic:'comic book illustration, bold black ink outlines, vibrant flat colors, dynamic composition',
+    manga:'black and white manga illustration, screentone shading, clean linework, expressive faces',
+    cartoon:'cute cartoon illustration, soft rounded shapes, bright cheerful colors',
+    noir:'film noir comic panel, high contrast black and white, deep shadows, dramatic lighting'
+  };
+  const NOTEXT='no text, no letters, no speech bubbles, no captions, no watermark';
+  const SYS='You write comic scripts. Reply with ONLY one JSON object, no markdown: {"title":"comic title","characters":"one sentence describing the look of the main characters (age, hair, clothes, colours) so they can be drawn the same way in every panel","panels":[{"scene":"what the picture shows: setting, action, camera angle, expressions (no text in the picture)","caption":"short narration, max 12 words, or an empty string","dialogue":[{"who":"Name","text":"max 9 words"}]}]}. '
+    +'Write exactly the requested number of panels with a clear beginning, middle and end. At most 2 dialogue lines per panel. Keep it friendly and suitable for all ages.';
+  let cm=null;
+  const cv=$('#cmCv');
+  const PW=560,PH=560,GAP=26,MAR=34,TITLE=120,COLS=2;
+  const FONT='"Comic Neue","Comic Sans MS","Segoe UI",sans-serif',HEAD='"Bangers","Comic Neue","Comic Sans MS",sans-serif';
+
+  function wrap(ctx,text,maxW){
+    const words=String(text).split(/\s+/),lines=[];let cur='';
+    for(const w of words){const t=cur?cur+' '+w:w;if(ctx.measureText(t).width>maxW&&cur){lines.push(cur);cur=w}else cur=t}
+    if(cur)lines.push(cur);return lines;
+  }
+  function rr(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath()}
+
+  function compose(){
+    if(!cm)return;
+    const n=cm.panels.length,rows=Math.ceil(n/COLS),W=MAR*2+COLS*PW+(COLS-1)*GAP,H=TITLE+rows*PH+(rows-1)*GAP+MAR;
+    cv.width=W;cv.height=H;cv.style.display='block';
+    const x=cv.getContext('2d');
+    x.fillStyle='#fffaf0';x.fillRect(0,0,W,H);
+    x.fillStyle='#111';x.textAlign='center';x.textBaseline='alphabetic';
+    x.font='56px '+HEAD;x.fillText(cm.title||'My Comic',W/2,TITLE-34,W-80);
+    x.fillStyle='#e0313f';x.fillRect(W/2-80,TITLE-18,160,6);
+    cm.panels.forEach((p,i)=>{
+      const px=MAR+(i%COLS)*(PW+GAP),py=TITLE+Math.floor(i/COLS)*(PH+GAP);
+      x.save();x.beginPath();x.rect(px,py,PW,PH);x.clip();
+      if(p.img){
+        const im=p.img,s=Math.max(PW/im.naturalWidth,PH/im.naturalHeight),dw=im.naturalWidth*s,dh=im.naturalHeight*s;
+        x.drawImage(im,px+(PW-dw)/2,py+(PH-dh)/2,dw,dh);
+      }else{
+        x.fillStyle=p.err?'#ffd9d9':'#e8e2d0';x.fillRect(px,py,PW,PH);
+        x.fillStyle='#555';x.font='700 24px '+FONT;x.textAlign='center';
+        x.fillText(p.err?'Picture failed — press "Redo picture"':'Drawing panel '+(i+1)+'…',px+PW/2,py+PH/2);
+      }
+      let y=py+14;
+      x.textAlign='left';
+      if(p.caption){
+        x.font='700 19px '+FONT;
+        const lines=wrap(x,p.caption,PW-60),bh=lines.length*24+14,bw=Math.min(PW-28,Math.max(...lines.map(l=>x.measureText(l).width))+26);
+        x.fillStyle='#ffe66d';x.strokeStyle='#111';x.lineWidth=3;x.fillRect(px+14,y,bw,bh);x.strokeRect(px+14,y,bw,bh);
+        x.fillStyle='#111';lines.forEach((l,k)=>x.fillText(l,px+27,y+24+k*24-4));
+        y+=bh+12;
+      }
+      (p.dialogue||[]).slice(0,3).forEach((d,k)=>{
+        const txt=(d.who?String(d.who).toUpperCase()+': ':'')+d.text;
+        x.font='700 21px '+FONT;
+        const lines=wrap(x,txt,PW*0.62-28),w=Math.max(...lines.map(l=>x.measureText(l).width))+28,h=lines.length*26+18;
+        if(y+h>py+PH-50)return;
+        const left=k%2===0,bx=left?px+16:px+PW-16-w,by=y;
+        x.fillStyle='#fff';x.strokeStyle='#111';x.lineWidth=3;
+        rr(x,bx,by,w,h,16);x.fill();x.stroke();
+        const tx=left?bx+30:bx+w-30;
+        x.beginPath();x.moveTo(tx-12,by+h-1);x.lineTo(tx+12,by+h-1);x.lineTo(tx+(left?-6:6),by+h+24);x.closePath();x.fill();
+        x.beginPath();x.moveTo(tx-12,by+h);x.lineTo(tx+(left?-6:6),by+h+24);x.lineTo(tx+12,by+h);x.stroke();
+        x.fillStyle='#fff';x.fillRect(tx-10,by+h-4,20,6);
+        x.fillStyle='#111';x.textAlign='left';
+        lines.forEach((l,j)=>x.fillText(l,bx+14,by+26+j*26-4));
+        y=by+h+34;
+      });
+      x.restore();
+      x.strokeStyle='#111';x.lineWidth=6;x.strokeRect(px,py,PW,PH);
+    });
+  }
+
+  function renderEd(){
+    const box=$('#cmEd');
+    if(!cm){box.innerHTML='';return}
+    box.innerHTML=cm.panels.map((p,i)=>'<div class="cmp" data-i="'+i+'"><b>Panel '+(i+1)+'</b>'
+      +'<textarea data-k="scene" rows="2" placeholder="Picture description">'+esc(p.scene)+'</textarea>'
+      +'<input data-k="caption" value="'+esc(p.caption||'')+'" placeholder="Caption (optional)">'
+      +'<textarea data-k="dialogue" rows="2" placeholder="Dialogue, one per line like: Robo: Hello!">'+esc((p.dialogue||[]).map(d=>(d.who?d.who+': ':'')+d.text).join('\n'))+'</textarea>'
+      +'<div class="row"><button class="ghost" data-redo="'+i+'">Redo picture</button></div></div>').join('');
+  }
+  $('#cmEd').addEventListener('input',e=>{
+    const t=e.target,c=t.closest('[data-i]');if(!cm||!c||!t.dataset.k)return;
+    const p=cm.panels[+c.dataset.i];
+    if(t.dataset.k==='dialogue')p.dialogue=t.value.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{const m=l.match(/^([^:]{1,24}):\s*(.+)$/);return m?{who:m[1].trim(),text:m[2].trim()}:{who:'',text:l}});
+    else p[t.dataset.k]=t.value;
+  });
+  $('#cmEd').addEventListener('click',e=>{if(e.target.dataset.redo!==undefined)paint(+e.target.dataset.redo)});
+  $('#cmRedraw').onclick=()=>compose();
+  $('#cmSave').onclick=()=>{
+    try{
+      cv.toBlob(bl=>{
+        if(!bl){$('#cmSt').textContent='⚠ Could not export the picture (the image host may block saving). Try a different image engine.';return}
+        const a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='vision-comic.png';a.click();
+      },'image/png');
+    }catch(err){$('#cmSt').textContent='⚠ Could not export: '+err.message}
+  };
+
+  async function paint(i){
+    const p=cm.panels[i],stl=STY[$('#cmStyle').value]||STY.comic,msg=$('#cmSt');
+    const prompt=String(p.scene).slice(0,500)+'. Characters: '+String(cm.characters||'').slice(0,300)+'. '+stl+', '+NOTEXT;
+    p.err=false;p.img=null;compose();
+    msg.textContent='Drawing panel '+(i+1)+' of '+cm.panels.length+'…';
+    try{
+      const r=await genImage(prompt,1024,1024,'auto',{seed:cm.seed});
+      const im=new Image();im.src=r.url;await im.decode();p.img=im;
+    }catch(e){p.err=true;msg.textContent='⚠ Panel '+(i+1)+': '+String(e.message).slice(0,220)}
+    compose();
+  }
+
+  async function gen(){
+    const idea=$('#cmIdea').value.trim();if(!idea)return toast('Describe your story first.');
+    if(!store.get('groq'))return toast('This needs your Groq key (Settings).');
+    const n=+$('#cmN').value,msg=$('#cmSt');
+    $('#cmGo').disabled=true;cm=null;renderEd();msg.textContent='Writing the script…';
+    try{
+      let d=null,note='';
+      for(let t=0;t<3&&!d;t++){
+        try{
+          const raw=await groq([{role:'system',content:SYS},{role:'user',content:'Story idea: '+idea.slice(0,1500)+'\nNumber of panels: '+n+(note?'\nNOTE: '+note:'')}],{max:3500,temperature:t?0.3:0.7});
+          const j=JSON.parse(raw.replace(/```(?:json)?/gi,'').match(/\{[\s\S]*\}/)[0]);
+          const ps=(j.panels||[]).filter(p=>p&&p.scene).map(p=>({
+            scene:String(p.scene).slice(0,400),caption:String(p.caption||'').slice(0,120),
+            dialogue:(Array.isArray(p.dialogue)?p.dialogue:[]).filter(x=>x&&x.text).map(x=>({who:String(x.who||'').slice(0,24),text:String(x.text).slice(0,90)})).slice(0,3),
+            img:null,err:false
+          }));
+          if(ps.length>=2)d={title:String(j.title||idea).slice(0,60),characters:String(j.characters||''),panels:ps.slice(0,n),seed:Math.floor(Math.random()*1e6)};
+          else note='Return exactly '+n+' panels.';
+        }catch(e){note='Reply with ONLY one valid JSON object.'}
+      }
+      if(!d)throw new Error('Could not write the script. Try again or simplify the idea.');
+      cm=d;
+      try{await Promise.race([Promise.all([document.fonts.load('56px Bangers'),document.fonts.load('700 21px "Comic Neue"')]),sleep(3000)])}catch(e){}
+      renderEd();$('#cmBtns').style.display='flex';compose();
+      for(let i=0;i<cm.panels.length;i++)await paint(i);
+      msg.textContent='Done. Edit any text or description below, then press "Redraw page" or "Redo picture". Download when happy.';
+    }catch(e){msg.textContent='⚠ '+e.message}
+    $('#cmGo').disabled=false;
+  }
+  $('#cmGo').onclick=gen;
+})()}catch(e){console.error('PACK 25 (Comic) failed:',e)}
+/* ================= END PACK 25 ================= */
+
+/* ================= PACK 26: Merge voice into the video file ================= */
+try{(function(){
+  if($('#sub-merge'))return;
+  const seg=document.querySelector('#p-create .seg');if(!seg)return;
+  const b=document.createElement('button');b.dataset.sub='merge';b.textContent='Merge';b.onclick=()=>subSwitch('merge');seg.appendChild(b);
+  const st=document.createElement('style');
+  st.textContent='.seg{flex-wrap:wrap}.seg button{flex:1 1 90px}.mgl{display:flex;flex-direction:column;gap:2px;font-size:14px;flex:1 1 150px}.mgl input{margin:0}';
+  document.head.appendChild(st);
+  document.getElementById('p-create').insertAdjacentHTML('beforeend',
+    '<div class="card subp" id="sub-merge"><h3>Merge voice into a video</h3>'
+   +'<div class="hint" style="margin-bottom:8px">Makes ONE video file (.webm) with the picture and the voice together. It plays the video in real time while recording, so a 30-second video takes about 30 seconds. Keep this tab open and in front.</div>'
+   +'<b>1. Video</b><select id="mgV"><option value="last">The last video made in the Video tab</option><option value="file">A video file from my device</option></select><input type="file" id="mgVF" accept="video/*" style="display:none">'
+   +'<b>2. Voice</b><select id="mgA"><option value="last">The narration from the last video</option><option value="file">An audio file from my device</option><option value="text">Type text and make an AI voice</option></select>'
+   +'<input type="file" id="mgAF" accept="audio/*" style="display:none"><textarea id="mgT" rows="3" style="display:none" placeholder="Type the words to be spoken…"></textarea>'
+   +'<div class="row"><label class="mgl">Original sound volume<input type="range" id="mgOv" min="0" max="100" value="100"></label><label class="mgl">Voice volume<input type="range" id="mgVv" min="0" max="100" value="100"></label><label class="mgl">Voice starts after (seconds)<input type="number" id="mgD" min="0" max="10" step="0.1" value="0.3"></label></div>'
+   +'<button class="btn" id="mgGo">Merge</button><div class="hint" id="mgSt"></div><div id="mgOut"></div></div>');
+
+  $('#mgV').onchange=()=>{$('#mgVF').style.display=$('#mgV').value==='file'?'block':'none'};
+  $('#mgA').onchange=()=>{const v=$('#mgA').value;$('#mgAF').style.display=v==='file'?'block':'none';$('#mgT').style.display=v==='text'?'block':'none'};
+
+  const ready=(el,ms=10000)=>new Promise((res,rej)=>{
+    if(el.readyState>=1)return res();
+    const t=setTimeout(()=>rej(new Error('A media file took too long to load.')),ms);
+    el.addEventListener('loadedmetadata',()=>{clearTimeout(t);res()},{once:true});
+    el.addEventListener('error',()=>{clearTimeout(t);rej(new Error('A media file could not be read.'))},{once:true});
+  });
+  /* recorded webm files often report an infinite length until they are seeked to the end */
+  const dur=el=>new Promise(res=>{
+    if(isFinite(el.duration)&&el.duration>0)return res(el.duration);
+    const t=setTimeout(()=>res(el.duration),4000);
+    el.addEventListener('timeupdate',function f(){el.removeEventListener('timeupdate',f);clearTimeout(t);const d=el.duration;el.currentTime=0;setTimeout(()=>res(d),150)});
+    el.currentTime=1e101;
+  });
+
+  async function run(){
+    const msg=$('#mgSt'),out=$('#mgOut'),urls=[],nodes=[];
+    out.innerHTML='';$('#mgGo').disabled=true;
+    let ac=null;
+    try{
+      /* video source */
+      let vUrl;
+      if($('#mgV').value==='file'){
+        const f=$('#mgVF').files[0];if(!f)throw new Error('Choose a video file first.');
+        vUrl=URL.createObjectURL(f);urls.push(vUrl);
+      }else{
+        const lv=document.querySelector('#vidOut video');
+        if(!lv||!(lv.currentSrc||lv.src))throw new Error('There is no video in the Video tab yet. Make one first, or choose a file.');
+        vUrl=lv.currentSrc||lv.src;
+      }
+      /* voice source */
+      let aUrl;const am=$('#mgA').value;
+      if(am==='file'){
+        const f=$('#mgAF').files[0];if(!f)throw new Error('Choose an audio file first.');
+        aUrl=URL.createObjectURL(f);urls.push(aUrl);
+      }else if(am==='text'){
+        const t=$('#mgT').value.trim();if(!t)throw new Error('Type the words to be spoken first.');
+        msg.textContent='Making the AI voice…';
+        const r=await makeVoice(t,'auto','strict');
+        if(!r||!r.blob)throw new Error('No AI voice was available. Check your Groq or ElevenLabs key in Settings. A browser voice cannot be recorded.');
+        aUrl=URL.createObjectURL(r.blob);urls.push(aUrl);
+      }else{
+        const na=document.getElementById('narrAud');
+        if(!na||!(na.currentSrc||na.src))throw new Error('No narration was found from the last video. Choose "Type text" or an audio file instead.');
+        aUrl=na.currentSrc||na.src;
+      }
+
+      msg.textContent='Loading the files…';
+      const v=document.createElement('video'),a=new Audio();
+      v.playsInline=true;v.preload=a.preload='auto';v.src=vUrl;a.src=aUrl;
+      Object.assign(v.style,{position:'fixed',right:'0',bottom:'0',width:'2px',height:'2px',opacity:'0.01',pointerEvents:'none'});
+      document.body.appendChild(v);nodes.push(v);
+      await Promise.all([ready(v),ready(a)]);
+      const vd=await dur(v),ad=await dur(a);
+      const delay=Math.max(0,Math.min(10,+$('#mgD').value||0));
+      const known=isFinite(vd)&&vd>0,voiceEnd=(isFinite(ad)?ad:0)+delay;
+      const total=known?Math.max(vd,voiceEnd):null;
+      v.loop=known&&voiceEnd>vd+0.3;
+
+      ac=new (window.AudioContext||window.webkitAudioContext)();await ac.resume();
+      const dest=ac.createMediaStreamDestination(),vg=ac.createGain(),ag=ac.createGain();
+      vg.gain.value=(+$('#mgOv').value)/100;ag.gain.value=(+$('#mgVv').value)/100;
+      ac.createMediaElementSource(v).connect(vg);vg.connect(dest);
+      ac.createMediaElementSource(a).connect(ag);ag.connect(dest);
+      const vs=v.captureStream?v.captureStream():(v.mozCaptureStream?v.mozCaptureStream():null);
+      if(!vs)throw new Error('This browser cannot capture video. Use Chrome or Edge on a computer or Chromebook.');
+      const stream=new MediaStream([...vs.getVideoTracks(),...dest.stream.getAudioTracks()]);
+      const mime=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(t=>window.MediaRecorder&&MediaRecorder.isTypeSupported(t));
+      if(!mime)throw new Error('This browser cannot record video.');
+      const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:4e6}),chunks=[];
+      rec.ondataavailable=e=>e.data&&e.data.size&&chunks.push(e.data);
+      const stopped=new Promise(r=>{rec.onstop=r});
+
+      v.currentTime=0;a.currentTime=0;
+      rec.start(500);
+      const t0=performance.now();
+      setTimeout(()=>{a.play().catch(()=>{})},delay*1000);
+      await v.play();
+      await new Promise(res=>{
+        let fin=false;const finish=()=>{if(fin)return;fin=true;clearInterval(tick);res()};
+        const tick=setInterval(()=>{
+          const e=(performance.now()-t0)/1000;
+          msg.textContent=known?'Merging… '+Math.min(100,Math.round(e/total*100))+'% ('+Math.round(e)+' of '+Math.round(total)+' seconds). Keep this tab open.':'Merging… '+Math.round(e)+' seconds. Keep this tab open.';
+          if(known&&e>=total+0.4)finish();
+          if(e>900)finish();
+        },300);
+        if(!known)v.onended=finish;
+      });
+      rec.stop();await stopped;
+      v.pause();a.pause();
+      const blob=new Blob(chunks,{type:'video/webm'}),url=URL.createObjectURL(blob);
+      out.innerHTML='<video src="'+url+'" controls playsinline style="width:100%;border-radius:10px;margin-top:8px"></video><div class="lk"><a href="'+url+'" download="vision-video-with-voice.webm">Download merged video (.webm)</a></div><div class="mh">One file with picture and voice. WebM plays in Chrome, Edge, VLC and most players; some apps (like WhatsApp) may need it converted to MP4.</div>';
+      msg.textContent='Done.';
+    }catch(e){msg.textContent='⚠ '+e.message}
+    try{if(ac)ac.close()}catch(e){}
+    nodes.forEach(n=>n.remove());
+    $('#mgGo').disabled=false;
+  }
+  $('#mgGo').onclick=run;
+})()}catch(e){console.error('PACK 26 (Merge) failed:',e)}
+/* ================= END PACK 26 ================= */
+
+/* ================= PACK 27: Installable app (PWA) ================= */
+try{(function(){
+  /* 1. service worker (works only on https, like GitHub Pages) */
+  if('serviceWorker' in navigator&&location.protocol==='https:'){
+    navigator.serviceWorker.register('sw.js').then(reg=>{
+      reg.addEventListener('updatefound',()=>{
+        const n=reg.installing;
+        if(n)n.addEventListener('statechange',()=>{if(n.state==='installed'&&navigator.serviceWorker.controller)toast('A new version of VISION is ready. Reload the page to update.')});
+      });
+    }).catch(e=>console.warn('VISION service worker could not start:',e));
+  }
+
+  /* 2. install card in Settings */
+  const standalone=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone;
+  const settings=document.getElementById('p-settings');
+  if(settings&&!document.getElementById('pwaCard')){
+    settings.insertAdjacentHTML('beforeend',
+      '<div class="card" id="pwaCard"><h3>📲 Install VISION as an app</h3>'
+     +'<div class="hint" id="pwaText" style="font-size:14px"></div>'
+     +'<button class="btn sm" id="pwaBtn" style="display:none;margin-top:8px">Install VISION</button></div>');
+    const txt=document.getElementById('pwaText'),btn=document.getElementById('pwaBtn');
+    let deferred=null;
+    const iOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+    const help=()=>{
+      txt.textContent=standalone?'VISION is running as an installed app. ✅':
+        iOS?'On iPhone or iPad: tap the Share button, then "Add to Home Screen".':
+        'Chrome or Edge: look for the install icon in the address bar, or open the browser menu and choose "Install VISION" (or "Add to Home screen" on a phone).';
+    };
+    help();
+    window.addEventListener('beforeinstallprompt',e=>{
+      e.preventDefault();deferred=e;
+      txt.textContent='VISION can be installed on this device. It opens in its own window, has its own icon, and can receive shared text.';
+      btn.style.display='inline-block';
+    });
+    btn.onclick=async()=>{
+      if(!deferred)return;
+      deferred.prompt();
+      try{await deferred.userChoice}catch(e){}
+      deferred=null;btn.style.display='none';help();
+    };
+    window.addEventListener('appinstalled',()=>{btn.style.display='none';txt.textContent='VISION was installed. ✅';toast('VISION installed.')});
+  }
+
+  /* 3. shortcuts (?tab=map) and shared text (?text=...) from the share sheet */
+  setTimeout(()=>{
+    const q=new URLSearchParams(location.search);
+    const tab=q.get('tab');
+    if(tab&&document.getElementById('p-'+tab)){go(tab)}
+    const shared=[q.get('title'),q.get('text'),q.get('url')].filter(Boolean).join(' ').trim();
+    if(shared){
+      go('chat');
+      const m=document.getElementById('msg');
+      if(m){m.value=shared.slice(0,2000);m.focus()}
+      toast('Shared text added. Press Send when ready.');
+    }
+    if(tab||shared){try{history.replaceState(null,'',location.pathname)}catch(e){}}
+  },400);
+})()}catch(e){console.error('PACK 27 (PWA) failed:',e)}
+/* ================= END PACK 27 ================= */
 </script>
 </body>
 </html>
