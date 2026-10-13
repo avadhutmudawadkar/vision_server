@@ -1,5 +1,7 @@
-const CACHE = 'vision-shell-v1';
-const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'];
+/* VISION service worker: keeps the app shell available offline.
+   It never touches other websites (your server, Groq, Cloudflare, maps, ...). */
+const CACHE = 'vision-shell-v3';
+const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'vision-logo.svg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -21,8 +23,9 @@ self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return;
+  if (url.origin !== self.location.origin) return;          // only our own files
 
+  // The page itself: always try the network first so updates show up, fall back to the saved copy.
   if (req.mode === 'navigate') {
     e.respondWith(
       fetch(req)
@@ -32,6 +35,7 @@ self.addEventListener('fetch', e => {
     return;
   }
 
+  // Other files from this site (icons, manifest): saved copy first, then network.
   e.respondWith(
     caches.match(req).then(hit => hit || fetch(req).then(res => {
       if (res && res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
