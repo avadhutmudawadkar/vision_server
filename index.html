@@ -4369,8 +4369,7 @@ try{(function(){
         return {h:h,k:k};
       };
       var lL=leg(.12),lR=leg(-.12);
-      var s={root:root,body:body,hips:hips,torso:torso,head:head,armL:aL.sh,elbL:aL.el,armR:aR.sh,elbR:aR.el,legL:lL.h,kneeL:lL.k,legR:lR.h,kneeR:lR.k,hand:0,fallT:0,rate:14,mat:m,weapon:null};
-      var wt=o.weapon;
+      var s={root:root,body:body,hips:hips,torso:torso,head:head,armL:aL.sh,elbL:aL.el,armR:aR.sh,elbR:aR.el,handL:aL.hand,handR:aR.hand,legL:lL.h,kneeL:lL.k,legR:lR.h,kneeR:lR.k,hand:0,fallT:0,rate:14,mat:m,weapon:null};      var wt=o.weapon;
       if(wt&&wt!=='none'){
         var wmat=new THREE.MeshStandardMaterial({color:wt==='sword'?0xcfd8dc:wt==='staff'?0x8d6e3c:0x6d4c2a,metalness:wt==='sword'?.8:.1,roughness:.35,emissive:wt==='sword'?0x223344:0x000000}),wg;
         if(wt==='sword'){
@@ -5137,6 +5136,19 @@ try{(function(){
     const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([pageHtml],{type:'text/html'}));a.download='vision-3d-game.html';a.click();
   };
   $('#g4Prompt').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();make()}});
+   /* hooks used by Pack 30 to add more instant games */
+  window.V4_REGISTER=function(key,name,fn){
+    PRESETS[key]={name:name,fn:fn};
+    const b=document.createElement('button');b.className='chip';b.textContent='\u25B6 '+name+' (instant)';
+    b.onclick=()=>{openStudio();runCode(bodyOf(fn),name,false,cfgBase())};
+    const first=[...chips.children].find(c=>c.textContent.charAt(0)!=='\u25B6');
+    chips.insertBefore(b,first||null);
+  };
+  window.V4_RUN=function(k){
+    openStudio();
+    if(k==='fighter')startFight(fightCfg());
+    else if(PRESETS[k])runCode(bodyOf(PRESETS[k].fn),PRESETS[k].name,false,cfgBase());
+  };
 
   /* ---------- open / routing (replaces the older 3D studio) ---------- */
   function hideOthers(){['#gameOut','#akiCard','#chessCard','#g3Card','#c2Card'].forEach(s=>{const e=$(s);if(e)e.style.display='none'})}
