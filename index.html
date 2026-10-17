@@ -3600,6 +3600,418 @@ try{(function(){
   },400);
 })()}catch(e){console.error('PACK 27 (PWA) failed:',e)}
 /* ================= END PACK 27 ================= */
+ /* ================= PACK 28: 3D Game Studio ================= */
+try{(function(){
+  if($('#g3Card'))return;
+  const THREE_URL='https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+
+  /* ---------- the mini game framework that runs INSIDE the game window ---------- */
+  function v3dRuntime(){
+    var V=window.V={};V.title='3D GAME';V.help='';
+    var state='ready',updaters=[],errShown=false,last=performance.now(),total=0,hudVals={},msgTimer=null,actx=null;
+    var css=document.createElement('style');
+    css.textContent='#v3d{position:fixed;left:0;top:0;right:0;bottom:0;font-family:Segoe UI,system-ui,sans-serif;color:#fff;user-select:none;-webkit-user-select:none;touch-action:none}'
+      +'#v3d canvas{display:block;width:100%;height:100%}'
+      +'#v3hud{position:absolute;left:12px;top:10px;font-size:18px;font-weight:700;text-shadow:0 1px 4px #000;pointer-events:none;line-height:1.35}'
+      +'#v3msg{position:absolute;left:0;right:0;top:22%;text-align:center;font-size:30px;font-weight:800;text-shadow:0 2px 8px #000;pointer-events:none;opacity:0;transition:opacity .25s}'
+      +'#v3ov{position:absolute;left:0;top:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(5,2,10,.74);text-align:center;padding:20px;cursor:pointer}'
+      +'#v3ov h1{margin:0 0 8px;font-size:clamp(28px,7vw,52px);letter-spacing:.12em;color:#f5c518;text-shadow:0 0 18px rgba(245,197,24,.6)}'
+      +'#v3ov p{margin:6px 0;max-width:560px;opacity:.92}'
+      +'#v3ov button{margin-top:16px;font:inherit;font-weight:700;letter-spacing:.08em;padding:12px 28px;border:0;border-radius:999px;color:#fff;background:linear-gradient(135deg,#b3121f,#e0313f 55%,#ff8a3d);cursor:pointer}'
+      +'#v3joy{position:absolute;left:18px;bottom:22px;width:130px;height:130px;border-radius:50%;background:rgba(255,255,255,.08);border:2px solid rgba(255,255,255,.25);touch-action:none;display:none}'
+      +'#v3knob{position:absolute;left:45px;top:45px;width:40px;height:40px;border-radius:50%;background:rgba(245,197,24,.65)}'
+      +'.v3b{position:absolute;width:70px;height:70px;border-radius:50%;background:rgba(224,49,63,.42);border:2px solid rgba(255,255,255,.35);font-weight:800;display:none;align-items:center;justify-content:center;touch-action:none}'
+      +'#v3ba{right:22px;bottom:34px}#v3bb{right:104px;bottom:72px}'
+      +'#v3err{position:absolute;left:8px;right:8px;bottom:8px;padding:8px 10px;background:rgba(160,10,20,.92);font:13px monospace;display:none;white-space:pre-wrap;z-index:5}';
+    document.head.appendChild(css);
+    var root=document.createElement('div');root.id='v3d';document.body.appendChild(root);
+    root.innerHTML='<div id="v3hud"></div><div id="v3msg"></div><div id="v3joy"><div id="v3knob"></div></div><div class="v3b" id="v3ba">A</div><div class="v3b" id="v3bb">B</div><div id="v3ov"></div><div id="v3err"></div>';
+    var el=function(id){return document.getElementById(id)};
+    var isTouch=('ontouchstart' in window)||navigator.maxTouchPoints>0;
+    if(isTouch){el('v3joy').style.display='block';el('v3ba').style.display='flex';el('v3bb').style.display='flex'}
+
+    /* three.js */
+    var okThree=!!window.THREE;
+    if(okThree){
+      try{
+        V.scene=new THREE.Scene();
+        V.camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.1,600);V.camera.position.set(0,3,8);V.camera.lookAt(0,0,0);
+        V.renderer=new THREE.WebGLRenderer({antialias:true});V.renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+        V.renderer.setSize(innerWidth,innerHeight);root.insertBefore(V.renderer.domElement,root.firstChild);
+        V.scene.add(new THREE.HemisphereLight(0xffffff,0x334455,.85));
+        var sun=new THREE.DirectionalLight(0xffffff,.9);sun.position.set(6,12,8);V.scene.add(sun);
+      }catch(e){okThree=false;V.initError=e}
+    }
+    addEventListener('resize',function(){if(!V.renderer)return;V.renderer.setSize(innerWidth,innerHeight);V.camera.aspect=innerWidth/innerHeight;V.camera.updateProjectionMatrix()});
+
+    /* helpers */
+    var mat=function(c,o){return new THREE.MeshStandardMaterial(Object.assign({color:c,roughness:.6,metalness:.1},o||{}))};
+    V.mesh=function(g,c,p,o){var m=new THREE.Mesh(g,mat(c===undefined?0xcccccc:c,o));(p||V.scene).add(m);return m};
+    V.box=function(w,h,d,c,p){return V.mesh(new THREE.BoxGeometry(w,h,d),c,p)};
+    V.sphere=function(r,c,p){return V.mesh(new THREE.SphereGeometry(r,16,12),c,p)};
+    V.cylinder=function(a,b,h,c,p){return V.mesh(new THREE.CylinderGeometry(a,b,h,20),c,p)};
+    V.cone=function(r,h,c,p){return V.mesh(new THREE.ConeGeometry(r,h,20),c,p)};
+    V.plane=function(w,h,c,p){return V.mesh(new THREE.PlaneGeometry(w,h),c,p)};
+    V.ground=function(s,c){var m=V.plane(s,s,c===undefined?0x222233:c);m.rotation.x=-Math.PI/2;return m};
+    V.rand=function(a,b){return a+Math.random()*(b-a)};
+    V.clamp=function(v,a,b){return Math.max(a,Math.min(b,v))};
+    var b1,b2,tmp;
+    V.hit=function(a,b,pad){b1=b1||new THREE.Box3();b2=b2||new THREE.Box3();b1.setFromObject(a);b2.setFromObject(b);if(pad)b1.expandByScalar(pad);return b1.intersectsBox(b2)};
+    V.dist=function(a,b){var p=a.position||a,q=b.position||b;return p.distanceTo(q)};
+    V.follow=function(t,off,s){tmp=tmp||new THREE.Vector3();tmp.copy(t.position).add(off);V.camera.position.lerp(tmp,s==null?.1:s);V.camera.lookAt(t.position)};
+    V.beep=function(f,d,type){try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();var o=actx.createOscillator(),g=actx.createGain();o.type=type||'square';o.frequency.value=f||440;g.gain.value=.05;o.connect(g);g.connect(actx.destination);o.start();o.stop(actx.currentTime+(d||.1))}catch(e){}};
+    V.onUpdate=function(fn){updaters.push(fn)};
+    var drawHud=function(){var h='';for(var k in hudVals)h+=k+': '+hudVals[k]+'\n';el('v3hud').style.whiteSpace='pre';el('v3hud').textContent=h};
+    V.hud={set:function(k,v){hudVals[k]=v;drawHud()},msg:function(t,ms){var m=el('v3msg');m.textContent=t;m.style.opacity=1;clearTimeout(msgTimer);msgTimer=setTimeout(function(){m.style.opacity=0},ms||1500)}};
+
+    /* overlay */
+    var overlay=function(title,lines,btn,fn){
+      var o=el('v3ov');o.style.display='flex';o.innerHTML='';
+      var h=document.createElement('h1');h.textContent=title;o.appendChild(h);
+      lines.forEach(function(t){if(!t)return;var p=document.createElement('p');p.textContent=t;o.appendChild(p)});
+      var b=document.createElement('button');b.textContent=btn;o.appendChild(b);o.onclick=fn;
+    };
+    var start=function(){if(state!=='ready')return;state='playing';el('v3ov').style.display='none';try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();actx.resume()}catch(e){}};
+    var finish=function(title,text){if(state!=='playing')return;state='over';overlay(title,[text],'PLAY AGAIN',function(){location.reload()})};
+    V.gameOver=function(t){finish('GAME OVER',t||'')};
+    V.win=function(t){finish('YOU WIN!',t||'')};
+    V.fail=function(e){
+      if(errShown)return;errShown=true;state='over';
+      var msg=(!window.THREE)?'Three.js could not load. Check your internet connection.':(V.initError?'Your device cannot run WebGL 3D graphics: '+V.initError.message:String(e&&e.message||e));
+      var box=el('v3err');box.style.display='block';box.textContent='Game error: '+msg;
+      try{parent.postMessage({v3d:'error',message:msg},'*')}catch(x){}
+    };
+    addEventListener('error',function(e){V.fail(e.error||e.message)});
+    addEventListener('unhandledrejection',function(e){V.fail(e.reason)});
+
+    /* input */
+    var keys={},input=V.input={axis:{x:0,y:0},a:false,b:false,aDown:false,bDown:false,look:{x:0,y:0}};
+    var jx=0,jy=0,lx=0,ly=0,tA=false,tB=false,pa=false,pb=false;
+    addEventListener('keydown',function(e){keys[e.code]=true;if(/Arrow|Space/.test(e.code))e.preventDefault();start()},{passive:false});
+    addEventListener('keyup',function(e){keys[e.code]=false});
+    addEventListener('blur',function(){keys={}});
+    var joy=el('v3joy'),knob=el('v3knob'),jid=null;
+    var joyMove=function(e){var r=joy.getBoundingClientRect(),dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2),m=Math.min(45,Math.hypot(dx,dy)),a=Math.atan2(dy,dx);dx=Math.cos(a)*m;dy=Math.sin(a)*m;knob.style.left=(45+dx)+'px';knob.style.top=(45+dy)+'px';jx=dx/45;jy=-dy/45};
+    joy.addEventListener('pointerdown',function(e){jid=e.pointerId;joy.setPointerCapture(e.pointerId);joyMove(e);e.stopPropagation();start()});
+    joy.addEventListener('pointermove',function(e){if(e.pointerId===jid)joyMove(e)});
+    var joyEnd=function(e){if(e.pointerId!==jid)return;jid=null;jx=jy=0;knob.style.left='45px';knob.style.top='45px'};
+    joy.addEventListener('pointerup',joyEnd);joy.addEventListener('pointercancel',joyEnd);
+    var bindBtn=function(id,set){var b=el(id);b.addEventListener('pointerdown',function(e){set(true);b.setPointerCapture(e.pointerId);e.stopPropagation();start()});var up=function(){set(false)};b.addEventListener('pointerup',up);b.addEventListener('pointercancel',up)};
+    bindBtn('v3ba',function(v){tA=v});bindBtn('v3bb',function(v){tB=v});
+    var drag=false,px0=0,py0=0;
+    root.addEventListener('pointerdown',function(e){if(e.target.closest&&e.target.closest('#v3ov'))return;drag=true;px0=e.clientX;py0=e.clientY});
+    addEventListener('pointermove',function(e){if(!drag)return;lx+=e.clientX-px0;ly+=e.clientY-py0;px0=e.clientX;py0=e.clientY});
+    addEventListener('pointerup',function(){drag=false});
+    var sample=function(){
+      var x=0,y=0;
+      if(keys.ArrowLeft||keys.KeyA)x-=1;if(keys.ArrowRight||keys.KeyD)x+=1;if(keys.ArrowUp||keys.KeyW)y+=1;if(keys.ArrowDown||keys.KeyS)y-=1;
+      input.axis.x=x||jx;input.axis.y=y||jy;
+      var a=!!(keys.Space||keys.Enter||tA),b=!!(keys.ShiftLeft||keys.ShiftRight||keys.KeyX||keys.KeyF||keys.KeyZ||tB);
+      input.aDown=a&&!pa;input.bDown=b&&!pb;pa=a;pb=b;input.a=a;input.b=b;
+      input.look.x=lx;input.look.y=ly;lx=0;ly=0;
+    };
+
+    /* loop */
+    var loop=function(){
+      requestAnimationFrame(loop);
+      var now=performance.now(),dt=Math.min(.05,(now-last)/1000);last=now;total+=dt;
+      sample();
+      if(state==='playing'&&!errShown){try{for(var i=0;i<updaters.length;i++)updaters[i](dt,total)}catch(e){V.fail(e)}}
+      if(V.renderer&&!errShown)V.renderer.render(V.scene,V.camera);
+    };
+    V.boot=function(){
+      if(!window.THREE||V.initError){V.fail();return}
+      overlay(V.title,[V.help,'Click or press any key to start'],'START',start);
+      loop();
+    };
+  }
+
+  /* ---------- three ready-made games written for the framework ---------- */
+  function presetRunner(){
+    V.title='NEON RUNNER';V.help='A / D or the arrow keys change lane. W, Up or Space jumps.';
+    V.scene.background=new THREE.Color(0x07031a);V.scene.fog=new THREE.Fog(0x07031a,25,110);
+    const LANES=[-3,0,3];let lane=1,speed=16,score=0,vy=0,ground=true,cool=0;
+    const player=V.box(1,1.6,1,0x00e5ff);player.position.set(0,.8,0);player.material.emissive.setHex(0x003a44);
+    const road=V.box(10,.2,300,0x1a1030);road.position.set(0,-.1,-120);
+    for(const x of [-1.5,1.5]){const l=V.box(.08,.05,300,0xff2bd6);l.position.set(x,.02,-120);l.material.emissive.setHex(0xff2bd6)}
+    const dashes=[];
+    for(let i=0;i<16;i++){const d=V.box(.15,.05,2,0xffffff);d.position.set(i%2?-4.6:4.6,.03,-i*10);dashes.push(d)}
+    const things=[];
+    function place(o,z){o.position.z=z;o.position.x=LANES[Math.floor(Math.random()*3)]}
+    for(let i=0;i<10;i++){const o=V.box(1.8,1.4,1.8,0xff3b3b);o.position.y=.7;o.userData.kind='rock';place(o,-30-i*18);things.push(o)}
+    for(let i=0;i<8;i++){const c=V.cylinder(.5,.5,.2,0xffd400);c.rotation.x=Math.PI/2;c.position.y=1.1;c.userData.kind='coin';c.material.emissive.setHex(0x665500);place(c,-40-i*22);things.push(c)}
+    V.camera.position.set(0,4,8);
+    V.onUpdate((dt)=>{
+      speed+=dt*.35;score+=dt*10;cool-=dt;
+      const ax=V.input.axis.x;
+      if(cool<=0&&Math.abs(ax)>.5){lane=V.clamp(lane+Math.sign(ax),0,2);cool=.17}
+      player.position.x+=(LANES[lane]-player.position.x)*Math.min(1,dt*14);
+      if((V.input.aDown||V.input.axis.y>.6)&&ground){vy=9;ground=false;V.beep(520,.08,'sine')}
+      vy-=26*dt;player.position.y+=vy*dt;
+      if(player.position.y<=.8){player.position.y=.8;vy=0;ground=true}
+      for(const d of dashes){d.position.z+=speed*dt;if(d.position.z>8)d.position.z-=160}
+      for(const o of things){
+        o.position.z+=speed*dt;
+        if(o.userData.kind==='coin')o.rotation.z+=dt*4;
+        if(o.position.z>8)place(o,-150-Math.random()*40);
+        if(V.hit(player,o,-.15)){
+          if(o.userData.kind==='coin'){score+=50;V.beep(900,.06,'sine');place(o,-150-Math.random()*40)}
+          else{V.beep(110,.4,'sawtooth');V.gameOver('You crashed! Score '+Math.floor(score))}
+        }
+      }
+      V.hud.set('Score',Math.floor(score));V.hud.set('Speed',Math.floor(speed*3.6)+' km/h');
+      V.follow(player,new THREE.Vector3(0,4,8),.1);
+    });
+  }
+
+  function presetMaze(){
+    V.title='MAZE EXPLORER';V.help='W A S D or the joystick to move. Drag to look around. Collect all 5 gems, then reach the green portal.';
+    V.scene.background=new THREE.Color(0x07070f);V.scene.fog=new THREE.Fog(0x07070f,3,26);
+    const N=8,G=2*N+1,CELL=4,grid=Array.from({length:G},()=>Array(G).fill(1));
+    (function carve(x,y){
+      grid[y][x]=0;
+      const dirs=[[2,0],[-2,0],[0,2],[0,-2]].sort(()=>Math.random()-.5);
+      for(const [dx,dy] of dirs){const nx=x+dx,ny=y+dy;if(nx>0&&ny>0&&nx<G-1&&ny<G-1&&grid[ny][nx]===1){grid[y+dy/2][x+dx/2]=0;carve(nx,ny)}}
+    })(1,1);
+    const wallGeo=new THREE.BoxGeometry(CELL,CELL*.9,CELL),wallMat=new THREE.MeshStandardMaterial({color:0x4a3fa0,roughness:.8});
+    for(let y=0;y<G;y++)for(let x=0;x<G;x++)if(grid[y][x]===1){const w=new THREE.Mesh(wallGeo,wallMat);w.position.set(x*CELL,CELL*.45,y*CELL);V.scene.add(w)}
+    const floor=V.plane(G*CELL,G*CELL,0x16162a);floor.rotation.x=-Math.PI/2;floor.position.set((G-1)*CELL/2,0,(G-1)*CELL/2);
+    const open=[];
+    for(let y=1;y<G-1;y++)for(let x=1;x<G-1;x++)if(grid[y][x]===0&&(x+y>8))open.push([x,y]);
+    open.sort(()=>Math.random()-.5);
+    const gems=[];
+    for(let i=0;i<5;i++){
+      const [gx,gy]=open[i];
+      const g=new THREE.Mesh(new THREE.OctahedronGeometry(.6),new THREE.MeshStandardMaterial({color:0xffd400,emissive:0x886600}));
+      g.position.set(gx*CELL,1.4,gy*CELL);V.scene.add(g);gems.push(g);
+    }
+    const portal=V.cylinder(1.2,1.2,.2,0x00ff88);portal.position.set((G-2)*CELL,.1,(G-2)*CELL);portal.material.emissive.setHex(0x006633);
+    const torch=new THREE.PointLight(0xffe2b0,1.1,18);V.camera.add(torch);V.scene.add(V.camera);
+    let px=CELL,pz=CELL,yaw=0,pitch=0,got=0,time=0;
+    function blocked(x,z){
+      const r=.7;
+      for(const [dx,dz] of [[r,r],[r,-r],[-r,r],[-r,-r]]){const cx=Math.round((x+dx)/CELL),cz=Math.round((z+dz)/CELL);if(!grid[cz]||grid[cz][cx]!==0)return true}
+      return false;
+    }
+    V.onUpdate((dt)=>{
+      time+=dt;yaw-=V.input.look.x*.005;pitch=V.clamp(pitch-V.input.look.y*.004,-1.2,1.2);
+      const f=V.input.axis.y,s=V.input.axis.x,sp=6;
+      const mx=(-Math.sin(yaw)*f+Math.cos(yaw)*s)*sp*dt,mz=(-Math.cos(yaw)*f-Math.sin(yaw)*s)*sp*dt;
+      if(!blocked(px+mx,pz))px+=mx;
+      if(!blocked(px,pz+mz))pz+=mz;
+      V.camera.position.set(px,1.7,pz);V.camera.rotation.order='YXZ';V.camera.rotation.set(pitch,yaw,0);
+      gems.forEach((g,i)=>{
+        if(!g.visible)return;
+        g.rotation.y+=dt*2;g.position.y=1.4+Math.sin(time*2+i)*.2;
+        if(Math.hypot(g.position.x-px,g.position.z-pz)<1.3){g.visible=false;got++;V.beep(880,.1,'sine');V.hud.msg('Gem '+got+' / 5',900)}
+      });
+      portal.rotation.y+=dt;
+      V.hud.set('Gems',got+' / 5');V.hud.set('Time',Math.floor(time)+' s');
+      if(got===5&&Math.hypot(portal.position.x-px,portal.position.z-pz)<1.8)V.win('You escaped in '+Math.floor(time)+' seconds!');
+    });
+  }
+
+  function presetShooter(){
+    V.title='STAR DEFENDER';V.help='Move with WASD, the arrow keys or the joystick. Fire with Space or the A button (hold to keep firing).';
+    V.scene.background=new THREE.Color(0x01010a);
+    const stars=[];
+    for(let i=0;i<160;i++){const s=V.sphere(.07,0xffffff);s.position.set(V.rand(-45,45),V.rand(-25,25),V.rand(-140,5));stars.push(s)}
+    const ship=new THREE.Group();V.scene.add(ship);
+    const hull=V.cone(.8,2.4,0x5ec8ff,ship);hull.rotation.x=-Math.PI/2;
+    const wing=V.box(2.6,.12,.9,0x2a7fbf,ship);wing.position.z=.5;
+    const flame=V.cone(.25,.8,0xff8a1f,ship);flame.rotation.x=Math.PI/2;flame.position.z=1.5;flame.material.emissive.setHex(0xff6a00);
+    ship.position.set(0,0,2);
+    V.camera.position.set(0,6,12);V.camera.lookAt(0,0,-10);
+    const bullets=[],enemies=[];
+    let score=0,lives=3,fireCool=0,spawn=1,t=0,inv=0;
+    function newEnemy(){
+      const e=V.box(1.4,1.1,1.4,0xff4466);e.material.emissive.setHex(0x550011);
+      e.position.set(V.rand(-9,9),V.rand(-4,4),-90);e.userData.v=V.rand(10,16)+t*.15;enemies.push(e);
+    }
+    V.onUpdate((dt,tt)=>{
+      t=tt;fireCool-=dt;spawn-=dt;inv-=dt;
+      ship.position.x=V.clamp(ship.position.x+V.input.axis.x*14*dt,-10,10);
+      ship.position.y=V.clamp(ship.position.y+V.input.axis.y*10*dt,-5,5);
+      ship.rotation.z=-V.input.axis.x*.5;
+      if((V.input.a||V.input.b)&&fireCool<=0){
+        fireCool=.18;const b=V.sphere(.25,0xffe44d);b.material.emissive.setHex(0xffcc00);
+        b.position.copy(ship.position);b.position.z-=1.5;bullets.push(b);V.beep(700,.05,'square');
+      }
+      if(spawn<=0){newEnemy();spawn=Math.max(.35,1.2-t*.01)}
+      for(const s of stars){s.position.z+=30*dt;if(s.position.z>6)s.position.z=-140}
+      for(let i=bullets.length-1;i>=0;i--){const b=bullets[i];b.position.z-=60*dt;if(b.position.z<-100){V.scene.remove(b);bullets.splice(i,1)}}
+      for(let i=enemies.length-1;i>=0;i--){
+        const e=enemies[i];e.position.z+=e.userData.v*dt;e.rotation.x+=dt;e.rotation.y+=dt*1.3;
+        let dead=false;
+        for(let j=bullets.length-1;j>=0;j--){if(V.dist(bullets[j],e)<1.3){V.scene.remove(bullets[j]);bullets.splice(j,1);dead=true;break}}
+        if(dead){score+=100;V.beep(200,.12,'sawtooth');V.scene.remove(e);enemies.splice(i,1);continue}
+        if(e.position.z>3){V.scene.remove(e);enemies.splice(i,1);continue}
+        if(inv<=0&&V.dist(ship,e)<1.8){
+          lives--;inv=1.5;V.beep(90,.4,'sawtooth');V.scene.remove(e);enemies.splice(i,1);V.hud.msg('Hit!',600);
+          if(lives<=0)V.gameOver('Final score '+score);
+        }
+      }
+      ship.visible=inv<=0||Math.floor(inv*10)%2===0;
+      V.hud.set('Score',score);V.hud.set('Lives',lives);
+    });
+  }
+
+  const bodyOf=f=>{const s=f.toString();return s.slice(s.indexOf('{')+1,s.lastIndexOf('}')).replace(/^\n+|\s+$/g,'')};
+  const PRESETS={runner:{name:'Neon Runner',fn:presetRunner},maze:{name:'Maze Explorer',fn:presetMaze},shooter:{name:'Star Defender',fn:presetShooter}};
+
+  /* ---------- AI instructions ---------- */
+  const SYS3D='You are an expert game developer. You write 3D browser games with Three.js (r128) on top of a tiny helper framework called V. Reply with ONLY JavaScript code (no HTML, no explanations). Your code runs after THREE and V already exist.\n\n'
+   +'FRAMEWORK\n'
+   +'V.title = "GAME NAME"; V.help = "controls text";\n'
+   +'V.scene, V.camera (PerspectiveCamera) and V.renderer already exist; a hemisphere light and a directional light are already added.\n'
+   +'V.box(w,h,d,color[,parent]) V.sphere(r,color[,parent]) V.cylinder(rTop,rBottom,h,color[,parent]) V.cone(r,h,color[,parent]) V.plane(w,h,color[,parent]) V.ground(size,color) return a THREE.Mesh already added to the scene (or to the parent Group). color is a hex number like 0xff3366. For glow use mesh.material.emissive.setHex(0x112233). Materials are MeshStandardMaterial.\n'
+   +'Input: V.input.axis.x (-1 left to 1 right) and V.input.axis.y (-1 down/back to 1 up/forward) come from WASD, arrow keys or a touch joystick. V.input.a and V.input.b are true while held (Space/Enter or touch button A; Shift/X/F/Z or touch button B). V.input.aDown and V.input.bDown are true only on the frame the button was pressed. V.input.look.x and V.input.look.y are the pixels the mouse or finger was dragged this frame (use for camera look).\n'
+   +'V.onUpdate(function(dt,t){ ... }) is the game loop (dt in seconds, t total seconds). Call it exactly once, at the end of your code.\n'
+   +'V.hud.set("Score",123) shows a line of text on screen. V.hud.msg("text",ms) shows a big message. V.gameOver("text") and V.win("text") end the game and show a Play again button.\n'
+   +'V.follow(target,new THREE.Vector3(0,4,8),0.1) moves the camera behind a target (third person). V.hit(a,b,pad) is true when the bounding boxes of two objects overlap (a negative pad is more forgiving). V.dist(a,b) is the distance between two objects. V.rand(a,b), V.clamp(v,a,b), V.beep(freq,seconds,"square"|"sine"|"sawtooth").\n\n'
+   +'RULES\n'
+   +'- Use only THREE r128 core classes. No loaders, no OrbitControls, no CapsuleGeometry, no import statements. No external images, fonts, models or sounds: build everything from primitives, and use V.beep for sound.\n'
+   +'- Do not touch the DOM, window, document, fetch, eval or storage. Do not call renderer.render (the framework renders).\n'
+   +'- The game must be playable with keyboard AND touch using only V.input.\n'
+   +'- Multiply movement by dt. Reuse or recycle objects instead of creating endless meshes (keep under about 400 objects). Remove objects with V.scene.remove(obj).\n'
+   +'- Set a background colour (V.scene.background = new THREE.Color(...)) and optionally V.scene.fog.\n'
+   +'- Make it fun and complete: a goal or score, difficulty that rises, a way to lose or win, and HUD information.\n'
+   +'- Use const/let at top level. Keep the code under about 230 lines. Return the whole program.\n\n'
+   +'EXAMPLE OF A COMPLETE GAME (follow this style):\n'+bodyOf(presetRunner);
+  const BAD=/\b(fetch|XMLHttpRequest|WebSocket|importScripts|eval|localStorage|sessionStorage|indexedDB|postMessage)\b|new\s+Function|\bdocument\b|window\.(open|location|top|parent)|\b(?:top|parent)\.|\bimport\b/;
+
+  /* ---------- UI ---------- */
+  document.querySelector('#p-games').insertAdjacentHTML('beforeend',
+    '<div class="card" id="g3Card" style="display:none"><h3>🎲 3D Game Studio</h3>'
+   +'<div class="chips" id="g3Chips"></div>'
+   +'<textarea id="g3Prompt" rows="2" placeholder="Describe your own 3D game, e.g. Drive a car through a city and dodge traffic"></textarea>'
+   +'<div class="row"><button class="btn" id="g3Make">Make 3D game with AI</button><button class="ghost" id="g3Fs">Full screen</button><button class="ghost" id="g3Dl">Download .html</button><button class="ghost" id="g3Cd">Code</button></div>'
+   +'<div class="hint" id="g3St">Pick a ready-made game, or describe your own. Click inside the game once so it receives your keys.</div>'
+   +'<iframe id="g3Frame" title="3D game" sandbox="allow-scripts allow-modals allow-pointer-lock" allow="fullscreen" style="display:none;width:100%;height:min(78vh,640px);border:1px solid var(--line);border-radius:12px;background:#000;margin-top:8px"></iframe>'
+   +'<div id="g3Tools" style="display:none;margin-top:8px"><input id="g3Change" placeholder="Change it, e.g. make it faster, add enemies, use blue colours"><div class="row"><button class="btn sm" id="g3Improve">Improve it</button><button class="ghost" id="g3Fix">Auto-fix errors</button></div></div>'
+   +'<div id="g3CodeBox" style="display:none;margin-top:8px"><textarea id="g3Src" rows="14" spellcheck="false" style="font:12px ui-monospace,Consolas,monospace;white-space:pre"></textarea><button class="ghost" id="g3Run">Run this code</button></div></div>');
+  const chips=$('#g3Chips');
+  Object.keys(PRESETS).forEach(k=>{const b=document.createElement('button');b.className='chip';b.textContent='▶ '+PRESETS[k].name+' (instant)';b.onclick=()=>runCode(bodyOf(PRESETS[k].fn),PRESETS[k].name,false);chips.appendChild(b)});
+  ['A car chase where I dodge traffic','Collect glowing orbs while robots chase me','A tower stacker where blocks slide and I tap to drop','Parkour jumping across floating platforms'].forEach(s=>{const b=document.createElement('button');b.className='chip';b.textContent=s;b.onclick=()=>{$('#g3Prompt').value=s;make()};chips.appendChild(b)});
+  const top=document.querySelector('#p-games .chips');
+  if(top&&top!==chips){const c=document.createElement('button');c.className='chip';c.textContent='🎲 3D Game Studio';c.onclick=()=>openStudio();top.appendChild(c)}
+
+  const frame=$('#g3Frame'),st=$('#g3St');
+  let code='',lastErr='',fixes=0,autoOK=false,busy=false,pageHtml='';
+  const say=t=>{st.textContent=t};
+
+  function pageFor(js){
+    js=String(js).replace(/<\/script/gi,'<\\/script');
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>3D game</title>'
+     +'<style>html,body{margin:0;height:100%;overflow:hidden;background:#000}</style>'
+     +'<script src="'+THREE_URL+'"><\/script></head><body>'
+     +'<script>('+v3dRuntime.toString()+')();<\/script>'
+     +'<script>try{\n'+js+'\n}catch(e){V.fail(e)}<\/script>'
+     +'<script>V.boot()<\/script></body></html>';
+  }
+  function runCode(js,name,ai){
+    code=js;lastErr='';$('#g3Src').value=js;
+    pageHtml=pageFor(js);
+    frame.style.display='block';$('#g3Tools').style.display='block';
+    frame.srcdoc=pageHtml;
+    autoOK=!!ai;
+    say((name?name+' loaded. ':'')+'Click inside the game, then press any key or tap to start.');
+    $('#g3Card').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+  function extract(raw){
+    let t=String(raw||'');
+    const m=t.match(/```(?:javascript|js)?\s*([\s\S]*?)```/i);
+    if(m)t=m[1];
+    return t.replace(/<\/?script[^>]*>/gi,'').trim();
+  }
+  function check(js){
+    if(js.length<80)return 'The reply was too short to be a game.';
+    if(BAD.test(js))return 'The code used something that is not allowed (network, document, window or import).';
+    if(!/V\.onUpdate\s*\(/.test(js))return 'The code never calls V.onUpdate.';
+    try{new Function(js)}catch(e){return 'Syntax error: '+e.message}
+    return '';
+  }
+  async function ask(userMsg){
+    const raw=await groq([{role:'system',content:SYS3D},{role:'user',content:userMsg}],{max:8000,temperature:.35});
+    return extract(raw);
+  }
+  async function build(userMsg,label){
+    let js='',problem='';
+    for(let t=0;t<3;t++){
+      say(label+(t?' (retry '+t+')':'')+'…');
+      js=await ask(userMsg+(problem?'\n\nYOUR PREVIOUS ANSWER WAS REJECTED: '+problem+' Return corrected, complete code.':''));
+      problem=check(js);
+      if(!problem)return js;
+    }
+    throw new Error(problem);
+  }
+  async function make(){
+    if(busy)return;
+    const d=$('#g3Prompt').value.trim();if(!d)return toast('Describe the game first.');
+    if(!store.get('groq'))return toast('This needs your Groq key (Settings).');
+    busy=true;$('#g3Make').disabled=true;fixes=0;
+    try{runCode(await build('Game idea: '+d,'VISION is writing your 3D game'),'Your game',true)}
+    catch(e){say('⚠ Could not build that game: '+e.message+' Try simpler wording, or pick a ready-made game.')}
+    busy=false;$('#g3Make').disabled=false;
+  }
+  async function improve(){
+    if(busy||!code)return;
+    const c=$('#g3Change').value.trim();if(!c)return toast('Say what to change first.');
+    if(!store.get('groq'))return toast('This needs your Groq key (Settings).');
+    busy=true;$('#g3Improve').disabled=true;fixes=0;
+    try{runCode(await build('Here is the current game code:\n```js\n'+code+'\n```\nChange request: '+c+'\nReturn the COMPLETE updated program.','Applying your change'),'Updated game',true)}
+    catch(e){say('⚠ Could not apply that change: '+e.message)}
+    busy=false;$('#g3Improve').disabled=false;
+  }
+  async function autoFix(){
+    if(busy||!code||!lastErr)return toast(lastErr?'Busy…':'No error to fix right now.');
+    if(!store.get('groq'))return toast('This needs your Groq key (Settings).');
+    busy=true;fixes++;
+    try{runCode(await build('This game code throws an error.\nERROR: '+lastErr+'\nCODE:\n```js\n'+code+'\n```\nFix the bug and return the COMPLETE corrected program.','Fixing: '+lastErr.slice(0,80)),'Fixed game',true)}
+    catch(e){say('⚠ Auto-fix failed: '+e.message)}
+    busy=false;
+  }
+  window.addEventListener('message',e=>{
+    if(e.source!==frame.contentWindow||!e.data||e.data.v3d!=='error')return;
+    lastErr=String(e.data.message||'unknown error').slice(0,300);
+    if(autoOK&&fixes<2&&store.get('groq')&&!busy){say('The game hit an error ('+lastErr.slice(0,100)+'). VISION is fixing it…');autoFix()}
+    else say('⚠ Game error: '+lastErr+(fixes>=2?' (auto-fix tried twice). Press Improve it and describe the problem, or edit the code.':' Press "Auto-fix errors" to let VISION repair it.'));
+  });
+  function openStudio(){
+    go('games');const o=$('#gameOut');if(o)o.style.display='none';const ak=$('#akiCard');if(ak)ak.style.display='none';const ch=$('#chessCard');if(ch)ch.style.display='none';
+    $('#g3Card').style.display='block';$('#g3Card').scrollIntoView({behavior:'smooth'});
+  }
+  $('#g3Make').onclick=make;
+  $('#g3Improve').onclick=improve;
+  $('#g3Fix').onclick=()=>{fixes=0;autoFix()};
+  $('#g3Fs').onclick=()=>{const f=frame.requestFullscreen||frame.webkitRequestFullscreen;if(f&&frame.style.display!=='none')f.call(frame);else toast('Start a game first.')};
+  $('#g3Cd').onclick=()=>{const b=$('#g3CodeBox');b.style.display=b.style.display==='none'?'block':'none'};
+  $('#g3Run').onclick=()=>{const js=$('#g3Src').value;const p=check(js);if(p)return say('⚠ '+p);runCode(js,'Your code',false)};
+  $('#g3Dl').onclick=()=>{
+    if(!pageHtml)return toast('Start a game first.');
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([pageHtml],{type:'text/html'}));a.download='vision-3d-game.html';a.click();
+  };
+  $('#g3Prompt').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();make()}});
+
+  const _sg=startGame;
+  startGame=function(){const c=$('#g3Card');if(c)c.style.display='none';return _sg.apply(this,arguments)};
+  const _route=route;
+  route=async function(t){
+    const s=t.trim();
+    const pm=s.match(/^(?:play|start|run|open)\s+(?:the\s+)?(?:a\s+)?(?:3d\s+)?(neon runner|maze explorer|maze|star defender|space shooter|runner)\b/i);
+    if(pm){
+      const w=pm[1].toLowerCase(),k=/runner/.test(w)?'runner':/maze/.test(w)?'maze':'shooter';
+      botSay('Starting '+PRESETS[k].name+' in the Games tab.',{silent:true});openStudio();runCode(bodyOf(PRESETS[k].fn),PRESETS[k].name,false);return true;
+    }
+    if(/^(?:make|create|build|generate|develop|code)\b/i.test(s)&&/\b(?:3d|three[- ]?d)\b/i.test(s)&&/\bgame\b/i.test(s)){
+      const d=s.replace(/^(?:make|create|build|generate|develop|code)\s+(?:me\s+)?(?:an?\s+)?/i,'').trim();
+      botSay('Opening the 3D Game Studio to build: '+d,{silent:true});openStudio();$('#g3Prompt').value=d;make();return true;
+    }
+    if(/^(?:open|show)\s+(?:the\s+)?3d\s+(?:game\s+)?(?:studio|games?)$/i.test(s)){openStudio();return true}
+    return _route(t);
+  };
+})()}catch(e){console.error('PACK 28 (3D Games) failed:',e)}
+/* ================= END PACK 28 ================= */
 </script>
 </body>
 </html>
