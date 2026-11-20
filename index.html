@@ -6530,6 +6530,613 @@ try{(function(){
   window.__v32Layer=v32Layer;   /* exposed only for testing */
 })()}catch(e){console.error('PACK 32 (controls add-on) failed:',e)}
 /* ================= END  PACK 32 ================= */ 
+ /* ================= PACK 33: Fixes + Media studio ================= */
+/* Paste this AFTER your other packs, inside the same script block, before the closing script tag.            */
+/* Part A fixes: uneven chess squares (even if an old chess pack is still on the page), the cramped game      */
+/*   buttons, the "No definition found" console error, the missing favicon, and stale cached pages.          */
+/* Part B adds a new  MEDIA  tab: add or capture a photo, video or audio, then ask questions about it,       */
+/*   translate it, edit it, or change its background.                                                         */
+try{(function(){
+  if(window.__pack33)return;window.__pack33=1;
+
+  /* =====================================================================
+     PART A: FIXES
+     ===================================================================== */
+  /* A1. chess squares: make every square the same size, whichever chess pack version is on the page.
+         (Squares that already carry their own position are left alone.) */
+  try{
+    const fx=document.createElement('style');
+    fx.textContent='#c2Board:has(.c2sq:not([style])){display:grid!important;grid-template-columns:repeat(8,minmax(0,1fr))!important;grid-template-rows:repeat(8,minmax(0,1fr))!important;height:min(88vw,520px)!important;aspect-ratio:auto!important}'
+      +'#c2Board .c2sq:not([style]){position:relative!important;min-width:0!important;min-height:0!important;overflow:hidden!important;width:auto!important;height:auto!important}';
+    document.head.appendChild(fx);
+  }catch(e){}
+
+  /* A2. chess.js asks for a global "define"; your page has a dictionary function with that name.
+         Hide it while a library script loads so the console error "No definition found" disappears. */
+  try{
+    const _ls=loadScript;
+    loadScript=function(u){
+      const dd=window.define;window.define=undefined;let p;
+      try{p=_ls(u)}catch(e){window.define=dd;throw e}
+      return Promise.resolve(p).finally(()=>{window.define=dd});
+    };
+  }catch(e){}
+
+  /* A3. favicon (removes the favicon.ico 404 in the console) */
+  try{
+    if(!document.querySelector('link[rel="icon"]')){
+      const l=document.createElement('link');l.rel='icon';
+      l.href='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0b0508"/><path d="M12 14h12l8 24 8-24h12L38 52H26z" fill="#f5c518"/></svg>');
+      document.head.appendChild(l);
+    }
+  }catch(e){}
+
+  /* A4. one-time cleanup of the old cached copy of the app, so new versions show up after one reload */
+  try{
+    if('serviceWorker' in navigator&&!store.get('v33clean')){
+      store.set('v33clean','1');
+      navigator.serviceWorker.getRegistrations().then(r=>{
+        r.forEach(x=>x.unregister());
+        if(window.caches)caches.keys().then(k=>k.forEach(c=>caches.delete(c)));
+        if(r.length)toast('Old cached copy cleared. Reload the page once to get the newest version.');
+      });
+    }
+  }catch(e){}
+
+  /* A5. game buttons: tidy grid on the right, sized for the screen (works with any version of PACK 32) */
+  function v33Fix(){
+    var PRI=['Punch','Kick','Block','Jump','Roll','Wave','Crouch','Slash','Sword','RAGE','Blast'];
+    function lay(){
+      var bs=[].slice.call(document.querySelectorAll('.v32b'));if(!bs.length)return;
+      var lab=function(b){var s=b.querySelector('small');return s?s.textContent:''};
+      bs.sort(function(a,b){var x=PRI.indexOf(lab(a)),y=PRI.indexOf(lab(b));return (x<0?99:x)-(y<0?99:y)});
+      var W=window.innerWidth||800,H=window.innerHeight||500,n=bs.length,cols=n<=4?2:((n>8&&H<460)?4:3);
+      var s=Math.max(46,Math.min(78,Math.floor(Math.min(W/9,H/(Math.ceil(n/cols)+3))))),g=Math.max(10,Math.round(s*.3));
+      bs.forEach(function(b,i){
+        var c=i%cols,r=Math.floor(i/cols);
+        b.style.width=s+'px';b.style.height=s+'px';b.style.right=(12+c*(s+g))+'px';b.style.bottom=(16+r*(s+g))+'px';
+        b.style.fontSize=Math.round(s*.36)+'px';var sm=b.querySelector('small');if(sm)sm.style.fontSize=Math.max(8,Math.round(s*.16))+'px';
+      });
+    }
+    setTimeout(lay,60);setTimeout(lay,700);window.addEventListener('resize',lay);
+  }
+  try{
+    const fr=$('#g4Frame');
+    if(fr){
+      const own=Object.getOwnPropertyDescriptor(fr,'srcdoc')||Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype,'srcdoc');
+      const tf=html=>{
+        if(typeof html!=='string'||html.indexOf('V.boot()')<0||html.indexOf('v33Fix')>=0)return html;
+        const add='<script>/*v33Fix*/('+v33Fix.toString()+')();<\/script>';
+        return html.replace(/<\/body>\s*<\/html>\s*$/,()=>add+'</body></html>');
+      };
+      Object.defineProperty(fr,'srcdoc',{configurable:true,get(){return own.get.call(this)},set(v){own.set.call(this,tf(v))}});
+    }
+  }catch(e){console.warn('PACK 33: game button fix not applied',e)}
+
+  /* =====================================================================
+     PART B: MEDIA STUDIO
+     ===================================================================== */
+  if(document.getElementById('p-media'))return;
+  const SEG_BASE='https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/';
+  const LANGS=['English','Hindi','Marathi','Gujarati','Tamil','Telugu','Bengali','Urdu','Punjabi','Kannada','Malayalam','Spanish','French','German','Italian','Portuguese','Russian','Japanese','Korean','Chinese','Arabic','Turkish','Dutch','Indonesian','Thai','Vietnamese','Polish','Ukrainian','Greek','Hebrew','Swahili','Nepali'];
+  const COLORS={red:'#e53935',blue:'#1e88e5',green:'#43a047',yellow:'#fdd835',purple:'#8e24aa',orange:'#fb8c00',pink:'#ec407a',black:'#111111',white:'#ffffff',grey:'#9e9e9e',gray:'#9e9e9e',cyan:'#00bcd4',teal:'#009688',brown:'#795548'};
+  const GRADS={sunset:['#ff5e62','#ff9966','#ffd194'],ocean:['#0f2027','#2c5364','#4ac1d8'],studio:['#2b2b33','#55555f','#8a8a96'],forest:['#134e5e','#2e8b57','#a8e063'],galaxy:['#0b0c2a','#3b1f6e','#d65db1']};
+  let M={type:null,blob:null,url:'',name:'',transcript:null,frames:null,hist:[],dur:0},busy=false,bgImgEl=null,segModel=null,segLoading=null,segRes=null;
+  let cam={stream:null,rec:null,chunks:[],kind:null,facing:'user',timer:null,t0:0};
+
+  /* ---------- UI ---------- */
+  const nav=document.querySelector('nav');
+  if(nav&&!nav.querySelector('[data-t="media"]')){
+    const b=document.createElement('button');b.dataset.t='media';b.innerHTML='<span class="ic">\uD83C\uDF9E</span><span>Media</span>';b.onclick=()=>go('media');
+    nav.insertBefore(b,nav.querySelector('[data-t="settings"]')||null);
+  }
+  const mst=document.createElement('style');
+  mst.textContent='#mdPrev img,#mdPrev video,#mdOut img,#mdOut video{max-width:100%;max-height:340px;border-radius:10px;display:block;margin:8px auto;background:#000}#mdPrev audio,#mdOut audio{width:100%;margin-top:8px}'
+    +'#mdLog .msg{max-width:100%}#mdLog{border:1px solid var(--line);border-radius:12px;padding:8px;margin:8px 0;background:rgba(0,0,0,.25)}#mdLog:empty{display:none}'
+    +'.mdfld{display:flex;flex-direction:column;gap:2px;font-size:13px;color:var(--muted);flex:1 1 150px}.mdfld select,.mdfld input{margin:0}.mdfld input[type=color]{height:42px;padding:2px}';
+  document.head.appendChild(mst);
+  document.querySelector('main').insertAdjacentHTML('beforeend',
+    '<section class="panel" id="p-media">'
+   +'<div class="card"><h3>\uD83C\uDF9E Media studio</h3>'
+   +'<div class="hint">Add a photo, video or audio file, or capture one right now. Then ask questions about it, or tell VISION what to do: translate, edit, change the background, trim, add subtitles\u2026</div>'
+   +'<div class="row" style="margin-top:8px"><button class="btn sm" id="mdFile">\uD83D\uDCC1 Add file</button><button class="ghost" id="mdShot">\uD83D\uDCF7 Take photo</button><button class="ghost" id="mdVid">\uD83C\uDFA5 Record video</button><button class="ghost" id="mdAud">\uD83C\uDF99 Record audio</button></div>'
+   +'<input type="file" id="mdFileIn" accept="image/*,video/*,audio/*" hidden>'
+   +'<div id="mdCam" style="display:none;margin-top:8px"><video id="mdLive" playsinline muted autoplay style="width:100%;max-width:520px;border-radius:10px;background:#000;display:block;margin:0 auto"></video>'
+   +'<div class="row" style="margin-top:8px"><button class="btn sm" id="mdGo">Capture</button><button class="ghost" id="mdFlip">Switch camera</button><button class="ghost" id="mdClose">Close camera</button></div><div class="hint" id="mdCamSt"></div></div>'
+   +'<div id="mdPrev"></div></div>'
+   +'<div class="card"><h3>Ask or tell VISION</h3>'
+   +'<div class="chips" id="mdChips"></div>'
+   +'<div class="row"><label class="mdfld">Translate / answer in<select id="mdLang">'+LANGS.map(l=>'<option>'+l+'</option>').join('')+'</select></label><label class="mdfld">Or another language<input id="mdLangX" placeholder="e.g. Bhojpuri"></label></div>'
+   +'<div class="row" style="margin-top:6px"><label class="mdfld">Background<select id="mdBg"><option value="blur">Blur</option><option value="color">Solid colour</option><option value="grad:sunset">Gradient: sunset</option><option value="grad:ocean">Gradient: ocean</option><option value="grad:studio">Gradient: studio grey</option><option value="grad:forest">Gradient: forest</option><option value="grad:galaxy">Gradient: galaxy</option><option value="image">My own image</option><option value="transparent">Transparent (photo only)</option></select></label>'
+   +'<label class="mdfld">Colour<input type="color" id="mdBgCol" value="#1e88e5"></label><label class="mdfld">Background image<input type="file" id="mdBgImg" accept="image/*"></label></div>'
+   +'<div id="mdLog"></div>'
+   +'<div class="inbar" style="margin-top:8px"><input id="mdQ" placeholder="Ask a question, or say what to do\u2026" autocomplete="off"><button class="btn" id="mdSend">Go</button></div>'
+   +'<div class="hint" id="mdSt"></div><div id="mdOut"></div></div>'
+   +'<div class="card"><div class="hint">Privacy: files stay in your browser. Pictures you ask about are sent to Groq (your own key) for analysis; audio is sent to Groq for transcription. AI photo edits go through your own server and Cloudflare account. Only edit photos of people who agree to it, and never make misleading fakes of real people.</div></div>'
+   +'</section>');
+
+  const $m=id=>document.getElementById(id);
+  const say=(cls,html)=>{const d=document.createElement('div');d.className='msg '+cls;d.innerHTML=html;$m('mdLog').appendChild(d);$m('mdLog').scrollTop=1e9;return d};
+  const setSt=t=>{$m('mdSt').textContent=t||''};
+  const pad=(n,l=2)=>String(n).padStart(l,'0');
+  const fmtT=s=>{s=Math.max(0,s|0);return Math.floor(s/60)+':'+pad(s%60)};
+  const onceEvt=(el,ev,ms=20000)=>new Promise((res,rej)=>{const t=setTimeout(()=>rej(new Error('The media took too long to load.')),ms);el.addEventListener(ev,()=>{clearTimeout(t);res()},{once:true});el.addEventListener('error',()=>{clearTimeout(t);rej(new Error('This file could not be read by the browser.'))},{once:true})});
+  const lang=()=>($m('mdLangX').value.trim()||$m('mdLang').value);
+  const needKey=()=>{if(!store.get('groq'))throw new Error('Add your Groq API key in Settings first.')};
+  function guessType(n){n=String(n||'').toLowerCase();if(/\.(png|jpe?g|webp|gif|bmp|heic|avif)$/.test(n))return 'image';if(/\.(mp4|webm|mov|mkv|avi|m4v|3gp)$/.test(n))return 'video';if(/\.(mp3|wav|m4a|aac|ogg|oga|opus|flac|weba)$/.test(n))return 'audio';return null}
+  function download(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove()}
+  const canvasBlob=(cv,type='image/png',q=.92)=>new Promise(r=>cv.toBlob(r,type,q));
+  const loadImgEl=url=>new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>rej(new Error('Could not read the image.'));i.src=url});
+  function blobToDataURL(b){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(b)})}
+  function smallDataURL(src,max=1280,q=.85){
+    const w=src.videoWidth||src.naturalWidth||src.width,h=src.videoHeight||src.naturalHeight||src.height,s=Math.min(1,max/Math.max(w,h)),cv=document.createElement('canvas');
+    cv.width=Math.max(8,Math.round(w*s));cv.height=Math.max(8,Math.round(h*s));cv.getContext('2d').drawImage(src,0,0,cv.width,cv.height);return cv.toDataURL('image/jpeg',q);
+  }
+
+  /* ---------- load / preview ---------- */
+  function setMedia(blob,name){
+    stopCam();
+    if(M.url)try{URL.revokeObjectURL(M.url)}catch(e){}
+    const t=(blob.type||'').split('/')[0],type=['image','video','audio'].includes(t)?t:guessType(name);
+    if(!type)return toast('That file type is not supported. Use a photo, video or audio file.');
+    M={type,blob,url:URL.createObjectURL(blob),name:name||'media',transcript:null,frames:null,hist:[],dur:0};
+    const pv=$m('mdPrev');
+    if(type==='image')pv.innerHTML='<img src="'+M.url+'" alt="">';
+    else if(type==='video')pv.innerHTML='<video src="'+M.url+'" controls playsinline></video>';
+    else pv.innerHTML='<audio src="'+M.url+'" controls></audio>';
+    const el=pv.firstChild;if(type!=='image')el.addEventListener('loadedmetadata',()=>{M.dur=el.duration||0});
+    $m('mdOut').innerHTML='';$m('mdLog').innerHTML='';
+    say('bot','Loaded <b>'+esc(M.name)+'</b> ('+type+(blob.size?', '+(blob.size/1048576).toFixed(1)+' MB':'')+'). Pick a quick action or type what you want.');
+    renderChips();
+  }
+  function renderChips(){
+    const C={
+      image:['Describe this photo','Read the text in this photo','Translate the text in this photo','Remove the background','Blur the background','Change the background','Make it black and white','Make it brighter','AI edit: '],
+      video:['Summarize this video','What is said in this video?','Transcribe this video','Translate the speech to subtitles','Change the background','Trim the first 10 seconds','Make it 2x faster','Remove the sound','Extract the audio'],
+      audio:['Transcribe this audio','Summarize this audio','Translate this audio','Translate and speak it','Make it louder','Make it 1.5x faster','Trim the first 10 seconds','Fade in and out']
+    }[M.type]||[];
+    const box=$m('mdChips');box.innerHTML='';
+    C.forEach(t=>{const b=document.createElement('button');b.className='chip';b.textContent=t;b.onclick=()=>{if(/:\s*$/.test(t)){$m('mdQ').value=t.replace(/^AI edit:\s*/,'Edit: ');$m('mdQ').focus()}else handle(t)};box.appendChild(b)});
+  }
+  $m('mdFile').onclick=()=>$m('mdFileIn').click();
+  $m('mdFileIn').onchange=e=>{const f=e.target.files[0];e.target.value='';if(f)setMedia(f,f.name)};
+  $m('mdBgImg').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{bgImgEl=await loadImgEl(URL.createObjectURL(f));$m('mdBg').value='image';toast('Background image ready.')}catch(x){toast(x.message)}};
+
+  /* ---------- camera / microphone capture ---------- */
+  function stopCam(){
+    clearInterval(cam.timer);
+    try{if(cam.rec&&cam.rec.state!=='inactive'){cam.rec.onstop=null;cam.rec.stop()}}catch(e){}
+    if(cam.stream)cam.stream.getTracks().forEach(t=>t.stop());
+    cam.stream=null;cam.rec=null;const c=$m('mdCam');if(c)c.style.display='none';const l=$m('mdLive');if(l)l.srcObject=null;
+  }
+  async function openCam(kind){
+    stopCam();cam.kind=kind;
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)return toast('This browser cannot access the camera or microphone here.');
+    try{
+      cam.stream=await navigator.mediaDevices.getUserMedia(kind==='audio'?{audio:true}:{video:{facingMode:cam.facing},audio:kind==='video'});
+    }catch(e){return toast('Permission was denied or no device was found. Allow camera / microphone access and try again.')}
+    $m('mdCam').style.display='block';const live=$m('mdLive');
+    live.style.display=kind==='audio'?'none':'block';live.srcObject=kind==='audio'?null:cam.stream;
+    $m('mdGo').textContent=kind==='photo'?'\uD83D\uDCF8 Capture':'\u23FA Start recording';
+    $m('mdFlip').style.display=kind==='audio'?'none':'inline-block';
+    $m('mdCamSt').textContent=kind==='audio'?'Microphone ready. Press Start recording.':kind==='video'?'Camera ready. Press Start recording.':'Camera ready. Press Capture.';
+  }
+  $m('mdShot').onclick=()=>openCam('photo');$m('mdVid').onclick=()=>openCam('video');$m('mdAud').onclick=()=>openCam('audio');
+  $m('mdClose').onclick=stopCam;
+  $m('mdFlip').onclick=()=>{cam.facing=cam.facing==='user'?'environment':'user';openCam(cam.kind)};
+  $m('mdGo').onclick=async()=>{
+    if(!cam.stream)return;
+    if(cam.kind==='photo'){
+      const v=$m('mdLive'),cv=document.createElement('canvas');cv.width=v.videoWidth||1280;cv.height=v.videoHeight||720;cv.getContext('2d').drawImage(v,0,0);
+      const b=await canvasBlob(cv,'image/jpeg',.92);setMedia(b,'photo-'+Date.now()+'.jpg');return;
+    }
+    if(cam.rec&&cam.rec.state==='recording'){cam.rec.stop();return}
+    const vt=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm','video/mp4'],at=['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg'];
+    const mime=(cam.kind==='video'?vt:at).find(t=>window.MediaRecorder&&MediaRecorder.isTypeSupported(t));
+    if(!window.MediaRecorder)return toast('This browser cannot record.');
+    cam.chunks=[];cam.rec=new MediaRecorder(cam.stream,mime?{mimeType:mime}:undefined);
+    cam.rec.ondataavailable=e=>e.data&&e.data.size&&cam.chunks.push(e.data);
+    const kind=cam.kind;
+    cam.rec.onstop=()=>{clearInterval(cam.timer);const type=cam.rec.mimeType||(kind==='video'?'video/webm':'audio/webm'),b=new Blob(cam.chunks,{type}),ext=/mp4/.test(type)?'mp4':/ogg/.test(type)?'ogg':'webm';setMedia(b,(kind==='video'?'recording-':'voice-')+Date.now()+'.'+ext)};
+    cam.rec.start(500);cam.t0=Date.now();$m('mdGo').textContent='\u23F9 Stop and use';
+    cam.timer=setInterval(()=>{$m('mdCamSt').textContent='\u25CF Recording\u2026 '+fmtT((Date.now()-cam.t0)/1000)},400);
+  };
+
+  /* ---------- Groq helpers ---------- */
+  const visionAsk=(dataUrl,q,max=1200)=>groq([{role:'user',content:[{type:'text',text:q},{type:'image_url',image_url:{url:dataUrl}}]}],{model:CFG.visionModel,max});
+  const textAsk=(sys,user,max=1500,temp=.3)=>groq([{role:'system',content:sys},{role:'user',content:user}],{max,temperature:temp});
+  async function translateText(text,to){return textAsk('Translate the text into '+to+'. Keep the meaning, names and numbers. Reply with ONLY the translation.',text,1800,.2)}
+  async function translateSegments(segs,to){
+    const out=[];
+    for(let i=0;i<segs.length;i+=30){
+      const part=segs.slice(i,i+30).map(s=>s.text.trim());
+      let res=null;
+      try{
+        const raw=await textAsk('Translate every item of this JSON array into '+to+'. Reply with ONLY a JSON array of strings, same length and order, no markdown.',JSON.stringify(part),3000,.1);
+        const a=JSON.parse(raw.replace(/```(?:json)?/gi,'').match(/\[[\s\S]*\]/)[0]);if(Array.isArray(a)&&a.length===part.length)res=a.map(String);
+      }catch(e){}
+      if(!res){res=[];for(const p of part)res.push(await translateText(p,to))}
+      res.forEach((t,k)=>out.push({start:segs[i+k].start,end:segs[i+k].end,text:t}));
+    }
+    return out;
+  }
+
+  /* ---------- audio helpers ---------- */
+  async function decodeAudio(blob){
+    const ab=await blob.arrayBuffer(),ac=new (window.AudioContext||window.webkitAudioContext)();
+    try{return await ac.decodeAudioData(ab.slice(0))}catch(e){throw new Error('Could not read the sound of this file. Try an mp3, wav, m4a, mp4 or webm file.')}finally{try{ac.close()}catch(x){}}
+  }
+  function bufToWav(buf){
+    const ch=Math.min(2,buf.numberOfChannels),len=buf.length,rate=buf.sampleRate,dv=new DataView(new ArrayBuffer(44+len*ch*2));
+    const w=(o,s)=>[...s].forEach((c,i)=>dv.setUint8(o+i,c.charCodeAt(0)));
+    w(0,'RIFF');dv.setUint32(4,36+len*ch*2,true);w(8,'WAVE');w(12,'fmt ');dv.setUint32(16,16,true);dv.setUint16(20,1,true);dv.setUint16(22,ch,true);dv.setUint32(24,rate,true);dv.setUint32(28,rate*ch*2,true);dv.setUint16(32,ch*2,true);dv.setUint16(34,16,true);w(36,'data');dv.setUint32(40,len*ch*2,true);
+    const d=[];for(let c=0;c<ch;c++)d.push(buf.getChannelData(c));
+    let o=44;for(let i=0;i<len;i++)for(let c=0;c<ch;c++){const s=Math.max(-1,Math.min(1,d[c][i]));dv.setInt16(o,s<0?s*32768:s*32767,true);o+=2}
+    return new Blob([dv],{type:'audio/wav'});
+  }
+  async function monoResample(buf,rate=16000,maxSec=600){
+    const sec=Math.min(buf.duration,maxSec),off=new OfflineAudioContext(1,Math.ceil(sec*rate),rate),src=off.createBufferSource();
+    src.buffer=buf;src.connect(off.destination);src.start(0,0,sec);return off.startRendering();
+  }
+  async function procAudio(buf,o){
+    const start=o.start||0,end=Math.min(o.end||buf.duration,buf.duration),rate=o.rate||1,gain=o.gain==null?1:o.gain,dur=Math.max(.2,(end-start)/rate);
+    const off=new OfflineAudioContext(buf.numberOfChannels,Math.ceil(dur*buf.sampleRate),buf.sampleRate),src=off.createBufferSource(),g=off.createGain();
+    src.buffer=buf;src.playbackRate.value=rate;
+    if(o.fade){g.gain.setValueAtTime(0,0);g.gain.linearRampToValueAtTime(gain,Math.min(1.5,dur/3));g.gain.setValueAtTime(gain,Math.max(.1,dur-Math.min(1.5,dur/3)));g.gain.linearRampToValueAtTime(0,dur)}else g.gain.value=gain;
+    src.connect(g);g.connect(off.destination);src.start(0,start,end-start);return off.startRendering();
+  }
+  async function whisper(wav){
+    needKey();
+    const fd=new FormData();fd.append('file',wav,'audio.wav');fd.append('model','whisper-large-v3-turbo');fd.append('response_format','verbose_json');
+    const r=await fetch('https://api.groq.com/openai/v1/audio/transcriptions',{method:'POST',headers:{Authorization:'Bearer '+store.get('groq')},body:fd});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error((j.error&&j.error.message)||('Transcription failed ('+r.status+')'));
+    return {text:String(j.text||'').trim(),language:j.language||'',segments:(j.segments||[]).map(s=>({start:s.start,end:s.end,text:String(s.text||'').trim()})).filter(s=>s.text)};
+  }
+  async function ensureTranscript(){
+    if(M.transcript)return M.transcript;
+    setSt('Listening to the audio\u2026');
+    const buf=await decodeAudio(M.blob);
+    if(buf.duration>600)say('bot','The audio is longer than 10 minutes, so only the first 10 minutes are used.');
+    const wav=bufToWav(await monoResample(buf));
+    setSt('Transcribing\u2026');
+    M.transcript=await whisper(wav);return M.transcript;
+  }
+  function srtTime(s){const ms=Math.round(s*1000);return pad(Math.floor(ms/3600000))+':'+pad(Math.floor(ms%3600000/60000))+':'+pad(Math.floor(ms%60000/1000))+','+pad(ms%1000,3)}
+  const toSrt=segs=>segs.map((s,i)=>(i+1)+'\n'+srtTime(s.start)+' --> '+srtTime(s.end)+'\n'+s.text+'\n').join('\n');
+
+  /* ---------- video helpers ---------- */
+  async function ensureFrames(){
+    if(M.frames)return M.frames;
+    const v=document.createElement('video');v.muted=true;v.playsInline=true;v.preload='auto';v.src=M.url;
+    await onceEvt(v,'loadeddata');const dur=v.duration||M.dur||10,n=Math.max(3,Math.min(8,Math.round(dur/6))),out=[];
+    for(let i=0;i<n;i++){
+      const t=Math.min(dur-.1,(i+.5)/n*dur);setSt('Looking at the video ('+(i+1)+'/'+n+')\u2026');
+      v.currentTime=t;await onceEvt(v,'seeked');
+      const url=smallDataURL(v,768,.8);
+      let cap='';try{cap=await visionAsk(url,'Describe this video frame in 1-2 sentences: people, objects, actions, setting and any visible text.',250)}catch(e){cap='(could not analyse this frame: '+e.message+')'}
+      out.push({t,caption:cap.trim()});
+    }
+    M.frames=out;return out;
+  }
+  async function buildContext(){
+    let ctx='';
+    if(M.type==='video'){
+      const fr=await ensureFrames();
+      ctx+='Video "'+M.name+'", about '+fmtT(M.dur||0)+' long.\nWhat is seen (time: description):\n'+fr.map(f=>'['+fmtT(f.t)+'] '+f.caption).join('\n')+'\n';
+      try{const tr=await ensureTranscript();ctx+='\nWhat is said ('+(tr.language||'language unknown')+'):\n'+(tr.segments.length?tr.segments.map(s=>'['+fmtT(s.start)+'] '+s.text).join('\n'):'(no speech found)')+'\n'}
+      catch(e){ctx+='\n(The sound could not be transcribed: '+e.message+')\n'}
+    }else if(M.type==='audio'){
+      const tr=await ensureTranscript();ctx+='Audio "'+M.name+'", about '+fmtT(M.dur||0)+' long. Transcript ('+(tr.language||'language unknown')+'):\n'+(tr.segments.length?tr.segments.map(s=>'['+fmtT(s.start)+'] '+s.text).join('\n'):'(no speech found)')+'\n';
+    }
+    return ctx.slice(0,12000);
+  }
+  async function renderVideo(o){
+    const v=document.createElement('video');v.playsInline=true;v.preload='auto';v.src=M.url;
+    v.style.cssText='position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none';document.body.appendChild(v);
+    let ac=null;
+    try{
+      await onceEvt(v,'loadeddata');
+      const dur=v.duration||M.dur||0,start=Math.max(0,o.start||0),end=Math.min(o.end||dur,dur),rate=o.rate||1;
+      if(!(end>start))throw new Error('The chosen time range is empty.');
+      if((end-start)/rate>180)say('bot','This clip is long. It is processed in real time, so it will take about '+fmtT((end-start)/rate)+'. Keep this tab open and in front.');
+      const sc=Math.min(1,(o.maxW||960)/(v.videoWidth||960)),w=Math.round((v.videoWidth||960)*sc)&~1,h=Math.round((v.videoHeight||540)*sc)&~1,cv=document.createElement('canvas');cv.width=w;cv.height=h;
+      const x=cv.getContext('2d'),vs=cv.captureStream(30);
+      if(!o.mute){
+        ac=new (window.AudioContext||window.webkitAudioContext)();await ac.resume();
+        const dest=ac.createMediaStreamDestination();ac.createMediaElementSource(v).connect(dest);dest.stream.getAudioTracks().forEach(t=>vs.addTrack(t));
+      }else v.muted=true;
+      const mime=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(t=>MediaRecorder.isTypeSupported(t));
+      if(!mime)throw new Error('This browser cannot record video.');
+      const rec=new MediaRecorder(vs,{mimeType:mime,videoBitsPerSecond:4e6}),chunks=[];
+      rec.ondataavailable=e=>e.data&&e.data.size&&chunks.push(e.data);
+      const stopped=new Promise(r=>{rec.onstop=r});
+      v.currentTime=start;await onceEvt(v,'seeked');v.playbackRate=rate;
+      rec.start(500);await v.play();
+      let err=null;
+      await new Promise(res=>{
+        let fin=false;const done=()=>{if(fin)return;fin=true;res()},t0=performance.now();let busyF=false;
+        const tick=async()=>{
+          if(fin)return;
+          if(v.currentTime>=end-.03||v.ended){done();return}
+          if(!busyF){busyF=true;try{if(o.frame)await o.frame(x,v,w,h,v.currentTime);else x.drawImage(v,0,0,w,h)}catch(e){err=e;done()}busyF=false}
+          setSt((o.label||'Processing')+'\u2026 '+Math.min(100,Math.round((v.currentTime-start)/(end-start)*100))+'%  (keep this tab open)');
+          if(v.requestVideoFrameCallback)v.requestVideoFrameCallback(tick);else requestAnimationFrame(tick);
+        };
+        tick();setTimeout(done,((end-start)/rate+10)*1000);
+      });
+      v.pause();rec.stop();await stopped;
+      if(err)throw err;
+      return new Blob(chunks,{type:'video/webm'});
+    }finally{try{if(ac)ac.close()}catch(e){}v.remove()}
+  }
+
+  /* ---------- background change (person cut-out) ---------- */
+  async function getSeg(){
+    if(segModel)return segModel;
+    if(!segLoading)segLoading=(async()=>{
+      setSt('Loading the person-detection model (first time only)\u2026');
+      if(!window.SelfieSegmentation)await loadScript(SEG_BASE+'selfie_segmentation.js');
+      const m=new window.SelfieSegmentation({locateFile:f=>SEG_BASE+f});
+      m.setOptions({modelSelection:1});m.onResults(r=>{segRes=r});await m.initialize();return m;
+    })();
+    try{segModel=await segLoading}catch(e){segLoading=null;throw new Error('Could not load the background model (needs internet access to cdn.jsdelivr.net): '+e.message)}
+    return segModel;
+  }
+  async function segment(src){const m=await getSeg();segRes=null;await m.send({image:src});if(!segRes)throw new Error('The person-detection model returned nothing.');return segRes}
+  function composite(x,w,h,res,bg){
+    x.save();x.clearRect(0,0,w,h);
+    x.filter='blur(2px)';x.drawImage(res.segmentationMask,0,0,w,h);x.filter='none';
+    x.globalCompositeOperation='source-in';x.drawImage(res.image,0,0,w,h);
+    x.globalCompositeOperation='destination-over';
+    if(bg.type==='blur'){x.filter='blur(14px)';x.drawImage(res.image,0,0,w,h);x.filter='none'}
+    else if(bg.type==='color'){x.fillStyle=bg.color;x.fillRect(0,0,w,h)}
+    else if(bg.type==='grad'){const g=x.createLinearGradient(0,0,w,h),c=GRADS[bg.name]||GRADS.sunset;c.forEach((col,i)=>g.addColorStop(i/(c.length-1),col));x.fillStyle=g;x.fillRect(0,0,w,h)}
+    else if(bg.type==='image'&&bgImgEl){const s=Math.max(w/bgImgEl.naturalWidth,h/bgImgEl.naturalHeight),dw=bgImgEl.naturalWidth*s,dh=bgImgEl.naturalHeight*s;x.drawImage(bgImgEl,(w-dw)/2,(h-dh)/2,dw,dh)}
+    x.restore();
+  }
+  function parseBg(t){
+    t=String(t||'').toLowerCase();
+    if(/transparent|remove (?:the )?background|cut ?out|no background/.test(t))return {type:'transparent'};
+    if(/blur/.test(t))return {type:'blur'};
+    const hex=t.match(/#[0-9a-f]{6}\b/);if(hex)return {type:'color',color:hex[0]};
+    for(const g in GRADS)if(new RegExp('\\b'+g+'\\b').test(t)&&/gradient|background/.test(t))return {type:'grad',name:g};
+    if(/gradient/.test(t))return {type:'grad',name:'sunset'};
+    const cw=Object.keys(COLORS).find(c=>new RegExp('\\b'+c+'\\b').test(t));
+    if(cw&&/(solid|plain|colou?r|background)/.test(t)&&!/(beach|room|city|forest|mountain|space|office|street|sky)/.test(t))return {type:'color',color:COLORS[cw]};
+    const sc=t.match(/background\s+(?:to|with|into|of|as)\s+(?:a\s+|an\s+|the\s+)?(.+)$/)||t.match(/(?:put|place|set)\s+(?:me|him|her|them|it)\s+(?:in|on|at)\s+(.+)$/)||t.match(/(?:change|replace|swap)\s+(?:the\s+)?background\s*(?:to|with|into)?\s*(.+)$/);
+    if(sc&&sc[1]&&sc[1].trim().length>2&&!/^(?:it|this|that|something)$/.test(sc[1].trim()))return {type:'scene',text:sc[1].trim()};
+    const sel=$m('mdBg').value;
+    if(sel==='blur')return {type:'blur'};if(sel==='transparent')return {type:'transparent'};if(sel==='image')return {type:'image'};
+    if(sel.startsWith('grad:'))return {type:'grad',name:sel.slice(5)};
+    return {type:'color',color:$m('mdBgCol').value};
+  }
+
+  /* ---------- output display ---------- */
+  function showOut(kind,blob,name,note){
+    const u=URL.createObjectURL(blob),box=$m('mdOut');
+    box.innerHTML=(kind==='image'?'<img src="'+u+'" alt="">':kind==='video'?'<video src="'+u+'" controls playsinline></video>':'<audio src="'+u+'" controls></audio>')
+      +'<div class="row" style="margin-top:6px"><button class="btn sm" id="mdSave">\u2B07 Download</button><button class="ghost" id="mdUse">Use this as my media</button></div>'+(note?'<div class="hint">'+esc(note)+'</div>':'');
+    $m('mdSave').onclick=()=>download(blob,name);$m('mdUse').onclick=()=>setMedia(blob,name);
+    box.scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
+
+  /* ---------- actions ---------- */
+  async function aAnswer(q){
+    needKey();
+    const hist=M.hist.slice(-4).map(h=>'Q: '+h.q+'\nA: '+h.a).join('\n');
+    let ans;
+    if(M.type==='image'){
+      setSt('Looking at the picture\u2026');
+      const url=smallDataURL(await loadImgEl(M.url),1280,.85);
+      ans=await visionAsk(url,(hist?'Earlier in this chat:\n'+hist+'\n\n':'')+'Question: '+q+'\n(Answer in the same language as the question unless asked otherwise.)');
+    }else{
+      const ctx=await buildContext();setSt('Thinking\u2026');
+      ans=await textAsk('You answer questions about the user\'s '+M.type+' using ONLY the analysis provided. If the answer is not in it, say so honestly. Answer in the language of the question unless asked for another.',ctx+'\n'+(hist?'Earlier in this chat:\n'+hist+'\n':'')+'\nQuestion: '+q,1800,.3);
+    }
+    M.hist.push({q,a:ans});say('bot',md(ans));
+  }
+  async function aTranscript(withTr){
+    const tr=await ensureTranscript();
+    if(!tr.segments.length){say('bot','No speech was found.');return}
+    const text=tr.segments.map(s=>'['+fmtT(s.start)+'] '+s.text).join('\n');
+    say('bot','<b>Transcript</b> ('+esc(tr.language||'language unknown')+')<br>'+md(text));
+    $m('mdOut').innerHTML='<div class="row"><button class="ghost" id="mdTxt">\u2B07 Download .txt</button><button class="ghost" id="mdSrt">\u2B07 Download .srt</button></div>';
+    $m('mdTxt').onclick=()=>download(new Blob([tr.text],{type:'text/plain'}),'transcript.txt');
+    $m('mdSrt').onclick=()=>download(new Blob([toSrt(tr.segments)],{type:'text/plain'}),'subtitles.srt');
+  }
+  async function aTranslateSpeech(to,speak){
+    const tr=await ensureTranscript();
+    if(!tr.segments.length)return say('bot','No speech was found to translate.');
+    setSt('Translating to '+to+'\u2026');
+    const segs=await translateSegments(tr.segments,to),text=segs.map(s=>s.text).join(' ');
+    say('bot','<b>'+esc(to)+' translation</b><br>'+md(segs.map(s=>'['+fmtT(s.start)+'] '+s.text).join('\n')));
+    M.lastSegs=segs;
+    const box=$m('mdOut');box.innerHTML='<div class="row"><button class="ghost" id="mdTxt">\u2B07 Download .txt</button><button class="ghost" id="mdSrt">\u2B07 Download .srt</button></div>';
+    $m('mdTxt').onclick=()=>download(new Blob([text],{type:'text/plain'}),'translation.txt');
+    $m('mdSrt').onclick=()=>download(new Blob([toSrt(segs)],{type:'text/plain'}),'subtitles-'+to+'.srt');
+    if(speak){
+      if(typeof makeVoice!=='function'){say('bot','Voice output is not available in this build.');return}
+      setSt('Speaking the translation\u2026');
+      const r=await makeVoice(text.slice(0,1500),'auto','defer');
+      if(r.blob){const u=URL.createObjectURL(r.blob);box.insertAdjacentHTML('beforeend','<audio controls src="'+u+'"></audio><div class="row"><a class="dl" href="'+u+'" download="translation-voice.'+(r.blob.type.includes('wav')?'wav':'mp3')+'">Download the spoken translation</a></div>')}
+      else{if(typeof browserSpeak==='function')browserSpeak(text);say('bot','Spoken with your browser voice (no AI voice key worked).')}
+    }
+  }
+  async function aSubtitles(to){
+    let segs;const tr=await ensureTranscript();
+    if(!tr.segments.length)return say('bot','No speech was found, so there is nothing to subtitle.');
+    segs=to?await translateSegments(tr.segments,to):tr.segments;
+    const wrap=(x,t,maxW)=>{const words=t.split(/\s+/),lines=[];let cur='';for(const w of words){const q=cur?cur+' '+w:w;if(x.measureText(q).width>maxW&&cur){lines.push(cur);cur=w}else cur=q}if(cur)lines.push(cur);return lines.slice(-3)};
+    const blob=await renderVideo({label:'Adding subtitles',frame:async(x,v,w,h,t)=>{
+      x.drawImage(v,0,0,w,h);const s=segs.find(z=>t>=z.start&&t<=z.end);if(!s)return;
+      const fs=Math.max(16,Math.round(h*.045));x.font='700 '+fs+'px sans-serif';x.textAlign='center';
+      const lines=wrap(x,s.text,w*.9),bh=lines.length*(fs*1.25)+10;
+      x.fillStyle='rgba(0,0,0,.6)';x.fillRect(w*.04,h-bh-h*.05,w*.92,bh);x.fillStyle='#fff';
+      lines.forEach((l,i)=>x.fillText(l,w/2,h-bh-h*.05+fs*1.05+i*fs*1.25));
+    }});
+    showOut('video',blob,'subtitled.webm','Subtitles are burned into this video.');say('bot','Done: subtitles'+(to?' in '+esc(to):'')+' added.');
+    download(new Blob([toSrt(segs)],{type:'text/plain'}),'subtitles'+(to?'-'+to:'')+'.srt');
+  }
+  async function aOcrTranslate(to){
+    needKey();setSt('Reading the text in the picture\u2026');
+    const url=smallDataURL(await loadImgEl(M.url),1600,.9);
+    const txt=(await visionAsk(url,'Transcribe ALL text visible in this image exactly as written, keeping line breaks. If there is no text, reply exactly: NONE',1500)).trim();
+    if(!txt||/^NONE\b/i.test(txt))return say('bot','I could not find any text in this picture.');
+    if(!to)return say('bot','<b>Text in the picture</b><br>'+md(txt));
+    setSt('Translating\u2026');const tr=await translateText(txt,to);
+    say('bot','<b>Original text</b><br>'+md(txt)+'<br><b>'+esc(to)+'</b><br>'+md(tr));
+  }
+  async function aBgImage(bg){
+    if(bg.type==='scene')return aAiEdit('Replace the background with '+bg.text+'. Keep the person or main subject exactly the same.');
+    if(bg.type==='image'&&!bgImgEl)throw new Error('Choose a background image first (the "Background image" box).');
+    const img=await loadImgEl(M.url);setSt('Finding the person\u2026');
+    const sc=Math.min(1,1600/Math.max(img.naturalWidth,img.naturalHeight)),w=Math.round(img.naturalWidth*sc),h=Math.round(img.naturalHeight*sc);
+    const res=await segment(img),cv=document.createElement('canvas');cv.width=w;cv.height=h;composite(cv.getContext('2d'),w,h,res,bg);
+    const png=bg.type==='transparent',blob=await canvasBlob(cv,png?'image/png':'image/jpeg',.93);
+    showOut('image',blob,'background-changed.'+(png?'png':'jpg'),png?'Transparent PNG (the checkerboard may show as black in the preview).':'');say('bot','Done: background changed.');
+  }
+  async function aBgVideo(bg){
+    if(bg.type==='scene')throw new Error('Describing a scene as a background works for photos only. For video use blur, a colour, a gradient or your own image.');
+    if(bg.type==='transparent')throw new Error('Transparent background works for photos only. Pick a colour, gradient, blur or your own image for video.');
+    if(bg.type==='image'&&!bgImgEl)throw new Error('Choose a background image first (the "Background image" box).');
+    await getSeg();
+    const blob=await renderVideo({label:'Changing the background',maxW:720,frame:async(x,v,w,h)=>{const res=await segment(v);composite(x,w,h,res,bg)}});
+    showOut('video',blob,'background-changed.webm','Works best when one person fills most of the picture and the light is good.');say('bot','Done: background changed.');
+  }
+  async function screenEdit(text){
+    try{
+      const raw=await textAsk('You review photo-edit requests. Reply ONLY with JSON {"allowed":true|false,"reason":""}. Set allowed=false for: sexual or nude edits, removing or altering clothing, humiliating or harassing edits, fake IDs or documents, edits meant to deceive people about a real person (fake evidence, impersonation), or anything sexual involving minors. Ordinary edits (backgrounds, colours, objects, style, lighting, weather, adding items) are allowed.',text,200,0);
+      const j=JSON.parse(raw.replace(/```(?:json)?/gi,'').match(/\{[\s\S]*\}/)[0]);return j.allowed===false?(j.reason||'This edit is not allowed.'):'';
+    }catch(e){return ''}
+  }
+  async function aAiEdit(text){
+    needKey();
+    const why=await screenEdit(text);if(why)return say('bot','I can\u2019t do that edit: '+esc(why));
+    const acc=store.get('cfacc'),tok=store.get('cftok');
+    if(!acc||!tok)throw new Error('AI photo edits need your Cloudflare Account ID and API token in Settings (the same ones used by Photo Edit).');
+    setSt('Preparing the edit\u2026');
+    const prompt=('Edit image 0: '+text+'. Keep every person\u2019s face, hair, skin tone, age and body proportions identical to the original. Natural lighting, scale and perspective. No text, no watermark.').slice(0,700);
+    const img=await loadImgEl(M.url),s=Math.min(1,496/Math.max(img.naturalWidth,img.naturalHeight)),cv=document.createElement('canvas');
+    cv.width=Math.max(8,Math.round(img.naturalWidth*s));cv.height=Math.max(8,Math.round(img.naturalHeight*s));cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+    const ratio=img.naturalWidth/img.naturalHeight,W=ratio>1.2?1216:ratio<.83?832:1024,H=ratio>1.2?832:ratio<.83?1216:1024;
+    try{await api('/')}catch(e){}
+    setSt('Editing with AI (about 20\u201360 seconds)\u2026');
+    const d=await api('/cf-edit','POST',{prompt,images:[cv.toDataURL('image/jpeg',.92).split(',')[1]],width:W,height:H,account_id:acc,api_token:tok});
+    const bin=atob(d.image),bytes=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+    const out=await loadImgEl(URL.createObjectURL(new Blob([bytes],{type:'image/png'}))),c2=document.createElement('canvas');c2.width=out.naturalWidth;c2.height=out.naturalHeight;
+    const x=c2.getContext('2d');x.drawImage(out,0,0);
+    const fs=Math.max(12,Math.round(c2.height*.025));x.font='600 '+fs+'px sans-serif';x.textAlign='right';x.textBaseline='bottom';
+    const lab='AI edited',tw=x.measureText(lab).width;x.fillStyle='rgba(0,0,0,.45)';x.fillRect(c2.width-tw-fs*1.2,c2.height-fs*1.9,tw+fs,fs*1.5);x.fillStyle='#fff';x.fillText(lab,c2.width-fs*.7,c2.height-fs*.5);
+    showOut('image',await canvasBlob(c2),'ai-edited.png','Marked \u201CAI edited\u201D. If it is not what you wanted, rephrase and try again.');say('bot','Done: AI edit finished.');
+  }
+  async function aFilter(spec){
+    const img=await loadImgEl(M.url),sc=Math.min(1,2000/Math.max(img.naturalWidth,img.naturalHeight));let w=Math.round(img.naturalWidth*sc),h=Math.round(img.naturalHeight*sc);
+    const rot=spec.rotate||0,sw=rot%180!==0,cv=document.createElement('canvas');cv.width=sw?h:w;cv.height=sw?w:h;
+    const x=cv.getContext('2d');x.translate(cv.width/2,cv.height/2);x.rotate(rot*Math.PI/180);x.scale(spec.flip==='h'?-1:1,spec.flip==='v'?-1:1);
+    if(spec.css)x.filter=spec.css;x.drawImage(img,-w/2,-h/2,w,h);
+    showOut('image',await canvasBlob(cv,'image/jpeg',.93),'edited.jpg');say('bot','Done.');
+  }
+  function parseFilter(t){
+    t=t.toLowerCase();const f=[],o={};
+    if(/black ?(?:and|&|n) ?white|grayscale|greyscale|monochrome/.test(t))f.push('grayscale(1)');
+    if(/sepia|vintage|old photo/.test(t))f.push('sepia(.9)');
+    if(/invert|negative/.test(t))f.push('invert(1)');
+    if(/brighter|brighten|lighter|increase brightness/.test(t))f.push('brightness(1.3)');
+    if(/darker|darken|dim/.test(t))f.push('brightness(.7)');
+    if(/more contrast|increase contrast|punchy/.test(t))f.push('contrast(1.3)');
+    if(/saturat|vivid|colou?rful/.test(t))f.push('saturate(1.6)');
+    if(/blur|soften/.test(t))f.push('blur(4px)');
+    if(/rotate.*(?:right|clockwise|90)/.test(t))o.rotate=90;else if(/rotate.*left/.test(t))o.rotate=270;else if(/rotate.*180|upside/.test(t))o.rotate=180;
+    if(/flip|mirror/.test(t))o.flip=/vertical/.test(t)?'v':'h';
+    if(f.length)o.css=f.join(' ');return (o.css||o.rotate||o.flip)?o:null;
+  }
+  function parseTimes(t){
+    t=t.toLowerCase();let m;
+    if(m=t.match(/(?:from|between)\s+(\d+(?::\d+)?(?:\.\d+)?)\s*(?:s|sec|seconds)?\s*(?:to|and|-)\s*(\d+(?::\d+)?(?:\.\d+)?)/))return {start:tsec(m[1]),end:tsec(m[2])};
+    if(m=t.match(/first\s+(\d+(?:\.\d+)?)\s*(?:s|sec|seconds|minutes?|min)/)){const n=+m[1]*(/min/.test(m[0])?60:1);return /(trim|cut|remove|delete|skip)/.test(t)&&/(remove|delete|skip|trim off|cut off|cut out)/.test(t)?{start:n,end:null}:{start:0,end:n}}
+    if(m=t.match(/last\s+(\d+(?:\.\d+)?)\s*(?:s|sec|seconds|minutes?|min)/)){const n=+m[1]*(/min/.test(m[0])?60:1);return /(remove|delete|cut off|trim off)/.test(t)?{start:0,end:-n}:{start:-n,end:null}}
+    return null;
+  }
+  function tsec(s){const p=String(s).split(':').map(Number);return p.length===2?p[0]*60+p[1]:p[0]}
+  async function aTrim(t){
+    const r=parseTimes(t);if(!r)throw new Error('Tell me the part to keep, for example: "trim from 5 to 20", "keep the first 10 seconds" or "remove the first 3 seconds".');
+    const dur=M.dur||0;let s=r.start,e=r.end;if(s<0)s=Math.max(0,dur+s);if(e==null)e=dur;if(e<0)e=dur+e;
+    if(M.type==='video'){const b=await renderVideo({label:'Trimming',start:s,end:e,maxW:1280});showOut('video',b,'trimmed.webm')}
+    else{const buf=await decodeAudio(M.blob),o=await procAudio(buf,{start:s,end:e});showOut('audio',bufToWav(o),'trimmed.wav')}
+    say('bot','Done: kept '+fmtT(s)+' to '+fmtT(e)+'.');
+  }
+  async function aSpeed(rate){
+    if(M.type==='video'){const b=await renderVideo({label:'Changing speed',rate,maxW:1280});showOut('video',b,'speed-'+rate+'x.webm')}
+    else{const buf=await decodeAudio(M.blob),o=await procAudio(buf,{rate});showOut('audio',bufToWav(o),'speed-'+rate+'x.wav','Changing the speed also changes the pitch of audio files.')}
+    say('bot','Done: speed '+rate+'x.');
+  }
+  async function aAudioOnly(){const buf=await decodeAudio(M.blob);showOut('audio',bufToWav(buf),'audio.wav');say('bot','Done: the audio track was extracted.')}
+  async function aGain(g,fade){const buf=await decodeAudio(M.blob),o=await procAudio(buf,{gain:g,fade});showOut('audio',bufToWav(o),'adjusted.wav');say('bot','Done.')}
+
+  /* ---------- router ---------- */
+  function findLang(t){
+    const m=t.match(/\b(?:to|into|in)\s+([A-Za-z]+)\b/i);
+    if(m){const L=LANGS.find(l=>l.toLowerCase()===m[1].toLowerCase());if(L)return L}
+    const any=LANGS.find(l=>new RegExp('\\b'+l+'\\b','i').test(t));return any||null;
+  }
+  function route(t){
+    const T=t.toLowerCase(),ty=M.type;
+    if(ty==='image'){
+      if(/(background|cut ?out|transparent)/.test(T)&&/(remove|change|replace|swap|blur|transparent|set|put|new|make|cut|different|to )/.test(T))return ()=>aBgImage(parseBg(t));
+      if(/(read|extract|ocr)/.test(T)&&/text/.test(T)&&!/translate/.test(T))return ()=>aOcrTranslate(null);
+      if(/translate/.test(T))return ()=>aOcrTranslate(findLang(t)||lang());
+      if(/^edit:/.test(T))return ()=>aAiEdit(t.replace(/^edit:\s*/i,''));
+      const f=parseFilter(t);if(f&&!/\?$/.test(T)&&!/^(what|who|how|why|is|are|does|describe)\b/.test(T))return ()=>aFilter(f);
+      if(/^(?:please\s+)?(?:edit|make|add|remove|change|turn|replace|put|give|erase|delete|paint|draw|apply|convert)\b/.test(T))return ()=>aAiEdit(t);
+      return ()=>aAnswer(t);
+    }
+    if(ty==='video'){
+      if(/background/.test(T)&&/(change|replace|blur|remove|set|put|new|swap)/.test(T))return ()=>aBgVideo(parseBg(t));
+      if(/(subtitle|caption)/.test(T))return ()=>aSubtitles(findLang(t)||(/translat/.test(T)?lang():null));
+      if(/translate/.test(T))return ()=>aTranslateSpeech(findLang(t)||lang(),/(speak|voice|dub|say)/.test(T));
+      if(/transcri/.test(T))return ()=>aTranscript();
+      if(/(extract|get|save|only).*(audio|sound|mp3)|audio only/.test(T))return ()=>aAudioOnly();
+      if(/(mute|remove (?:the )?(?:sound|audio)|no sound|without sound)/.test(T))return async()=>{const b=await renderVideo({label:'Removing sound',mute:true,maxW:1280});showOut('video',b,'muted.webm');say('bot','Done: the sound was removed.')};
+      if(/\b(trim|cut|keep|clip)\b|remove the (?:first|last)/.test(T)&&parseTimes(t))return ()=>aTrim(t);
+      const sp=T.match(/(\d+(?:\.\d+)?)\s*x/)||T.match(/(?:speed|faster|slower).*?(\d+(?:\.\d+)?)/);
+      if(/(speed|faster|slower|slow motion|slow down|fast)/.test(T))return ()=>aSpeed(sp?Math.max(.25,Math.min(4,+sp[1])):(/slow/.test(T)?.5:2));
+      return ()=>aAnswer(t);
+    }
+    if(ty==='audio'){
+      if(/translate/.test(T))return ()=>aTranslateSpeech(findLang(t)||lang(),/(speak|voice|dub|say|aloud)/.test(T));
+      if(/transcri/.test(T))return ()=>aTranscript();
+      if(/\b(trim|cut|keep|clip)\b|remove the (?:first|last)/.test(T)&&parseTimes(t))return ()=>aTrim(t);
+      if(/fade/.test(T))return ()=>aGain(1,true);
+      if(/(louder|increase volume|boost|amplify)/.test(T))return ()=>aGain(1.8,false);
+      if(/(quieter|softer|lower volume|reduce volume)/.test(T))return ()=>aGain(.5,false);
+      const sp=T.match(/(\d+(?:\.\d+)?)\s*x/);
+      if(/(speed|faster|slower|slow down|fast)/.test(T))return ()=>aSpeed(sp?Math.max(.25,Math.min(4,+sp[1])):(/slow/.test(T)?.75:1.5));
+      return ()=>aAnswer(t);
+    }
+    return null;
+  }
+  async function handle(text){
+    text=String(text||'').trim();if(!text)return;
+    if(!M.blob)return toast('Add or capture a photo, video or audio first.');
+    if(busy)return toast('Still working on the last request\u2026');
+    const run=route(text);if(!run)return;
+    busy=true;say('user',esc(text));setSt('Working\u2026');$m('mdOut').innerHTML='';
+    try{await run()}catch(e){say('bot','\u26A0 '+esc(e.message||String(e)))}
+    busy=false;setSt('');
+  }
+  $m('mdSend').onclick=()=>{const q=$m('mdQ').value;$m('mdQ').value='';handle(q)};
+  $m('mdQ').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$m('mdSend').click()}});
+
+  /* chat command: "open media" */
+  const _route=route&&typeof window.route==='function'?window.route:null;
+  try{
+    const _r0=window.route||route;
+    window.route=async function(t){if(/^(?:open|show)\s+(?:the\s+)?media(?:\s+studio)?$/i.test(String(t).trim())){go('media');return true}return _r0(t)};
+    route=window.route;
+  }catch(e){}
+})()}catch(e){console.error('PACK 33 failed:',e)}
+/* ================= END PACK 33 ================= */
 </script>
 </body>
 </html>
