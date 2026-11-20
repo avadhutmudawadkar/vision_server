@@ -7137,6 +7137,1005 @@ try{(function(){
   }catch(e){}
 })()}catch(e){console.error('PACK 33 failed:',e)}
 /* ================= END PACK 33 ================= */
+ /* ================= PACK 34: STEM Olympiad solver + 3D Lab (periodic table, atoms, models, math plots) ================= */
+/* Paste this AFTER PACK 33, inside the same script block, before the closing script tag.                       */
+/* Adds two tabs:  STEM  (Olympiad solver: IMO, IPhO, IChO, IBO, IOAI)  and  3D Lab (3D periodic table, atom    */
+/* viewer, model maker for molecules / anatomy / maths surfaces). It changes nothing in your older packs.      */
+try{(function(){
+  if(window.__pack34)return;window.__pack34=1;
+  const THREE_URL='https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+  const KATEX_JS='https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js';
+  const KATEX_CSS='https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css';
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const num=(v,d)=>{v=+v;return isFinite(v)?v:d};
+  const gauss=()=>{let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(6.2831853*v)};
+  async function ensureThree(){if(!window.THREE)await loadScript(THREE_URL)}
+  let katexP=null;
+  function ensureKatex(){
+    if(window.katex)return Promise.resolve();
+    if(!katexP){
+      if(!document.getElementById('katexCss')){const l=document.createElement('link');l.id='katexCss';l.rel='stylesheet';l.href=KATEX_CSS;document.head.appendChild(l)}
+      katexP=loadScript(KATEX_JS).catch(e=>{katexP=null;throw e});
+    }
+    return katexP;
+  }
+
+  /* ---------- rich text with LaTeX ---------- */
+  function rich(text){
+    const maths=[];
+    const proc=String(text).split(/(```[\s\S]*?```)/).map(p=>{
+      if(p.indexOf('```')===0)return p;
+      const keep=(t,d)=>{maths.push([t,d]);return '\u0001'+(maths.length-1)+'\u0001'};
+      return p.replace(/\$\$([\s\S]+?)\$\$/g,(m,t)=>keep(t,true))
+        .replace(/\\\[([\s\S]+?)\\\]/g,(m,t)=>keep(t,true))
+        .replace(/\\\(([\s\S]+?)\\\)/g,(m,t)=>keep(t,false))
+        .replace(/\$([^\s$](?:[^$\n]*?[^\s$])?)\$/g,(m,t)=>keep(t,false));
+    }).join('');
+    return md(proc).replace(/\u0001(\d+)\u0001/g,(m,i)=>{
+      const q=maths[+i];
+      if(window.katex){try{return katex.renderToString(q[0],{displayMode:q[1],throwOnError:false,strict:false})}catch(e){}}
+      return '<code>'+esc(q[0])+'</code>';
+    });
+  }
+
+  /* ---------- Groq call with reasoning effort, retries, abort ---------- */
+  async function groqR(messages,o){
+    o=o||{};const key=store.get('groq');if(!key)throw new Error('Add your Groq API key in Settings first.');
+    const model=o.model||store.get('stmodel')||CFG.textModel;
+    const body={model,messages,temperature:o.temperature==null?.3:o.temperature,max_tokens:o.max||6000};
+    if(/gpt-oss/i.test(model))body.reasoning_effort=o.effort||'medium';
+    for(let a=0;a<3;a++){
+      const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(body),signal:o.signal});
+      const d=await res.json().catch(()=>({}));
+      if(d.error){
+        const msg=d.error.message||'Groq error',w=msg.match(/try again in ([\d.]+)\s*(ms|s|m)\b/i);
+        if(res.status===429&&w&&a<2){const s=+w[1]*(w[2]==='ms'?.001:w[2]==='m'?60:1);if(s<=45){if(o.onWait)o.onWait(Math.ceil(s));await sleep(s*1000+500);continue}}
+        if(/too large|reduce your message|tokens per minute|TPM/i.test(msg)&&body.max_tokens>2500&&a<2){body.max_tokens=Math.floor(body.max_tokens/2);if(o.onWait)o.onWait(0);continue}
+        throw new Error(msg);
+      }
+      const c=d.choices&&d.choices[0],t=((c&&c.message&&c.message.content)||'').replace(/<think>[\s\S]*?<\/think>/g,'').trim();
+      if(!t){if(c&&c.finish_reason==='length')throw new Error('The model ran out of output tokens while thinking. Try Quick mode, a shorter problem, or the 20B model.');throw new Error('The model returned an empty answer.')}
+      return t;
+    }
+    throw new Error('Groq rate limit reached. Wait a minute and try again.');
+  }
+
+  /* =====================================================================
+     ELEMENT DATA (118 elements) — mass, position, category, configuration
+     ===================================================================== */
+  const RAW='H Hydrogen 1.008|He Helium 4.0026|Li Lithium 6.94|Be Beryllium 9.0122|B Boron 10.81|C Carbon 12.011|N Nitrogen 14.007|O Oxygen 15.999|F Fluorine 18.998|Ne Neon 20.18|Na Sodium 22.99|Mg Magnesium 24.305|Al Aluminium 26.982|Si Silicon 28.085|P Phosphorus 30.974|S Sulfur 32.06|Cl Chlorine 35.45|Ar Argon 39.948|K Potassium 39.098|Ca Calcium 40.078|Sc Scandium 44.956|Ti Titanium 47.867|V Vanadium 50.942|Cr Chromium 51.996|Mn Manganese 54.938|Fe Iron 55.845|Co Cobalt 58.933|Ni Nickel 58.693|Cu Copper 63.546|Zn Zinc 65.38|Ga Gallium 69.723|Ge Germanium 72.63|As Arsenic 74.922|Se Selenium 78.971|Br Bromine 79.904|Kr Krypton 83.798|Rb Rubidium 85.468|Sr Strontium 87.62|Y Yttrium 88.906|Zr Zirconium 91.224|Nb Niobium 92.906|Mo Molybdenum 95.95|Tc Technetium 98|Ru Ruthenium 101.07|Rh Rhodium 102.91|Pd Palladium 106.42|Ag Silver 107.87|Cd Cadmium 112.41|In Indium 114.82|Sn Tin 118.71|Sb Antimony 121.76|Te Tellurium 127.6|I Iodine 126.9|Xe Xenon 131.29|Cs Caesium 132.91|Ba Barium 137.33|La Lanthanum 138.91|Ce Cerium 140.12|Pr Praseodymium 140.91|Nd Neodymium 144.24|Pm Promethium 145|Sm Samarium 150.36|Eu Europium 151.96|Gd Gadolinium 157.25|Tb Terbium 158.93|Dy Dysprosium 162.5|Ho Holmium 164.93|Er Erbium 167.26|Tm Thulium 168.93|Yb Ytterbium 173.05|Lu Lutetium 174.97|Hf Hafnium 178.49|Ta Tantalum 180.95|W Tungsten 183.84|Re Rhenium 186.21|Os Osmium 190.23|Ir Iridium 192.22|Pt Platinum 195.08|Au Gold 196.97|Hg Mercury 200.59|Tl Thallium 204.38|Pb Lead 207.2|Bi Bismuth 208.98|Po Polonium 209|At Astatine 210|Rn Radon 222|Fr Francium 223|Ra Radium 226|Ac Actinium 227|Th Thorium 232.04|Pa Protactinium 231.04|U Uranium 238.03|Np Neptunium 237|Pu Plutonium 244|Am Americium 243|Cm Curium 247|Bk Berkelium 247|Cf Californium 251|Es Einsteinium 252|Fm Fermium 257|Md Mendelevium 258|No Nobelium 259|Lr Lawrencium 266|Rf Rutherfordium 267|Db Dubnium 268|Sg Seaborgium 269|Bh Bohrium 270|Hs Hassium 277|Mt Meitnerium 278|Ds Darmstadtium 281|Rg Roentgenium 282|Cn Copernicium 285|Nh Nihonium 286|Fl Flerovium 289|Mc Moscovium 290|Lv Livermorium 293|Ts Tennessine 294|Og Oganesson 294';
+  const ISO={28:58,29:63,30:64,31:69,32:74,34:80,35:79,40:90,42:98,44:102,47:107,48:114,50:120,51:121,52:130,54:132,56:138,60:142,62:152,63:153,64:158,66:164,68:166,70:174,72:180,75:187,76:192,77:193,80:202,81:205,82:208};
+  const SUBL='spdf',SUP='\u2070\u00B9\u00B2\u00B3\u2074\u2075\u2076\u2077\u2078\u2079';
+  const ORD=[[1,0],[2,0],[2,1],[3,0],[3,1],[4,0],[3,2],[4,1],[5,0],[4,2],[5,1],[6,0],[4,3],[5,2],[6,1],[7,0],[5,3],[6,2],[7,1]];
+  const PATCH={24:{'3d':5,'4s':1},29:{'3d':10,'4s':1},41:{'4d':4,'5s':1},42:{'4d':5,'5s':1},44:{'4d':7,'5s':1},45:{'4d':8,'5s':1},46:{'4d':10,'5s':0},47:{'4d':10,'5s':1},57:{'4f':0,'5d':1},58:{'4f':1,'5d':1},64:{'4f':7,'5d':1},78:{'5d':9,'6s':1},79:{'5d':10,'6s':1},89:{'5f':0,'6d':1},90:{'5f':0,'6d':2},91:{'5f':2,'6d':1},92:{'5f':3,'6d':1},93:{'5f':4,'6d':1},96:{'5f':7,'6d':1},103:{'6d':0,'7p':1}};
+  const CATN={alkali:'Alkali metal',alkaline:'Alkaline earth metal',transition:'Transition metal',post:'Post-transition metal',metalloid:'Metalloid',nonmetal:'Reactive nonmetal',halogen:'Halogen',noble:'Noble gas',lanth:'Lanthanide',actin:'Actinide'};
+  const CATC={alkali:'#d9534f',alkaline:'#e8893a',transition:'#c99a1f',post:'#3f9a72',metalloid:'#3a93a3',nonmetal:'#4a7fd1',halogen:'#7a63c9',noble:'#b05ac0',lanth:'#c4577a',actin:'#8c5a6e'};
+  const BLKC={s:'#d9534f',p:'#4a7fd1',d:'#c99a1f',f:'#3f9a72'};
+  const ALIAS={aluminum:13,sulphur:16,cesium:55};
+  const sup=n=>String(n).split('').map(d=>SUP[+d]).join('');
+  function cfgOf(z){
+    const c={};let r=z;
+    for(const o of ORD){const k=Math.min(r,2*(2*o[1]+1));if(k>0)c[o[0]+SUBL[o[1]]]=k;r-=k;if(r<=0)break}
+    const p=PATCH[z];if(p)for(const k in p){if(p[k])c[k]=p[k];else delete c[k]}
+    return c;
+  }
+  const keysOf=c=>Object.keys(c).sort((a,b)=>(+a[0])-(+b[0])||SUBL.indexOf(a[1])-SUBL.indexOf(b[1]));
+  const cfgStr=c=>keysOf(c).map(k=>k+sup(c[k])).join(' ');
+  function catOf(z){
+    if([2,10,18,36,54,86,118].indexOf(z)>=0)return 'noble';
+    if([9,17,35,53,85,117].indexOf(z)>=0)return 'halogen';
+    if(z>=57&&z<=71)return 'lanth';if(z>=89&&z<=103)return 'actin';
+    if([3,11,19,37,55,87].indexOf(z)>=0)return 'alkali';
+    if([4,12,20,38,56,88].indexOf(z)>=0)return 'alkaline';
+    if([5,14,32,33,51,52].indexOf(z)>=0)return 'metalloid';
+    if([1,6,7,8,15,16,34].indexOf(z)>=0)return 'nonmetal';
+    if([13,31,49,50,81,82,83,84,113,114,115,116].indexOf(z)>=0)return 'post';
+    return 'transition';
+  }
+  const EL=[null];
+  RAW.split('|').forEach((s,i)=>{const a=s.split(' ');EL.push({z:i+1,sym:a[0],name:a[1],mass:+a[2]})});
+  if(EL.length!==119)console.error('PACK 34: element table has',EL.length-1,'entries');
+  (function(){
+    const B=[0,2,10,18,36,54,86,118],gases=[1,2,7,8,9,10,17,18,36,54,86];
+    EL.forEach(e=>{
+      if(!e)return;const z=e.z;let p=1;while(p<7&&z>B[p])p++;
+      const i=z-B[p-1]-1;let g=null,f=null;
+      if(p===1)g=i===0?1:18;
+      else if(p<=3)g=i<2?i+1:i+11;
+      else if(p<=5)g=i+1;
+      else{if(i<2)g=i+1;else if(i<16)f=i-2;else if(i===16)g=3;else g=i-13}
+      e.p=p;e.g=g;e.f=f;e.cat=catOf(z);
+      e.block=f!=null?'f':(z===2||(g!=null&&g<=2))?'s':(g>=13?'p':'d');
+      e.A=ISO[z]||Math.round(e.mass);
+      e.cfg=cfgOf(z);
+      e.shells=[];keysOf(e.cfg).forEach(k=>{e.shells[+k[0]-1]=(e.shells[+k[0]-1]||0)+e.cfg[k]});
+      for(let k=0;k<e.shells.length;k++)e.shells[k]=e.shells[k]||0;
+      let nz=0;[2,10,18,36,54,86].forEach(q=>{if(q<z)nz=q});
+      if(nz){const core=cfgOf(nz),rest={};keysOf(e.cfg).forEach(k=>{if(e.cfg[k]!==core[k])rest[k]=e.cfg[k]});e.short='['+EL[nz].sym+'] '+cfgStr(rest)}else e.short=cfgStr(e.cfg);
+      e.state=gases.indexOf(z)>=0?'Gas':(z===35||z===80)?'Liquid':z>=100?'Unknown (superheavy, predicted)':'Solid';
+    });
+  })();
+  function findEl(s){
+    s=String(s||'').trim().toLowerCase();if(!s)return 0;
+    if(/^\d+$/.test(s)){const n=+s;return n>=1&&n<=118?n:0}
+    if(ALIAS[s])return ALIAS[s];
+    for(let z=1;z<=118;z++)if(EL[z].name.toLowerCase()===s||EL[z].sym.toLowerCase()===s)return z;
+    return 0;
+  }
+
+  /* =====================================================================
+     SAFE EXPRESSION PARSER (no eval): used for 3D math plots
+     ===================================================================== */
+  function compileExpr(src,vars){
+    const s=String(src).replace(/\*\*/g,'^').replace(/\u03C0/g,'pi').replace(/\u00B2/g,'^2').replace(/\u00B3/g,'^3').replace(/\u00D7/g,'*').replace(/\u2212/g,'-').replace(/\u00F7/g,'/').trim();
+    let i=0;
+    const FN={sin:Math.sin,cos:Math.cos,tan:Math.tan,asin:Math.asin,acos:Math.acos,atan:Math.atan,atan2:Math.atan2,sinh:Math.sinh,cosh:Math.cosh,tanh:Math.tanh,exp:Math.exp,ln:Math.log,log:Math.log,log10:Math.log10,log2:Math.log2,sqrt:Math.sqrt,cbrt:Math.cbrt,abs:Math.abs,floor:Math.floor,ceil:Math.ceil,round:Math.round,sign:Math.sign,min:Math.min,max:Math.max,pow:Math.pow,hypot:Math.hypot,mod:(a,b)=>a-b*Math.floor(a/b),sec:x=>1/Math.cos(x),csc:x=>1/Math.sin(x),cot:x=>1/Math.tan(x)};
+    const K={pi:Math.PI,e:Math.E,tau:2*Math.PI,phi:(1+Math.sqrt(5))/2};
+    const peek=()=>{while(s[i]===' ')i++;return s[i]};
+    function ex(){let a=term();for(;;){const c=peek();if(c==='+'){i++;const b=term(),l=a;a=v=>l(v)+b(v)}else if(c==='-'){i++;const b=term(),l=a;a=v=>l(v)-b(v)}else return a}}
+    function term(){
+      let a=un();
+      for(;;){
+        const c=peek();
+        if(c==='*'){i++;const b=un(),l=a;a=v=>l(v)*b(v)}
+        else if(c==='/'){i++;const b=un(),l=a;a=v=>l(v)/b(v)}
+        else if(c&&/[a-zA-Z0-9.(]/.test(c)){const b=un(),l=a;a=v=>l(v)*b(v)}
+        else return a;
+      }
+    }
+    function un(){const c=peek();if(c==='-'){i++;const a=un();return v=>-a(v)}if(c==='+'){i++;return un()}return pw()}
+    function pw(){let b=atom();if(peek()==='^'){i++;const e=un(),l=b;b=v=>Math.pow(l(v),e(v))}return b}
+    function atom(){
+      const c=peek();
+      if(c==='('){i++;const e=ex();if(peek()!==')')throw new Error('missing )');i++;return e}
+      if(c&&/[0-9.]/.test(c)){const m=/^(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/.exec(s.slice(i));if(!m)throw new Error('bad number');i+=m[0].length;const n=+m[0];return()=>n}
+      if(c&&/[a-zA-Z_]/.test(c)){
+        const name=/^[a-zA-Z_][a-zA-Z_0-9]*/.exec(s.slice(i))[0];i+=name.length;
+        if(FN[name]&&peek()==='('){
+          i++;const args=[];
+          if(peek()!==')'){for(;;){args.push(ex());if(peek()===','){i++;continue}break}}
+          if(peek()!==')')throw new Error('missing ) after '+name);i++;
+          const f=FN[name];return v=>f.apply(null,args.map(a=>a(v)));
+        }
+        const vi=vars.indexOf(name);if(vi>=0)return v=>v[vi];
+        if(K[name]!==undefined){const n=K[name];return()=>n}
+        if(name.length>1&&name.split('').every(ch=>vars.indexOf(ch)>=0)){const idx=name.split('').map(ch=>vars.indexOf(ch));return v=>idx.reduce((p,j)=>p*v[j],1)}
+        throw new Error('unknown name "'+name+'"');
+      }
+      throw new Error(c?'unexpected "'+c+'"':'unexpected end');
+    }
+    let f;
+    try{f=ex();if(peek()!==undefined)throw new Error('unexpected "'+peek()+'"')}catch(e){throw new Error('Bad expression "'+String(src).slice(0,60)+'": '+e.message)}
+    return f;
+  }
+
+  /* =====================================================================
+     3D VIEWER (orbit / zoom / pinch, hover + click, labels)
+     ===================================================================== */
+  function makeViewer(host,o){
+    o=o||{};
+    const sc=new THREE.Scene();sc.background=new THREE.Color(o.bg==null?0x07030c:o.bg);
+    const cam=new THREE.PerspectiveCamera(50,1,.05,3000);
+    let rd;try{rd=new THREE.WebGLRenderer({antialias:true})}catch(e){throw new Error('WebGL 3D graphics are not available on this device.')}
+    rd.setPixelRatio(Math.min(devicePixelRatio||1,2));host.appendChild(rd.domElement);
+    const el=rd.domElement;el.style.cssText='display:block;width:100%;height:100%;touch-action:none';
+    sc.add(new THREE.HemisphereLight(0xffffff,0x445566,.95));
+    const sun=new THREE.DirectionalLight(0xffffff,.85);sun.position.set(5,10,7);sc.add(sun);
+    const back=new THREE.DirectionalLight(0x88aaff,.35);back.position.set(-6,-4,-8);sc.add(back);
+    const S={sc,cam,rd,host,th:o.th||.7,ph:o.ph||1.15,dist:o.dist||12,min:.5,max:300,tg:new THREE.Vector3(),tick:[],auto:!!o.auto,dead:false,onClick:null,onMove:null,root:new THREE.Group(),lbls:[],w:0,h:0};
+    sc.add(S.root);
+    const ptrs=new Map();let moved=0,pd=0;
+    const d2=()=>{const a=[...ptrs.values()];return Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1])||1};
+    el.addEventListener('pointerdown',e=>{try{el.setPointerCapture(e.pointerId)}catch(x){}ptrs.set(e.pointerId,[e.clientX,e.clientY]);moved=0;if(ptrs.size===2)pd=d2()});
+    el.addEventListener('pointermove',e=>{
+      const p=ptrs.get(e.pointerId);
+      if(!p){if(S.onMove)S.onMove(e);return}
+      const dx=e.clientX-p[0],dy=e.clientY-p[1];moved+=Math.abs(dx)+Math.abs(dy);p[0]=e.clientX;p[1]=e.clientY;
+      if(ptrs.size===1){
+        if(e.shiftKey||e.buttons===2){cam.updateMatrix();const r=new THREE.Vector3().setFromMatrixColumn(cam.matrix,0),u=new THREE.Vector3().setFromMatrixColumn(cam.matrix,1),k=S.dist*.0016;S.tg.addScaledVector(r,-dx*k).addScaledVector(u,dy*k)}
+        else{S.th-=dx*.008;S.ph=clamp(S.ph-dy*.008,.05,Math.PI-.05)}
+        S.auto=false;
+      }else if(ptrs.size===2){const d=d2();S.dist=clamp(S.dist*pd/d,S.min,S.max);pd=d;S.auto=false}
+    });
+    const up=e=>{const had=ptrs.has(e.pointerId);ptrs.delete(e.pointerId);if(had&&moved<6&&ptrs.size===0&&S.onClick&&e.type==='pointerup')S.onClick(e)};
+    el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);
+    el.addEventListener('wheel',e=>{e.preventDefault();S.dist=clamp(S.dist*Math.exp(e.deltaY*.0012),S.min,S.max)},{passive:false});
+    el.addEventListener('contextmenu',e=>e.preventDefault());
+    const rc=new THREE.Raycaster(),nd=new THREE.Vector2();
+    S.pick=(e,objs)=>{const r=el.getBoundingClientRect();nd.set((e.clientX-r.left)/r.width*2-1,-((e.clientY-r.top)/r.height)*2+1);rc.setFromCamera(nd,cam);const h=rc.intersectObjects(objs,false);return h.length?h[0].object:null};
+    let last=performance.now(),t=0;
+    function fr(now){
+      if(S.dead)return;requestAnimationFrame(fr);
+      if(!host.getClientRects().length)return;
+      const w=host.clientWidth,h=host.clientHeight;
+      if(w&&h&&(w!==S.w||h!==S.h)){S.w=w;S.h=h;rd.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix()}
+      const dt=Math.min(.05,(now-last)/1000);last=now;t+=dt;
+      if(S.auto)S.th+=dt*.25;
+      const sp=Math.sin(S.ph);
+      cam.position.set(S.tg.x+S.dist*sp*Math.sin(S.th),S.tg.y+S.dist*Math.cos(S.ph),S.tg.z+S.dist*sp*Math.cos(S.th));
+      cam.lookAt(S.tg);cam.updateMatrix();
+      for(let k=0;k<S.tick.length;k++)S.tick[k](dt,t);
+      rd.render(sc,cam);
+    }
+    requestAnimationFrame(fr);
+    S.fit=()=>{
+      const b=new THREE.Box3().setFromObject(S.root);if(b.isEmpty())return;
+      const c=b.getCenter(new THREE.Vector3()),sz=b.getSize(new THREE.Vector3()),R=Math.max(sz.x,sz.y,sz.z,1);
+      const asp=(host.clientWidth||600)/(host.clientHeight||400);
+      S.tg.copy(c);S.dist=R*1.3/Math.tan(25*Math.PI/180)*.5*(asp<1?1/asp:1)*1.15;S.min=S.dist*.06;S.max=S.dist*5;
+    };
+    S.clear=()=>{
+      S.tick.length=0;S.lbls=[];
+      const kill=n=>n.traverse(x=>{if(x.geometry)x.geometry.dispose();const ms=x.material?(Array.isArray(x.material)?x.material:[x.material]):[];ms.forEach(m=>{if(m.map)m.map.dispose();m.dispose()})});
+      while(S.root.children.length){const c=S.root.children[0];S.root.remove(c);kill(c)}
+    };
+    S.snapshot=()=>{rd.render(sc,cam);return el.toDataURL('image/png')};
+    S.dispose=()=>{S.dead=true;S.clear();rd.dispose();if(el.parentNode)el.parentNode.removeChild(el)};
+    return S;
+  }
+  function label(text,o){
+    o=o||{};const c=document.createElement('canvas'),x=c.getContext('2d'),fs=o.fs||46;
+    x.font='700 '+fs+'px Segoe UI,Arial,sans-serif';const w=Math.ceil(x.measureText(text).width)+28;
+    c.width=w;c.height=fs+22;x.font='700 '+fs+'px Segoe UI,Arial,sans-serif';x.textBaseline='middle';x.textAlign='center';
+    x.lineWidth=7;x.strokeStyle='rgba(0,0,0,.88)';x.strokeText(text,w/2,c.height/2+2);x.fillStyle=o.color||'#ffffff';x.fillText(text,w/2,c.height/2+2);
+    const tx=new THREE.CanvasTexture(c);tx.minFilter=THREE.LinearFilter;
+    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tx,transparent:true,depthTest:false}));
+    const sz=o.size||1;sp.scale.set(sz*c.width/c.height,sz,1);sp.renderOrder=10;return sp;
+  }
+
+  /* =====================================================================
+     ATOM SCENES: Bohr shells, electron cloud, orbital shapes
+     ===================================================================== */
+  const shellCol=n=>new THREE.Color().setHSL((.52+n*.11)%1,.85,.62);
+  function ringLine(r,col){
+    const p=[];for(let k=0;k<=96;k++){const a=k/96*Math.PI*2;p.push(new THREE.Vector3(Math.cos(a)*r,0,Math.sin(a)*r))}
+    return new THREE.Line(new THREE.BufferGeometry().setFromPoints(p),new THREE.LineBasicMaterial({color:col,transparent:true,opacity:.55}));
+  }
+  function buildAtom(S,e,mode,labels){
+    const g=S.root,z=e.z,A=e.A,N=Math.max(0,A-z),nr=Math.max(.32,.235*Math.cbrt(A));
+    const pts=[];
+    for(let i=0;i<A;i++){let x,y,q;do{x=Math.random()*2-1;y=Math.random()*2-1;q=Math.random()*2-1}while(x*x+y*y+q*q>1);pts.push(new THREE.Vector3(x,y,q).multiplyScalar(nr))}
+    if(A===1)pts[0].set(0,0,0);
+    for(let it=0;it<18&&A>1;it++)for(let i=0;i<A;i++)for(let j=i+1;j<A;j++){const d=pts[i].distanceTo(pts[j]);if(d<.34&&d>1e-4){const push=pts[i].clone().sub(pts[j]).multiplyScalar((.34-d)/d*.5);pts[i].add(push);pts[j].sub(push)}}
+    const isP=[];for(let i=0;i<A;i++)isP.push(i<z);
+    for(let i=A-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)),t=isP[i];isP[i]=isP[j];isP[j]=t}
+    const ng=new THREE.SphereGeometry(.19,10,8);
+    const mp=new THREE.InstancedMesh(ng,new THREE.MeshStandardMaterial({color:0xff4d5a,roughness:.4}),z),mn=new THREE.InstancedMesh(ng,new THREE.MeshStandardMaterial({color:0x7fb0ff,roughness:.4}),Math.max(1,N));
+    const d=new THREE.Object3D();let ip=0,inn=0;
+    for(let i=0;i<A;i++){d.position.copy(pts[i]);d.updateMatrix();if(isP[i])mp.setMatrixAt(ip++,d.matrix);else mn.setMatrixAt(inn++,d.matrix)}
+    mn.count=N;g.add(mp);g.add(mn);
+    const rn=n=>nr+1.1+(n-1)*1.0;
+    if(mode==='cloud'){
+      const pos=[],col=[];
+      e.shells.forEach((cnt,i)=>{const n=i+1,r=rn(n),c=shellCol(n);for(let k=0;k<cnt*70;k++){const u=Math.random()*2-1,t=Math.random()*6.2832,s=Math.sqrt(1-u*u),rr=r*(1+gauss()*.1);pos.push(rr*s*Math.cos(t),rr*u,rr*s*Math.sin(t));col.push(c.r,c.g,c.b)}});
+      const pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));pg.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+      const cl=new THREE.Points(pg,new THREE.PointsMaterial({size:.09,vertexColors:true,transparent:true,opacity:.8,depthWrite:false,blending:THREE.AdditiveBlending}));
+      g.add(cl);S.tick.push(dt=>{cl.rotation.y+=dt*.15});
+      if(labels)e.shells.forEach((cnt,i)=>{const lb=label('n='+(i+1)+': '+cnt+' e\u207B',{size:.5,color:'#'+shellCol(i+1).getHexString()});lb.position.set(rn(i+1)+.5,.3,0);g.add(lb)});
+      return;
+    }
+    const eg=new THREE.SphereGeometry(.11,12,10);
+    e.shells.forEach((cnt,i)=>{
+      const n=i+1,r=rn(n),grp=new THREE.Group(),c=shellCol(n);
+      grp.rotation.set(n*.55,0,n*.9);g.add(grp);grp.add(ringLine(r,c));
+      const els=[];
+      for(let k=0;k<cnt;k++){const m=new THREE.Mesh(eg,new THREE.MeshStandardMaterial({color:0x7be8ff,emissive:0x1aa0c0,roughness:.3}));grp.add(m);els.push({m,a:k/cnt*Math.PI*2})}
+      S.tick.push(dt=>{const w=1.7/Math.pow(n,1.15);els.forEach(q=>{q.a+=w*dt;q.m.position.set(Math.cos(q.a)*r,0,Math.sin(q.a)*r)})});
+      if(labels){const lb=label('n='+n+': '+cnt+' e\u207B',{size:.5,color:'#'+c.getHexString()});lb.position.set(r+.5,.45,0);grp.add(lb)}
+    });
+  }
+  /* real orbital angular shapes: polar plot of |P(x,y,z)|, chemist's axes (z up) */
+  const ORBS=[
+    [{n:'s',f:()=>1}],
+    [{n:'px',f:(x,y,z)=>x},{n:'py',f:(x,y,z)=>y},{n:'pz',f:(x,y,z)=>z}],
+    [{n:'dxy',f:(x,y,z)=>x*y},{n:'dxz',f:(x,y,z)=>x*z},{n:'dyz',f:(x,y,z)=>y*z},{n:'dx\u00B2-y\u00B2',f:(x,y,z)=>x*x-y*y},{n:'dz\u00B2',f:(x,y,z)=>3*z*z-1}],
+    [{n:'fz\u00B3',f:(x,y,z)=>z*(5*z*z-3)},{n:'fxz\u00B2',f:(x,y,z)=>x*(5*z*z-1)},{n:'fyz\u00B2',f:(x,y,z)=>y*(5*z*z-1)},{n:'fz(x\u00B2-y\u00B2)',f:(x,y,z)=>z*(x*x-y*y)},{n:'fxyz',f:(x,y,z)=>x*y*z},{n:'fx(x\u00B2-3y\u00B2)',f:(x,y,z)=>x*(x*x-3*y*y)},{n:'fy(3x\u00B2-y\u00B2)',f:(x,y,z)=>y*(3*x*x-y*y)}]
+  ];
+  function orbGeos(f){
+    const base=new THREE.SphereGeometry(1,64,40),pa=base.attributes.position,n=pa.count,vals=new Float32Array(n);let mx=1e-6;
+    for(let k=0;k<n;k++){const v=f(pa.getX(k),-pa.getZ(k),pa.getY(k));vals[k]=v;mx=Math.max(mx,Math.abs(v))}
+    const c1=new Float32Array(n*3),c2=new Float32Array(n*3);
+    for(let k=0;k<n;k++){
+      const r=Math.abs(vals[k])/mx;pa.setXYZ(k,pa.getX(k)*r,pa.getY(k)*r,pa.getZ(k)*r);
+      const pos=vals[k]>=0,a=pos?[1,.78,.1]:[.3,.55,1],b=pos?[.3,.55,1]:[1,.78,.1];
+      c1.set(a,k*3);c2.set(b,k*3);
+    }
+    base.setAttribute('color',new THREE.BufferAttribute(c1,3));base.computeVertexNormals();
+    const g2=base.clone();g2.setAttribute('color',new THREE.BufferAttribute(c2,3));
+    return [base,g2];
+  }
+  function buildOrbitals(S,e,sub,orbName,labels){
+    const n=+sub[0],l=SUBL.indexOf(sub[1]),def=ORBS[l]||ORBS[0],s=.8+.28*n,L=Math.max(1,n-l);
+    const list=orbName==='all'?def:def.filter(o=>o.n===orbName);
+    const gap=2.4*s,x0=-(list.length-1)*gap/2;
+    list.forEach((o,i)=>{
+      const grp=new THREE.Group(),gs=orbGeos(o.f);
+      for(let k=0;k<L;k++){
+        const m=new THREE.Mesh(gs[(L-1-k)%2],new THREE.MeshStandardMaterial({vertexColors:true,transparent:true,opacity:k===L-1?.8:.6,roughness:.4,side:THREE.DoubleSide,depthWrite:false}));
+        m.scale.setScalar(s*(k+1)/L);grp.add(m);
+      }
+      grp.position.x=x0+i*gap;S.root.add(grp);
+      const nuc=new THREE.Mesh(new THREE.SphereGeometry(.07,10,8),new THREE.MeshBasicMaterial({color:0xffffff}));nuc.position.copy(grp.position);S.root.add(nuc);
+      if(labels){const lb=label(n+o.n,{size:.7,color:'#ffd54a'});lb.position.set(grp.position.x,-s*1.25-.4,0);S.root.add(lb)}
+    });
+  }
+
+  /* ---------- element info, AI facts, atom controller ---------- */
+  function infoHTML(z){
+    const e=EL[z],rows=[['Atomic number',z],['Symbol',e.sym],['Atomic mass',e.mass+' u'],['Category',CATN[e.cat]],['Group / period',(e.g||'f-block (between groups 3 and 4)')+' / '+e.p],['Block',e.block+'-block'],['State at room temperature',e.state],['Electrons per shell',e.shells.join(', ')],['Electron configuration',cfgStr(e.cfg)],['Shorthand',e.short],['Protons / neutrons / electrons',z+' / '+(e.A-z)+' / '+z]];
+    return '<h3 style="font-size:20px;letter-spacing:.06em">'+z+' \u00B7 '+esc(e.name)+' ('+e.sym+')</h3>'
+      +rows.map(r=>'<div class="item" style="margin-bottom:4px"><div><small>'+esc(r[0])+'</small>'+esc(String(r[1]))+'</div></div>').join('')
+      +'<div class="hint">Neutron count is for the most abundant (or longest-lived) isotope, mass number '+e.A+'. Ground-state configurations are experimental for Z\u2264103 and predicted beyond. The model is not to scale and electrons do not really move on circular orbits.</div>'
+      +'<div class="aibox"><div class="row"><button class="ghost a-facts">\u2728 More facts (AI)</button></div><div class="out a-factsout"></div>'
+      +'<div class="row" style="margin-top:8px"><input class="a-q" placeholder="Ask VISION about '+esc(e.name)+'\u2026" style="margin:0"><button class="btn sm a-ask">Ask</button></div><div class="out a-ans"></div></div>';
+  }
+  async function aiFacts(z,box){
+    const e=EL[z];let d=null;try{d=JSON.parse(store.get('ptai_'+z,'null'))}catch(x){}
+    if(!d){
+      if(!store.get('groq')){box.textContent='Add your Groq key in Settings first.';return}
+      box.textContent='Asking VISION\u2026';
+      try{
+        const raw=await groqR([{role:'system',content:'You are a precise chemistry reference. Reply with ONLY JSON: {"melting_point_C":"","boiling_point_C":"","density":"with units","electronegativity_pauling":"","common_oxidation_states":"","discovered":"who and when, or Ancient","main_uses":["..."],"biological_role":"","fun_fact":""}. Use "unknown" for anything you are not sure about. Never invent numbers.'},{role:'user',content:'Element: '+e.name+' (Z='+z+')'}],{effort:'low',max:1200,temperature:.1});
+        d=JSON.parse(raw.replace(/```(?:json)?/gi,'').match(/\{[\s\S]*\}/)[0]);store.set('ptai_'+z,JSON.stringify(d));
+      }catch(x){box.textContent='\u26A0 '+x.message;return}
+    }
+    const F=[['Melting point (\u00B0C)',d.melting_point_C],['Boiling point (\u00B0C)',d.boiling_point_C],['Density',d.density],['Electronegativity',d.electronegativity_pauling],['Oxidation states',d.common_oxidation_states],['Discovered',d.discovered],['Main uses',Array.isArray(d.main_uses)?d.main_uses.join('; '):d.main_uses],['Biological role',d.biological_role],['Fun fact',d.fun_fact]];
+    box.innerHTML=F.filter(r=>r[1]).map(r=>'<div class="item" style="margin-bottom:4px"><div><small>'+esc(r[0])+'</small>'+esc(String(r[1]))+'</div></div>').join('')+'<div class="hint">AI-generated: double-check values with a trusted data table before using them in an exam.</div>';
+  }
+  function mountAtom(host,ctrl,info,z0){
+    const S=makeViewer(host,{dist:14,auto:true,bg:0x06020c});let z=z0||1,mode='bohr',sub='',orb='all',labels=true;
+    ctrl.innerHTML='<div class="row" style="margin-top:8px"><button class="ghost a-prev">\u25C0</button><input class="a-z" type="number" min="1" max="118" style="flex:0 0 84px;margin:0"><button class="ghost a-next">\u25B6</button>'
+      +'<select class="a-mode" style="margin:0"><option value="bohr">Bohr shells</option><option value="cloud">Electron cloud</option><option value="orb">Orbital shapes</option></select></div>'
+      +'<div class="row a-orbrow" style="display:none;margin-top:6px"><select class="a-sub" style="margin:0"></select><select class="a-orb" style="margin:0"></select></div>'
+      +'<div class="row" style="margin-top:6px"><label class="tg" style="margin:0"><input type="checkbox" class="a-lab" checked> Labels</label><label class="tg" style="margin:0"><input type="checkbox" class="a-spin" checked> Auto-rotate</label></div>';
+    const q=s=>ctrl.querySelector(s);
+    function fillSub(e){
+      const ks=keysOf(e.cfg);if(ks.indexOf(sub)<0)sub=ks[ks.length-1];
+      q('.a-sub').innerHTML=ks.map(k=>'<option value="'+k+'">'+k+' ('+e.cfg[k]+' e\u207B)</option>').join('');q('.a-sub').value=sub;
+      const l=SUBL.indexOf(sub[1]),names=ORBS[l].map(o=>o.n);
+      q('.a-orb').innerHTML='<option value="all">All '+names.length+' orbital'+(names.length>1?'s side by side':'')+'</option>'+names.map(n=>'<option value="'+n+'">'+n+'</option>').join('');
+      if(orb!=='all'&&names.indexOf(orb)<0)orb='all';q('.a-orb').value=orb;
+    }
+    function render(){
+      const e=EL[z];S.clear();q('.a-z').value=z;fillSub(e);q('.a-orbrow').style.display=mode==='orb'?'flex':'none';
+      if(mode==='orb')buildOrbitals(S,e,sub,orb,labels);else buildAtom(S,e,mode,labels);
+      S.fit();S.auto=q('.a-spin').checked;
+      let extra='';
+      if(mode==='orb'){const n=+sub[0],l=SUBL.indexOf(sub[1]);extra='<div class="hint"><b>'+sub+'</b>: '+ORBS[l].length+' orbital(s), holds '+2*(2*l+1)+' electrons, '+e.cfg[sub]+' here. Radial nodes: '+(n-l-1)+'. Angular nodes: '+l+'. Gold and blue show opposite wave-function phase. Shapes are polar plots of the angular part; nested layers show radial nodes.</div>'}
+      info.innerHTML=extra+infoHTML(z);
+      info.querySelector('.a-facts').onclick=()=>aiFacts(z,info.querySelector('.a-factsout'));
+      const ask=async()=>{
+        const qq=info.querySelector('.a-q').value.trim(),out=info.querySelector('.a-ans');if(!qq)return;
+        if(!store.get('groq')){out.textContent='Add your Groq key in Settings first.';return}
+        out.textContent='Thinking\u2026';
+        try{await ensureKatex().catch(()=>{});out.innerHTML=rich(await groqR([{role:'system',content:'You are an expert chemistry teacher. Answer about the element concisely and accurately (under 150 words). If unsure, say so. LaTeX allowed.'},{role:'user',content:'Element: '+EL[z].name+' (Z='+z+'). Question: '+qq}],{effort:'low',max:1500,temperature:.3}))}catch(x){out.textContent='\u26A0 '+x.message}
+      };
+      info.querySelector('.a-ask').onclick=ask;info.querySelector('.a-q').onkeydown=ev=>{if(ev.key==='Enter')ask()};
+    }
+    q('.a-prev').onclick=()=>{z=z<=1?118:z-1;render()};q('.a-next').onclick=()=>{z=z>=118?1:z+1;render()};
+    q('.a-z').onchange=ev=>{const v=clamp(Math.round(+ev.target.value)||1,1,118);z=v;render()};
+    q('.a-mode').onchange=ev=>{mode=ev.target.value;render()};
+    q('.a-sub').onchange=ev=>{sub=ev.target.value;orb='all';render()};
+    q('.a-orb').onchange=ev=>{orb=ev.target.value;render()};
+    q('.a-lab').onchange=ev=>{labels=ev.target.checked;render()};
+    q('.a-spin').onchange=ev=>{S.auto=ev.target.checked};
+    render();
+    return {S,setZ(n,m){z=clamp(n|0,1,118);if(m){mode=m;q('.a-mode').value=m}render()}};
+  }
+
+  /* =====================================================================
+     3D PERIODIC TABLE
+     ===================================================================== */
+  let TB=null,MD=null,ATC=null,MMV=null,mmSpec=null;
+  const texCache={cat:{},block:{}};
+  function tileTex(e,mode){
+    const cache=texCache[mode];if(cache[e.z])return cache[e.z];
+    const c=document.createElement('canvas');c.width=c.height=192;const x=c.getContext('2d'),col=mode==='block'?BLKC[e.block]:CATC[e.cat];
+    const k=new THREE.Color(col);k.offsetHSL(0,0,-.16);
+    const gr=x.createLinearGradient(0,0,192,192);gr.addColorStop(0,col);gr.addColorStop(1,'#'+k.getHexString());
+    x.fillStyle=gr;x.fillRect(0,0,192,192);x.strokeStyle='rgba(255,255,255,.6)';x.lineWidth=6;x.strokeRect(3,3,186,186);
+    x.fillStyle='#fff';x.shadowColor='rgba(0,0,0,.6)';x.shadowBlur=6;
+    x.textAlign='left';x.font='700 30px Segoe UI,Arial';x.fillText(e.z,12,36);
+    x.textAlign='center';x.font='800 86px Segoe UI,Arial';x.fillText(e.sym,96,116);
+    let fs=24;x.font='600 '+fs+'px Segoe UI,Arial';while(x.measureText(e.name).width>172&&fs>12){fs--;x.font='600 '+fs+'px Segoe UI,Arial'}
+    x.fillText(e.name,96,152);x.font='500 20px Segoe UI,Arial';x.fillText(String(e.mass),96,178);
+    const t=new THREE.CanvasTexture(c);t.minFilter=THREE.LinearFilter;return cache[e.z]=t;
+  }
+  async function mountTable(){
+    await ensureThree();if(TB)return;
+    const host=$('#ptHost'),S=makeViewer(host,{dist:22,bg:0x05020a,th:0,ph:Math.PI/2});
+    const tip=document.createElement('div');tip.className='v34tip';host.appendChild(tip);
+    const geo=new THREE.BoxGeometry(.94,.94,.2),tiles=[];let mode='cat',layout='table',filter=null,hover=null;
+    EL.forEach(e=>{
+      if(!e)return;
+      const side=new THREE.MeshStandardMaterial({color:CATC[e.cat],roughness:.5,metalness:.15}),front=new THREE.MeshBasicMaterial({map:tileTex(e,mode)});
+      const m=new THREE.Mesh(geo,[side,side,side,side,front,side]);m.userData={z:e.z,tp:new THREE.Vector3(),tq:new THREE.Quaternion(),side,front,dim:false,hover:false};
+      S.root.add(m);tiles.push(m);
+    });
+    function placeAll(name){
+      tiles.forEach(m=>{
+        const e=EL[m.userData.z],u=m.userData,o=new THREE.Object3D();
+        if(name==='table'){
+          let col,row;if(e.f!=null){col=3+e.f;row=e.p===6?8:9}else{col=e.g;row=e.p-1}
+          o.position.set(col-9.5,4.5-row,0);
+        }else if(name==='sphere'){
+          const k=e.z-1,ph=Math.acos(1-2*(k+.5)/118),th=k*2.39996,R=8.5;
+          o.position.set(R*Math.sin(ph)*Math.cos(th),R*Math.cos(ph),R*Math.sin(ph)*Math.sin(th));o.lookAt(o.position.clone().multiplyScalar(2));
+        }else{
+          const a=e.z*.42,R=7;o.position.set(Math.cos(a)*R,(e.z-59)*.16,Math.sin(a)*R);o.lookAt(new THREE.Vector3(Math.cos(a)*R*2,o.position.y,Math.sin(a)*R*2));
+        }
+        u.tp.copy(o.position);u.tq.copy(o.quaternion);
+      });
+    }
+    function setLayout(name,snap){
+      layout=name;placeAll(name);
+      if(snap)tiles.forEach(m=>{m.position.copy(m.userData.tp);m.quaternion.copy(m.userData.tq)});
+      S.tg.set(0,0,0);
+      if(name==='table'){const asp=(host.clientWidth||800)/(host.clientHeight||500);S.dist=Math.max(11,19/asp)*1.1;S.th=0;S.ph=Math.PI/2;S.auto=false}
+      else{S.dist=name==='sphere'?25:28;S.ph=Math.PI/2.1;S.auto=true}
+      S.min=4;S.max=80;
+      $$('#ptLay button').forEach(b=>b.classList.toggle('on',b.dataset.l===name));
+    }
+    function applyFilter(){
+      tiles.forEach(m=>{
+        const e=EL[m.userData.z],ok=!filter||(filter.t==='cat'?e.cat===filter.v:filter.t==='block'?e.block===filter.v:e.z===filter.v);
+        m.userData.dim=!ok;m.userData.front.color.setHex(ok?0xffffff:0x4a4a4a);
+      });
+    }
+    function recolor(){
+      tiles.forEach(m=>{const e=EL[m.userData.z],u=m.userData;u.front.map=tileTex(e,mode);u.front.needsUpdate=true;u.side.color.set(mode==='block'?BLKC[e.block]:CATC[e.cat])});
+      const lg=$('#ptLegend'),src=mode==='block'?BLKC:CATC,nm=mode==='block'?{s:'s-block',p:'p-block',d:'d-block',f:'f-block'}:CATN;
+      lg.innerHTML='<button class="chip on" data-v="">All</button>'+Object.keys(src).map(k=>'<button class="chip" data-v="'+k+'" style="border-color:'+src[k]+'">'+nm[k]+'</button>').join('');
+      lg.querySelectorAll('button').forEach(b=>b.onclick=()=>{lg.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));filter=b.dataset.v?{t:mode==='block'?'block':'cat',v:b.dataset.v}:null;applyFilter()});
+      filter=null;applyFilter();
+    }
+    S.tick.push(dt=>{
+      const k=1-Math.pow(.001,dt);
+      tiles.forEach(m=>{
+        const u=m.userData;m.position.lerp(u.tp,k);m.quaternion.slerp(u.tq,k);
+        const ts=u.hover?1.2:(u.dim?.8:1),s=m.scale.x+(ts-m.scale.x)*k;m.scale.set(s,s,s);
+      });
+    });
+    S.onMove=e=>{
+      const m=S.pick(e,tiles);
+      if(hover&&hover!==m)hover.userData.hover=false;hover=m;
+      if(m){m.userData.hover=true;const E=EL[m.userData.z];tip.textContent=E.z+' \u00B7 '+E.name+' ('+E.sym+') \u00B7 '+E.mass;tip.style.display='block';const r=host.getBoundingClientRect();tip.style.left=Math.min(r.width-170,e.clientX-r.left+12)+'px';tip.style.top=(e.clientY-r.top+12)+'px';S.rd.domElement.style.cursor='pointer'}
+      else{tip.style.display='none';S.rd.domElement.style.cursor='grab'}
+    };
+    S.onClick=e=>{const m=S.pick(e,tiles);if(m)openElement(m.userData.z)};
+    TB={S,setLayout,applyFilter,tiles,recolor,setMode(m){mode=m;recolor()},find(z){filter={t:'z',v:z};applyFilter();$$('#ptLegend button').forEach(b=>b.classList.remove('on'))}};
+    setLayout('table',true);recolor();
+    $$('#ptLay button').forEach(b=>b.onclick=()=>setLayout(b.dataset.l,false));
+    $('#ptMode').onchange=e=>TB.setMode(e.target.value);
+    const go2=()=>{const z=findEl($('#ptFind').value);if(!z)return toast('No element found. Try a name, symbol or number.');TB.find(z);openElement(z)};
+    $('#ptFindBtn').onclick=go2;$('#ptFind').addEventListener('keydown',e=>{if(e.key==='Enter')go2()});
+  }
+  async function openElement(z){
+    try{await ensureThree()}catch(e){return toast('Could not load the 3D library.')}
+    const m=$('#ptModal');m.style.display='block';document.body.style.overflow='hidden';
+    try{if(!MD)MD=mountAtom($('#ptAtomHost'),$('#ptCtrl'),$('#ptInfo'),z);else MD.setZ(z)}catch(e){$('#ptInfo').textContent='\u26A0 '+e.message}
+  }
+  function closeElement(){$('#ptModal').style.display='none';document.body.style.overflow=''}
+
+  /* =====================================================================
+     MODEL MAKER: JSON scenes rendered by our own safe renderer
+     ===================================================================== */
+  const CPK={H:'#ffffff',He:'#d9ffff',Li:'#cc80ff',B:'#ffb5b5',C:'#555555',N:'#3050f8',O:'#ff0d0d',F:'#90e050',Ne:'#b3e3f5',Na:'#ab5cf2',Mg:'#8aff00',Al:'#bfa6a6',Si:'#f0c8a0',P:'#ff8000',S:'#ffff30',Cl:'#1ff01f',Ar:'#80d1e3',K:'#8f40d4',Ca:'#3dff00',Fe:'#e06633',Cu:'#c88033',Zn:'#7d80b0',Br:'#a62929',I:'#940094',Au:'#ffd123'};
+  const RAD={H:.31,He:.28,C:.7,N:.65,O:.6,F:.5,Cl:.99,S:1,P:1,Br:1.14,I:1.33,Na:1.3,K:1.6,Ca:1.4,Mg:1.2,Fe:1.2,Si:1.1,B:.85,Li:1,Al:1.2,Cu:1.2,Zn:1.2,Au:1.3,Ne:.5,Ar:.9};
+  const m3=(x,y,z)=>[x,z,-y];
+  const colorOf=(c,d)=>{try{return new THREE.Color(c==null?d:c)}catch(e){return new THREE.Color(d)}};
+  const vec=(a,d)=>Array.isArray(a)&&a.length>=3?new THREE.Vector3(num(a[0],0),num(a[1],0),num(a[2],0)):new THREE.Vector3(d?d[0]:0,d?d[1]:0,d?d[2]:0);
+  const rng=(a,d)=>Array.isArray(a)&&a.length>=2&&isFinite(+a[0])&&isFinite(+a[1])?[+a[0],+a[1]]:d;
+  function rod(a,b,r,mat,seg){
+    const d=b.clone().sub(a),len=d.length();if(len<1e-6)return new THREE.Group();
+    const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,len,seg||14),mat);
+    m.position.copy(a).add(b).multiplyScalar(.5);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize());return m;
+  }
+  function surfMat(op){return new THREE.MeshStandardMaterial({vertexColors:true,roughness:.45,metalness:.05,side:THREE.DoubleSide,transparent:op<1,opacity:op})}
+  function gridMesh(P,OK,nu,nv,hv){
+    const pos=new Float32Array(P.length*3),col=new Float32Array(P.length*3);let lo=Infinity,hi=-Infinity;
+    for(let k=0;k<P.length;k++){pos[k*3]=P[k][0];pos[k*3+1]=P[k][1];pos[k*3+2]=P[k][2];if(OK[k]){lo=Math.min(lo,hv[k]);hi=Math.max(hi,hv[k])}}
+    const c=new THREE.Color();
+    for(let k=0;k<P.length;k++){const t=hi>lo?(hv[k]-lo)/(hi-lo):.5;c.setHSL(.68-.68*clamp(t,0,1),.8,.55);col[k*3]=c.r;col[k*3+1]=c.g;col[k*3+2]=c.b}
+    const idx=[];
+    for(let j=0;j<nv;j++)for(let i=0;i<nu;i++){const a=j*(nu+1)+i,b=a+1,c2=a+nu+1,d=c2+1;if(OK[a]&&OK[b]&&OK[c2]&&OK[d]){idx.push(a,c2,b,b,c2,d)}}
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('color',new THREE.BufferAttribute(col,3));g.setIndex(idx);g.computeVertexNormals();return g;
+  }
+  function buildSurface(o){
+    const f=compileExpr(o.expr,['x','y']),X=rng(o.x,[-5,5]),Y=rng(o.y,[-5,5]),n=clamp(Math.round(num(o.n,80)),10,140),lim=num(o.zlim,60),P=[],OK=[],H=[];
+    for(let j=0;j<=n;j++)for(let i=0;i<=n;i++){
+      const x=X[0]+(X[1]-X[0])*i/n,y=Y[0]+(Y[1]-Y[0])*j/n;let z=f([x,y]);const ok=isFinite(z)&&Math.abs(z)<=lim;if(!ok)z=0;
+      P.push(m3(x,y,z));OK.push(ok);H.push(z);
+    }
+    const g=gridMesh(P,OK,n,n,H),grp=new THREE.Group();
+    grp.add(new THREE.Mesh(g,surfMat(num(o.opacity,1))));
+    grp.add(new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:0xffffff,wireframe:true,transparent:true,opacity:.07})));
+    return grp;
+  }
+  function buildParam(o){
+    const fx=compileExpr(o.x,['u','v']),fy=compileExpr(o.y,['u','v']),fz=compileExpr(o.z,['u','v']),U=rng(o.u,[0,6.2832]),V=rng(o.v,[0,6.2832]),nu=clamp(Math.round(num(o.nu,100)),4,200),nv=clamp(Math.round(num(o.nv,50)),2,140),P=[],OK=[],H=[];
+    for(let j=0;j<=nv;j++)for(let i=0;i<=nu;i++){
+      const u=U[0]+(U[1]-U[0])*i/nu,v=V[0]+(V[1]-V[0])*j/nv,a=[u,v],x=fx(a),y=fy(a),z=fz(a),ok=isFinite(x)&&isFinite(y)&&isFinite(z);
+      P.push(ok?m3(x,y,z):[0,0,0]);OK.push(ok);H.push(ok?z:0);
+    }
+    const g=gridMesh(P,OK,nu,nv,H),grp=new THREE.Group();
+    grp.add(new THREE.Mesh(g,surfMat(num(o.opacity,1))));
+    grp.add(new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:0xffffff,wireframe:true,transparent:true,opacity:.07})));
+    return grp;
+  }
+  function tubeRuns(pts,r,color,closed){
+    const grp=new THREE.Group(),mat=new THREE.MeshStandardMaterial({color,roughness:.4,metalness:.1});let run=[];
+    const flush=()=>{if(run.length>=2){const cv=new THREE.CatmullRomCurve3(run.map(p=>new THREE.Vector3(p[0],p[1],p[2])),closed&&run.length===pts.length);grp.add(new THREE.Mesh(new THREE.TubeGeometry(cv,Math.min(400,Math.max(8,run.length*(run.length>100?2:10))),r,8,closed&&run.length===pts.length),mat))}run=[]};
+    pts.forEach(p=>{if(p&&isFinite(p[0])&&isFinite(p[1])&&isFinite(p[2]))run.push(p);else flush()});flush();return grp;
+  }
+  function buildCurve(o){
+    const fx=compileExpr(o.x,['t']),fy=compileExpr(o.y,['t']),fz=compileExpr(o.z==null?'0':o.z,['t']),T=rng(o.t,[0,6.2832]),n=clamp(Math.round(num(o.n,500)),10,1500),pts=[];
+    for(let k=0;k<=n;k++){const t=T[0]+(T[1]-T[0])*k/n,a=[t],x=fx(a),y=fy(a),z=fz(a);pts.push(isFinite(x)&&isFinite(y)&&isFinite(z)?m3(x,y,z):null)}
+    return tubeRuns(pts,num(o.r,.07),colorOf(o.color,'#ffd54a'),false);
+  }
+  function buildFCurve(o){
+    const f=compileExpr(o.expr,['x']),X=rng(o.x,[-6,6]),n=600,pts=[];
+    for(let k=0;k<=n;k++){const x=X[0]+(X[1]-X[0])*k/n,y=f([x]);pts.push(isFinite(y)&&Math.abs(y)<60?m3(x,y,0):null)}
+    return tubeRuns(pts,num(o.r,.07),colorOf(o.color,'#ffd54a'),false);
+  }
+  function polyGeo(kind,r){
+    const k=String(kind).toLowerCase();
+    if(/tetra/.test(k))return new THREE.TetrahedronGeometry(r);if(/octa/.test(k))return new THREE.OctahedronGeometry(r);
+    if(/dodeca/.test(k))return new THREE.DodecahedronGeometry(r);if(/icosa/.test(k))return new THREE.IcosahedronGeometry(r);
+    return new THREE.BoxGeometry(r*1.5,r*1.5,r*1.5);
+  }
+  function renderSpec(S,spec,labelsOn){
+    S.clear();const g=S.root,objs=(Array.isArray(spec.objects)?spec.objects:[]).slice(0,450);let bad=0;
+    const rot=(m,o)=>{if(Array.isArray(o.rot))m.rotation.set(num(o.rot[0],0)*Math.PI/180,num(o.rot[1],0)*Math.PI/180,num(o.rot[2],0)*Math.PI/180)};
+    function std(o,def){const op=clamp(num(o.opacity,1),.05,1);return new THREE.MeshStandardMaterial({color:colorOf(o.color,def||'#9aa5b1'),roughness:.45,metalness:.06,transparent:op<1,opacity:op,side:THREE.DoubleSide,depthWrite:op>=.95})}
+    function build(o){
+      const t=String(o.t||'').toLowerCase();let m=null;
+      if(t==='sphere'){m=new THREE.Mesh(new THREE.SphereGeometry(Math.max(.01,num(o.r,1)),28,18),std(o));m.position.copy(vec(o.pos))}
+      else if(t==='ellipsoid'){const r=Array.isArray(o.radii)?o.radii:[1,1,1];m=new THREE.Mesh(new THREE.SphereGeometry(1,28,18),std(o));m.scale.set(Math.max(.01,num(r[0],1)),Math.max(.01,num(r[1],1)),Math.max(.01,num(r[2],1)));m.position.copy(vec(o.pos));rot(m,o)}
+      else if(t==='cylinder'){m=rod(vec(o.from),vec(o.to,[0,1,0]),Math.max(.005,num(o.r,.1)),std(o),16)}
+      else if(t==='cone'){const a=vec(o.from),b=vec(o.to,[0,1,0]),d=b.clone().sub(a),len=d.length();if(len>1e-6){m=new THREE.Mesh(new THREE.ConeGeometry(Math.max(.01,num(o.r,.3)),len,20),std(o));m.position.copy(a).add(b).multiplyScalar(.5);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize())}}
+      else if(t==='box'){const s=Array.isArray(o.size)?o.size:[1,1,1];m=new THREE.Mesh(new THREE.BoxGeometry(num(s[0],1),num(s[1],1),num(s[2],1)),std(o));m.position.copy(vec(o.pos));rot(m,o)}
+      else if(t==='torus'){m=new THREE.Mesh(new THREE.TorusGeometry(Math.max(.05,num(o.R,1)),Math.max(.01,num(o.r,.2)),16,48),std(o));m.position.copy(vec(o.pos));rot(m,o)}
+      else if(t==='tube'){const p=(Array.isArray(o.points)?o.points:[]).filter(q=>Array.isArray(q)&&q.length>=3).slice(0,600).map(q=>new THREE.Vector3(num(q[0],0),num(q[1],0),num(q[2],0)));if(p.length>=2){const cv=new THREE.CatmullRomCurve3(p,!!o.closed);m=new THREE.Mesh(new THREE.TubeGeometry(cv,clamp(p.length*10,8,400),Math.max(.01,num(o.r,.1)),10,!!o.closed),std(o))}}
+      else if(t==='vector'){m=new THREE.Group();const a=vec(o.from),b=vec(o.to,[0,1,0]),d=b.clone().sub(a),len=d.length(),mt=std(o,'#ffd54a');if(len>1e-6){const hl=Math.min(len*.3,.6),sh=b.clone().sub(d.clone().normalize().multiplyScalar(hl));m.add(rod(a,sh,.06,mt,10));const hd=new THREE.Mesh(new THREE.ConeGeometry(.17,hl,16),mt);hd.position.copy(sh).add(b).multiplyScalar(.5);hd.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.clone().normalize());m.add(hd)}}
+      else if(t==='poly'){m=new THREE.Group();const geo=polyGeo(o.kind,Math.max(.1,num(o.r,1))),mt=std(o,'#7fb0ff');mt.flatShading=true;m.add(new THREE.Mesh(geo,mt));m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),new THREE.LineBasicMaterial({color:0xffffff})));m.position.copy(vec(o.pos));rot(m,o)}
+      else if(t==='quad'){const p=(Array.isArray(o.pts)?o.pts:[]).slice(0,4).map(q=>vec(q));if(p.length===4){const ge=new THREE.BufferGeometry().setFromPoints([p[0],p[1],p[2],p[0],p[2],p[3]]);ge.computeVertexNormals();m=new THREE.Mesh(ge,std(o,'#4a8cff'))}}
+      else if(t==='label'){m=new THREE.Group();const lb=label(String(o.text||''),{size:num(o.size,.6),color:o.color||'#ffffff'});lb.position.copy(vec(o.pos));m.add(lb);S.lbls.push(lb)}
+      else if(t==='surface')m=buildSurface(o);
+      else if(t==='param')m=buildParam(o);
+      else if(t==='curve')m=buildCurve(o);
+      else if(t==='fcurve')m=buildFCurve(o);
+      else if(t==='axes'){
+        m=new THREE.Group();const sz=Math.max(1,num(o.size,5)),mt=c=>new THREE.MeshBasicMaterial({color:c});
+        [['x',[sz,0,0],0xff5252],['y',[0,sz,0],0x4cd964],['z',[0,0,sz],0x4a8cff]].forEach(a=>{const b=m3(a[1][0],a[1][1],a[1][2]);m.add(rod(new THREE.Vector3(),new THREE.Vector3(b[0],b[1],b[2]),.02,mt(a[2]),6));const lb=label(a[0],{size:.5,color:'#'+new THREE.Color(a[2]).getHexString()});lb.position.set(b[0]*1.06,b[1]*1.06,b[2]*1.06);m.add(lb);S.lbls.push(lb)});
+        return {m,anim:null};
+      }
+      else if(t==='molecule'){
+        m=new THREE.Group();const at=(Array.isArray(o.atoms)?o.atoms:[]).slice(0,400),sc=num(o.scale,1),pos=at.map(a=>vec(a.pos)),bm=new THREE.MeshStandardMaterial({color:0xb8bec6,roughness:.4,metalness:.2});
+        at.forEach((a,i)=>{const el=String(a.el||'C'),r=(a.r!=null?num(a.r,.7):(RAD[el]||.8))*sc,s=new THREE.Mesh(new THREE.SphereGeometry(Math.max(.05,r),24,16),new THREE.MeshStandardMaterial({color:colorOf(a.color||CPK[el],'#cc99cc'),roughness:.35,metalness:.1}));s.position.copy(pos[i]);m.add(s);if(a.label){const lb=label(String(a.label),{size:.5*Math.max(1,sc)});lb.position.copy(pos[i]).add(new THREE.Vector3(0,r+.35,0));m.add(lb);S.lbls.push(lb)}});
+        (Array.isArray(o.bonds)?o.bonds:[]).slice(0,900).forEach(b=>{
+          const i=b[0]|0,j=b[1]|0,ord=num(b[2],1);if(!pos[i]||!pos[j])return;
+          const A=pos[i],B=pos[j],d=B.clone().sub(A).normalize();let p=d.clone().cross(new THREE.Vector3(0,1,0));if(p.length()<.1)p=d.clone().cross(new THREE.Vector3(1,0,0));p.normalize();
+          const gap=.17*sc,rr=.09*sc,offs=ord>=3?[-gap,0,gap]:ord>=2?[-gap/2,gap/2]:ord>=1.4?[-gap/3,gap/2]:[0];
+          offs.forEach((off,k)=>m.add(rod(A.clone().addScaledVector(p,off),B.clone().addScaledVector(p,off),(ord>=1.4&&ord<2&&k===1)?rr*.55:rr,bm,10)));
+        });
+      }
+      if(!m)return null;
+      let anim=null;if(o.anim&&typeof o.anim==='object')anim=o.anim;
+      if(o.label&&t!=='label'){
+        const bb=new THREE.Box3().setFromObject(m),lb=label(String(o.label).slice(0,40),{size:.55,color:o.labelColor||'#ffffff'});
+        lb.position.set((bb.min.x+bb.max.x)/2,bb.max.y+.45,(bb.min.z+bb.max.z)/2);
+        const h=new THREE.Group();h.add(m);h.add(lb);S.lbls.push(lb);return {m:h,anim,inner:m};
+      }
+      return {m,anim,inner:m};
+    }
+    objs.forEach(o=>{
+      try{
+        const r=build(o);if(!r){bad++;return}
+        let node=r.m;
+        const A=r.anim,sp=num(A&&A.speed,1);
+        if(A&&A.type==='spin'){const t=r.inner;S.tick.push(dt=>{t.rotation.y+=dt*sp})}
+        else if(A&&A.type==='pulse'){const t=r.inner,s0=t.scale.clone();S.tick.push((dt,tt)=>{const k=1+.1*Math.sin(tt*2*sp);t.scale.set(s0.x*k,s0.y*k,s0.z*k)})}
+        else if(A&&A.type==='bob'){const y0=node.position.y;S.tick.push((dt,tt)=>{node.position.y=y0+.3*Math.sin(tt*2*sp)})}
+        else if(A&&A.type==='orbit'){const c=vec(A.center),pv=new THREE.Group();pv.position.copy(c);node.position.sub(c);pv.add(node);node=pv;S.tick.push(dt=>{pv.rotation.y+=dt*sp})}
+        g.add(node);
+      }catch(e){bad++;console.warn('PACK 34 object skipped:',e.message)}
+    });
+    S.lbls.forEach(l=>{l.visible=labelsOn!==false});
+    S.fit();return bad;
+  }
+
+  /* ---------- deterministic model library ---------- */
+  const TAU=Math.PI*2;
+  const axes=sz=>({t:'axes',size:sz});
+  function molSpec(title,summary,atoms,bonds,parts){return {title,summary,parts:parts||[],objects:[{t:'molecule',atoms,bonds}]}}
+  function c60(){
+    const p=(1+Math.sqrt(5))/2,base=[[0,1,3*p],[1,2+p,2*p],[p,2,2*p+1]],pts=[];
+    base.forEach(b=>{for(let sx=-1;sx<=1;sx+=2)for(let sy=-1;sy<=1;sy+=2)for(let sz=-1;sz<=1;sz+=2){
+      const v=[b[0]*sx,b[1]*sy,b[2]*sz];
+      for(let k=0;k<3;k++){const w=[v[k%3],v[(k+1)%3],v[(k+2)%3]];if(!pts.some(q=>Math.hypot(q[0]-w[0],q[1]-w[1],q[2]-w[2])<1e-6))pts.push(w)}
+    }});
+    const sc=.7,at=pts.map(q=>({el:'C',pos:[q[0]*sc,q[1]*sc,q[2]*sc]})),bonds=[];
+    for(let i=0;i<pts.length;i++)for(let j=i+1;j<pts.length;j++){const d=Math.hypot(pts[i][0]-pts[j][0],pts[i][1]-pts[j][1],pts[i][2]-pts[j][2]);if(Math.abs(d-2)<.05)bonds.push([i,j,1])}
+    return molSpec('Buckminsterfullerene C\u2086\u2080','60 carbon atoms at the vertices of a truncated icosahedron: 12 pentagons and 20 hexagons. Every carbon is bonded to 3 others ('+bonds.length+' bonds drawn).',at,bonds,[{name:'Pentagon',desc:'12 of them; never adjacent to each other'},{name:'Hexagon',desc:'20 of them'}]);
+  }
+  function graphene(){
+    const at=[],bonds=[],a1=[2.46,0],a2=[1.23,2.13];
+    for(let i=-4;i<=4;i++)for(let j=-4;j<=4;j++)[[0,0],[1.23,.71]].forEach(b=>{const x=i*a1[0]+j*a2[0]+b[0],y=i*a1[1]+j*a2[1]+b[1];if(Math.hypot(x,y)<7)at.push({el:'C',pos:[x,0,y]})});
+    for(let i=0;i<at.length;i++)for(let j=i+1;j<at.length;j++){const d=Math.hypot(at[i].pos[0]-at[j].pos[0],at[i].pos[2]-at[j].pos[2]);if(Math.abs(d-1.42)<.05)bonds.push([i,j,1])}
+    return molSpec('Graphene sheet','A single layer of carbon atoms in a honeycomb lattice. C\u2013C bond length 1.42 \u00C5; each carbon is sp\u00B2 hybridised.',at,bonds);
+  }
+  function nacl(){
+    const at=[],d=2.82;
+    for(let i=0;i<4;i++)for(let j=0;j<4;j++)for(let k=0;k<4;k++){const na=(i+j+k)%2===0;at.push({el:na?'Na':'Cl',r:na?.9:1.35,pos:[(i-1.5)*d,(j-1.5)*d,(k-1.5)*d]})}
+    return molSpec('Sodium chloride crystal (rock-salt lattice)','Each Na\u207A (purple) is surrounded by 6 Cl\u207B (green) and vice versa: face-centred cubic arrangement, Na\u2013Cl spacing 2.82 \u00C5. Ion sizes are drawn smaller than true ionic radii so the lattice is visible.',at,[],[{name:'Na\u207A',desc:'purple'},{name:'Cl\u207B',desc:'green'}]);
+  }
+  function dna(){
+    const N=30,seq='GATTACAGCTAGCTTAGGCATCGATCCGTA',cm={A:'#ff5252',T:'#4a8cff',G:'#ffd23f',C:'#3ddc97'},pr={A:'T',T:'A',G:'C',C:'G'},s1=[],s2=[],o=[];
+    for(let i=0;i<N;i++){const a=i*TAU/10.5,y=(i-N/2)*.5;s1.push([1.3*Math.cos(a),y,1.3*Math.sin(a)]);s2.push([1.3*Math.cos(a+2.6),y,1.3*Math.sin(a+2.6)])}
+    o.push({t:'tube',points:s1,r:.12,color:'#b0bec5',label:"5\u2032 sugar\u2013phosphate backbone"});o.push({t:'tube',points:s2,r:.12,color:'#90a4ae'});
+    for(let i=0;i<N;i++){
+      const b=seq[i],a=s1[i],c=s2[i],mid=[(a[0]+c[0])/2,(a[1]+c[1])/2,(a[2]+c[2])/2];
+      o.push({t:'cylinder',from:a,to:mid,r:.09,color:cm[b]});o.push({t:'cylinder',from:mid,to:c,r:.09,color:cm[pr[b]]});
+      o.push({t:'sphere',pos:a,r:.17,color:'#ff9800'});o.push({t:'sphere',pos:c,r:.17,color:'#ff9800'});
+    }
+    return {title:'DNA double helix',summary:'Two antiparallel sugar\u2013phosphate backbones wound into a right-handed helix, about 10.5 base pairs per turn. Bases pair A\u2013T (2 hydrogen bonds) and G\u2013C (3 hydrogen bonds). Proportions are schematic.',parts:[{name:'Adenine',desc:'red, pairs with thymine'},{name:'Thymine',desc:'blue, pairs with adenine'},{name:'Guanine',desc:'yellow, pairs with cytosine'},{name:'Cytosine',desc:'green, pairs with guanine'},{name:'Phosphate',desc:'orange spheres on the backbone'}],objects:o};
+  }
+  function platonic(){
+    const L=[['tetra','Tetrahedron  V4 E6 F4','#ff7a7a'],['cube','Cube  V8 E12 F6','#ffd23f'],['octa','Octahedron  V6 E12 F8','#3ddc97'],['dodeca','Dodecahedron  V20 E30 F12','#4a8cff'],['icosa','Icosahedron  V12 E30 F20','#c77dff']];
+    return {title:'The five Platonic solids',summary:'The only convex regular polyhedra. Euler\u2019s formula V \u2212 E + F = 2 holds for each.',parts:[],objects:L.map((q,i)=>({t:'poly',kind:q[0],pos:[(i-2)*3.6,0,0],r:1.3,color:q[2],label:q[1],anim:{type:'spin',speed:.6}}))};
+  }
+  function cross(){
+    const a=[3,0,0],b=[1,2,0],c=[0,0,6],P=m3,aa=P(...a),bb=P(...b),cc=P(...c),ab=P(4,2,0);
+    return {title:'Cross product  a \u00D7 b',summary:'a = (3,0,0), b = (1,2,0), a \u00D7 b = (0,0,6). The result is perpendicular to both vectors (right-hand rule) and its length 6 equals the area of the shaded parallelogram.',parts:[],objects:[axes(5),{t:'quad',pts:[[0,0,0],aa,ab,bb],color:'#4a8cff',opacity:.35},{t:'vector',from:[0,0,0],to:aa,color:'#ff5252',label:'a'},{t:'vector',from:[0,0,0],to:bb,color:'#4cd964',label:'b'},{t:'vector',from:[0,0,0],to:cc,color:'#ffd54a',label:'a \u00D7 b'}]};
+  }
+  function lorenz(){
+    let x=1,y=1,z=1;const pts=[];
+    for(let i=0;i<9000;i++){const dx=10*(y-x),dy=x*(28-z)-y,dz=x*y-8/3*z;x+=dx*.004;y+=dy*.004;z+=dz*.004;if(i%12===0&&i>200)pts.push([x*.3,(z-25)*.3,-y*.3])}
+    return {title:'Lorenz attractor',summary:'Solution of dx/dt = \u03C3(y\u2212x), dy/dt = x(\u03C1\u2212z)\u2212y, dz/dt = xy\u2212\u03B2z with \u03C3=10, \u03C1=28, \u03B2=8/3, integrated numerically. A classic example of deterministic chaos.',parts:[],objects:[{t:'tube',points:pts,r:.05,color:'#ff9f43'}]};
+  }
+  const par=(title,summary,x,y,z,u,v,nu,nv,sz)=>({title,summary,parts:[],objects:[axes(sz||4),{t:'param',x,y,z,u,v,nu:nu||120,nv:nv||40}]});
+  const surf=(title,summary,expr,r,n)=>({title,summary,parts:[],objects:[axes(r||4),{t:'surface',expr,x:[-(r||4),r||4],y:[-(r||4),r||4],n:n||90}]});
+  const PRE=[
+    [/m[o\u00F6]bius/i,()=>par('M\u00F6bius strip','A surface with one side and one boundary edge: x=(2+v cos(u/2))cos u, y=(2+v cos(u/2)) sin u, z=v sin(u/2), u\u2208[0,2\u03C0], v\u2208[\u22121,1].','(2+v*cos(u/2))*cos(u)','(2+v*cos(u/2))*sin(u)','v*sin(u/2)',[0,TAU],[-1,1],160,20,3)],
+    [/klein/i,()=>par('Klein bottle (figure-8 immersion)','A closed surface with no inside/outside. This is its figure-eight immersion in 3D; it passes through itself, which a true Klein bottle only does in 3D.','(3+cos(u/2)*sin(v)-sin(u/2)*sin(2*v))*cos(u)','(3+cos(u/2)*sin(v)-sin(u/2)*sin(2*v))*sin(u)','sin(u/2)*sin(v)+cos(u/2)*sin(2*v)',[0,TAU],[0,TAU],140,60,4)],
+    [/\btorus\b(?!\s*knot)/i,()=>par('Torus','Surface of revolution: x=(R+r cos v)cos u, y=(R+r cos v) sin u, z=r sin v with R=3, r=1. Area 4\u03C0\u00B2Rr, volume 2\u03C0\u00B2Rr\u00B2.','cos(u)*(3+cos(v))','sin(u)*(3+cos(v))','sin(v)',[0,TAU],[0,TAU],100,50,4)],
+    [/trefoil|torus knot/i,()=>({title:'Trefoil knot',summary:'x=sin t+2 sin 2t, y=cos t\u22122 cos 2t, z=\u2212sin 3t: the simplest non-trivial knot.',parts:[],objects:[axes(3.5),{t:'curve',x:'sin(t)+2*sin(2*t)',y:'cos(t)-2*cos(2*t)',z:'-sin(3*t)',t:[0,TAU],r:.18,n:600,color:'#ff7ab8'}]})],
+    [/\bhelix\b/i,()=>({title:'Circular helix',summary:'x=2cos t, y=2sin t, z=t/3.',parts:[],objects:[axes(3),{t:'curve',x:'2*cos(t)',y:'2*sin(t)',z:'t/3',t:[0,6*Math.PI],r:.12,color:'#4cd9a0'}]})],
+    [/hyperboloid/i,()=>par('Hyperboloid of one sheet','x\u00B2/a\u00B2+y\u00B2/a\u00B2\u2212z\u00B2/c\u00B2=1; a ruled surface (it contains straight lines).','cos(u)*sqrt(1+v*v)','sin(u)*sqrt(1+v*v)','v',[0,TAU],[-2,2],100,40,3)],
+    [/saddle|hyperbolic paraboloid/i,()=>surf('Saddle (hyperbolic paraboloid)','z = x\u00B2 \u2212 y\u00B2. A saddle point at the origin: minimum along x, maximum along y.','x^2-y^2',3)],
+    [/paraboloid/i,()=>surf('Elliptic paraboloid','z = x\u00B2 + y\u00B2, a bowl with its minimum at the origin.','x^2+y^2',3)],
+    [/gaussian|bell surface/i,()=>surf('2D Gaussian','z = 3 e^{\u2212(x\u00B2+y\u00B2)/4}','3*exp(-(x^2+y^2)/4)',5)],
+    [/ripple|sinc|wave surface/i,()=>surf('Radial ripple','z = 4 sin(r)/r with r=\u221A(x\u00B2+y\u00B2)','4*sin(sqrt(x^2+y^2)+1e-9)/(sqrt(x^2+y^2)+1e-9)',12,110)],
+    [/\bcone\b/i,()=>surf('Cone','z = \u221A(x\u00B2+y\u00B2)','sqrt(x^2+y^2)',3)],
+    [/lorenz/i,lorenz],
+    [/platonic/i,platonic],
+    [/cross product/i,cross],
+    [/dna|double helix/i,dna],
+    [/buckyball|fullerene|\bc\s*60\b|buckminster/i,c60],
+    [/graphene/i,graphene],
+    [/nacl|sodium chloride|rock ?salt|table salt/i,nacl],
+    [/\b(water|h2o)\b/i,()=>molSpec('Water  H\u2082O','Bent molecule: O\u2013H 0.96 \u00C5, H\u2013O\u2013H angle 104.5\u00B0. Two lone pairs on oxygen make it polar.',[{el:'O',pos:[0,0,0],label:'O'},{el:'H',pos:[.757,.586,0]},{el:'H',pos:[-.757,.586,0]}],[[0,1,1],[0,2,1]])],
+    [/carbon dioxide|\bco2\b/i,()=>molSpec('Carbon dioxide  CO\u2082','Linear, O=C=O, bond length 1.16 \u00C5, angle 180\u00B0, non-polar overall.',[{el:'C',pos:[0,0,0]},{el:'O',pos:[1.16,0,0]},{el:'O',pos:[-1.16,0,0]}],[[0,1,2],[0,2,2]])],
+    [/methane|\bch4\b/i,()=>{const h=.629;return molSpec('Methane  CH\u2084','Tetrahedral, C\u2013H 1.09 \u00C5, H\u2013C\u2013H 109.5\u00B0 (sp\u00B3).',[{el:'C',pos:[0,0,0]},{el:'H',pos:[h,h,h]},{el:'H',pos:[h,-h,-h]},{el:'H',pos:[-h,h,-h]},{el:'H',pos:[-h,-h,h]}],[[0,1,1],[0,2,1],[0,3,1],[0,4,1]])}],
+    [/ammonia|\bnh3\b/i,()=>{const a=[0,1,2].map(k=>{const p=k*TAU/3;return {el:'H',pos:[1.012*.9265*Math.cos(p),-1.012*.3762,1.012*.9265*Math.sin(p)]}});return molSpec('Ammonia  NH\u2083','Trigonal pyramidal, N\u2013H 1.01 \u00C5, H\u2013N\u2013H 106.7\u00B0, one lone pair on nitrogen.',[{el:'N',pos:[0,0,0]}].concat(a),[[0,1,1],[0,2,1],[0,3,1]])}],
+    [/ethene|ethylene|\bc2h4\b/i,()=>molSpec('Ethene  C\u2082H\u2084','Planar, C=C 1.34 \u00C5, H\u2013C\u2013H about 117\u00B0 (sp\u00B2).',[{el:'C',pos:[.667,0,0]},{el:'C',pos:[-.667,0,0]},{el:'H',pos:[1.237,.923,0]},{el:'H',pos:[1.237,-.923,0]},{el:'H',pos:[-1.237,.923,0]},{el:'H',pos:[-1.237,-.923,0]}],[[0,1,2],[0,2,1],[0,3,1],[1,4,1],[1,5,1]])],
+    [/benzene|\bc6h6\b/i,()=>{const at=[],bonds=[];for(let k=0;k<6;k++){const a=k*TAU/6;at.push({el:'C',pos:[1.397*Math.cos(a),0,1.397*Math.sin(a)]})}for(let k=0;k<6;k++){const a=k*TAU/6;at.push({el:'H',pos:[2.481*Math.cos(a),0,2.481*Math.sin(a)]})}for(let k=0;k<6;k++){bonds.push([k,(k+1)%6,1.5]);bonds.push([k,k+6,1])}return molSpec('Benzene  C\u2086H\u2086','Planar hexagon, all C\u2013C 1.40 \u00C5 (between single and double), delocalised \u03C0 system with 6 electrons.',at,bonds)}],
+    [/nitrogen (?:molecule|gas)|\bn2\b/i,()=>molSpec('Nitrogen  N\u2082','Triple bond N\u2261N, 1.10 \u00C5.',[{el:'N',pos:[.55,0,0]},{el:'N',pos:[-.55,0,0]}],[[0,1,3]])],
+    [/oxygen (?:molecule|gas)|\bo2\b/i,()=>molSpec('Oxygen  O\u2082','Double bond O=O, 1.21 \u00C5 (paramagnetic: two unpaired electrons).',[{el:'O',pos:[.6,0,0]},{el:'O',pos:[-.6,0,0]}],[[0,1,2]])],
+    [/hydrogen (?:molecule|gas)|\bh2\b/i,()=>molSpec('Hydrogen  H\u2082','Single bond H\u2013H, 0.74 \u00C5.',[{el:'H',pos:[.37,0,0]},{el:'H',pos:[-.37,0,0]}],[[0,1,1]])],
+    [/hydrogen chloride|\bhcl\b/i,()=>molSpec('Hydrogen chloride  HCl','Polar covalent bond, 1.27 \u00C5.',[{el:'Cl',pos:[.1,0,0]},{el:'H',pos:[-1.17,0,0]}],[[0,1,1]])]
+  ];
+  function exprFromText(t){
+    let m=t.match(/(?:^|[\s,;:])(?:z|f\s*\(\s*x\s*,\s*y\s*\))\s*=\s*([^;=]+)$/i);
+    if(m)return {k:'surf',e:m[1].trim()};
+    m=t.match(/(?:^|[\s,;:])(?:y|f\s*\(\s*x\s*\))\s*=\s*([^;=]+)$/i);
+    if(m)return {k:/\by\b/i.test(m[1])?'surf':'curve',e:m[1].trim()};
+    m=t.match(/\b(?:plot|graph|draw)\s+(?:the\s+)?(?:function\s+|surface\s+)?(?:of\s+)?(.+)$/i);
+    if(m&&/^[\w\s+\-*/^().,\u03C0]+$/.test(m[1])&&/\bx\b/.test(m[1])&&/[+\-*/^()]|sin|cos|exp|sqrt/.test(m[1]))return {k:/\by\b/.test(m[1])?'surf':'curve',e:m[1].trim()};
+    return null;
+  }
+  function quickSpec(t){
+    const ex=exprFromText(t);
+    if(ex){
+      compileExpr(ex.e,ex.k==='surf'?['x','y']:['x']);
+      if(ex.k==='surf')return {title:'z = '+ex.e,summary:'Surface plot of z = f(x,y), coloured by height (math convention: z is vertical).',parts:[],objects:[axes(5),{t:'surface',expr:ex.e,x:[-5,5],y:[-5,5],n:100}]};
+      return {title:'y = '+ex.e,summary:'Graph of y = f(x) drawn in 3D space on the xy-plane.',parts:[],objects:[axes(6),{t:'fcurve',expr:ex.e,x:[-6,6],r:.08}]};
+    }
+    for(const p of PRE)if(p[0].test(t))return p[1]();
+    return null;
+  }
+  function atomRequest(t){
+    if(!/\b(atom|atomic|bohr|orbitals?|electron (?:shell|config\w*)|nucleus)\b/i.test(t))return 0;
+    let m=t.match(/\belement\s+(?:number\s+)?(\d{1,3})\b/i);if(m&&findEl(m[1]))return findEl(m[1]);
+    const w=t.match(/[A-Za-z]+/g)||[];
+    for(const x of w){const z=findEl(x.toLowerCase());if(z&&(x.length>2||/^[A-Z][a-z]?$/.test(x))&&!/^(?:atom|the|and|for|show|make|model|draw|bohr|of|an|a)$/i.test(x)&&(x.length>2||x[0]===x[0].toUpperCase()))return z}
+    return 6;
+  }
+
+  const MM_SYS='You are a 3D scientific illustrator. Output ONLY one JSON object (no markdown) that describes a 3D scene built from primitives. Coordinates: x right, y UP, z toward the viewer; keep the whole model within about 20 units. '
+   +'Top level: {"title":"","summary":"2-3 accurate sentences","parts":[{"name":"","desc":"one line"}],"objects":[...]}.\nObject types (fields optional unless obvious):\n'
+   +'{"t":"sphere","pos":[x,y,z],"r":1,"color":"#rrggbb","opacity":1,"label":"short text"}\n{"t":"ellipsoid","pos":[..],"radii":[a,b,c],"rot":[degX,degY,degZ]}\n{"t":"cylinder","from":[..],"to":[..],"r":0.1}  (rods, bones, bonds, vessels)\n{"t":"cone","from":[..],"to":[..],"r":0.3}\n{"t":"box","pos":[..],"size":[w,h,d],"rot":[..]}\n{"t":"torus","pos":[..],"R":2,"r":0.3,"rot":[..]}\n'
+   +'{"t":"tube","points":[[x,y,z],...],"r":0.1,"closed":false}  smooth curve through at least 3 points (vessels, neurons, DNA strands, orbit paths)\n{"t":"vector","from":[..],"to":[..],"color":"#..","label":".."}\n{"t":"poly","kind":"tetra|cube|octa|dodeca|icosa","pos":[..],"r":1}\n{"t":"label","pos":[..],"text":"..","size":0.6}\n'
+   +'{"t":"molecule","atoms":[{"el":"C","pos":[x,y,z]}],"bonds":[[i,j,order]],"scale":1}  use real geometry in angstroms: C-H 1.09, C-C 1.54, C=C 1.34, C-O 1.43, O-H 0.96 and correct bond angles.\n'
+   +'Optional on any object: "anim":{"type":"spin|orbit|pulse|bob","speed":1,"center":[x,y,z]}.\n'
+   +'Rules: be scientifically accurate in proportions, positions and counts; compute symmetric or repeated structures with exact coordinates; use distinct colours; give the main parts a short "label" (max 3 words); use 20-200 objects; for cells and organs combine overlapping translucent ellipsoids (opacity 0.3-0.7 for outer membranes, solid for inner organelles); never output anything except the JSON.';
+  async function aiSpec(text,prev,change){
+    let note='';
+    for(let t=0;t<3;t++){
+      const user=prev?('Current model JSON:\n'+JSON.stringify(prev)+'\n\nChange request: '+change+'\nReturn the COMPLETE updated JSON.'):('Model request: '+text);
+      const raw=await groqR([{role:'system',content:MM_SYS},{role:'user',content:user+(note?'\n\nNOTE: '+note:'')}],{effort:'medium',max:7000,temperature:t?.2:.4});
+      try{const j=JSON.parse(raw.replace(/```(?:json)?/gi,'').match(/\{[\s\S]*\}/)[0]);if(Array.isArray(j.objects)&&j.objects.length)return j;note='The JSON must contain a non-empty "objects" array.'}
+      catch(e){note='Reply with ONLY one valid JSON object.'}
+    }
+    throw new Error('Could not produce a valid model. Try rephrasing the request.');
+  }
+
+  /* =====================================================================
+     OLYMPIAD SOLVER
+     ===================================================================== */
+  const SYS_BASE='You are VISION-STEM, an expert coach and solver at the level of International Olympiad medallists (IMO, IPhO, IChO, IBO, IOAI) and university professors. Rules: (1) Be rigorous. Never guess. If the problem is ambiguous, state the interpretation you use. (2) Give the full derivation; justify every non-trivial step; no hand-waving. (3) Check your result by a different method, special or limiting cases, and units/dimensions. (4) If you are not certain about a step, say so explicitly and say what would have to be verified. Never invent facts, data or references. (5) Write mathematics in LaTeX ($...$ inline, $$...$$ display). (6) Structure: ## Understanding, ## Key idea, ## Solution, ## Verification, ## Final answer.';
+  const SUBJ_SYS={
+    math:'Subject: mathematics. For proof problems write a complete rigorous proof: define all notation, handle all cases, state and prove lemmas, say where each hypothesis is used. For "find all" problems prove both that the answer works and that nothing else does. Inequalities: state equality cases. Number theory: use congruences and valuations carefully. Combinatorics: define the objects, double-count or use bijections and invariants with care. Geometry: consider coordinates, complex numbers or trigonometry as a fallback when synthetic methods stall. Test the final claim on small cases.',
+    phys:'Subject: physics. Define variables and coordinate system, describe the setup, start from fundamental laws (conservation of energy, momentum, angular momentum, Maxwell, thermodynamics, relativity as needed), solve symbolically first, then substitute numbers with SI units and sensible significant figures. Do a dimensional check and at least one limiting case. State assumptions and approximations and when they are valid.',
+    chem:'Subject: chemistry. Write balanced equations with states, give stoichiometry with units and significant figures, use ICE tables and activities properly for equilibria, apply thermodynamics and kinetics rigorously, describe organic mechanisms step by step (curly arrows in words, intermediates, stereochemistry), reason about spectra (NMR, IR, MS) systematically, and state any assumption (e.g. ideal behaviour, neglecting autoprotolysis).',
+    bio:'Subject: biology. Use precise terminology. Reason from mechanisms: biochemistry and metabolism pathways, cell biology, genetics (crosses, Hardy-Weinberg, linkage, chi-square), molecular biology, physiology, evolution, ecology and biosystematics. For data and experiment questions identify variables, controls, confounders and what each result implies, and use statistics correctly. Distinguish well-established facts from inference.',
+    ai:'Subject: AI / informatics (IOAI). Derive formulas (gradients, likelihoods, losses) step by step, check shapes and complexity, give clean Python code when useful (numpy / PyTorch style) with comments, reason about data leakage, overfitting, evaluation metrics, probability, optimisation, NLP and computer-vision pipelines, and state assumptions.',
+    auto:'Identify the subject area (mathematics, physics, chemistry, biology or AI/informatics) and apply the best practice of that field.'
+  };
+  const COMP_SYS={
+    imo:'Competition style: IMO. Grading is out of 7 points per problem, so a complete, fully justified proof is required.',
+    ipho:'Competition style: IPhO theoretical problem. Give symbolic results before numbers, state approximations, and give the final numerical values with units and 2-3 significant figures.',
+    icho:'Competition style: IChO. Show every calculation with units and correct significant figures, give balanced equations and structures in words/SMILES where useful.',
+    ibo:'Competition style: IBO. Give precise, mechanism-level reasoning and, for data tasks, explicit interpretation of the data and statistical reasoning.',
+    ioai:'Competition style: IOAI (International Olympiad in AI). Combine rigorous ML mathematics with practical, working code and sound experimental reasoning.',
+    auto:'',other:''
+  };
+  function taskMsg(task,problem,mine){
+    if(task==='hints')return 'PROBLEM:\n'+problem+'\n\nDo NOT solve it. Give exactly 4 progressive hints: (1) what the problem is really about, (2) a useful first step, (3) the central idea, (4) an outline of the full solution without the final answer. Label them Hint 1 to Hint 4.';
+    if(task==='check')return 'PROBLEM:\n'+problem+'\n\nSTUDENT SOLUTION:\n'+mine+'\n\nGrade this like an olympiad coordinator. First solve the problem yourself privately, then: state the correct answer, find the FIRST error or gap (quote it), say which steps are right, list every missing justification, give a score out of 7 (or a percentage for non-proof tasks) with reasoning, and show how to repair the solution.';
+    if(task==='concept')return 'TOPIC / QUESTION:\n'+problem+'\n\nExplain this at olympiad depth: intuition, precise definitions, the key theorems or laws with proofs or derivations where feasible, a worked example, common traps, and 3 practice problems of olympiad level (with short answers).';
+    if(task==='similar')return 'PROBLEM:\n'+problem+'\n\nWrite 3 NEW original problems testing the same ideas at the same difficulty, each with a complete solution. Do not copy known competition problems.';
+    return 'PROBLEM:\n'+problem+'\n\nSolve it completely.';
+  }
+  const CRIT_SYS='You are a strict, skeptical olympiad grader and verifier. You receive a PROBLEM and a CANDIDATE SOLUTION (and maybe a COMPUTATION RESULT). Independently check every step: logical gaps, unjustified claims, algebra and arithmetic (recompute them), missed cases, wrong units or dimensions, chemically or biologically incorrect statements, and whether the final answer really answers the question and survives special-case tests. Be critical but do not invent errors. Output exactly:\nVERDICT: CORRECT or MINOR_ISSUES or WRONG\nSCORE: x/y (7 for proofs, else an estimated percentage)\nISSUES:\n- precise numbered issues (or "none")\nFIXES:\n- what must change (or "none")';
+  const BAD_JS=/\b(fetch|XMLHttpRequest|WebSocket|importScripts|eval|Function|constructor|globalThis|self|window|document|postMessage|process|require|import|Worker|indexedDB|localStorage|navigator|__proto__)\b/;
+  function runJS(code,ms){
+    return new Promise(res=>{
+      const pre='const __pm=self.postMessage.bind(self);["fetch","XMLHttpRequest","WebSocket","EventSource","importScripts","Worker","SharedWorker","indexedDB","caches","BroadcastChannel"].forEach(function(k){try{self[k]=undefined}catch(e){}});const __out=[];function print(){try{__out.push(Array.prototype.map.call(arguments,function(x){return typeof x==="bigint"?x.toString()+"n":(typeof x==="object"?JSON.stringify(x,function(k,v){return typeof v==="bigint"?v.toString()+"n":v}):String(x))}).join(" "))}catch(e){__out.push("(unprintable)")}}\ntry{\n';
+      const post='\n}catch(e){__out.push("ERROR: "+e.message)}\n__pm(__out.join("\\n").slice(0,6000));';
+      let w;try{w=new Worker(URL.createObjectURL(new Blob([pre+code+post],{type:'text/javascript'})))}catch(e){return res('Could not start the checker: '+e.message)}
+      const to=setTimeout(()=>{try{w.terminate()}catch(e){}res('TIMEOUT: the check ran longer than '+ms/1000+' s and was stopped.')},ms);
+      w.onmessage=e=>{clearTimeout(to);try{w.terminate()}catch(x){}res(String(e.data))};
+      w.onerror=e=>{clearTimeout(to);try{w.terminate()}catch(x){}res('ERROR: '+(e.message||'the check could not run'))};
+    });
+  }
+  let stAbort=null;
+  async function stRun(){
+    const q=$('#stQ').value.trim(),st=$('#stSt'),out=$('#stOut');
+    if(!q)return toast('Paste a problem first.');
+    if(!store.get('groq'))return toast('Add your Groq key in Settings first.');
+    const subj=$('#stSubj').value,comp=$('#stComp').value,mode=$('#stMode').value,task=$('#stTask').value;
+    store.set('stmodel',$('#stModel').value.trim());
+    stAbort=new AbortController();const sig=stAbort.signal;$('#stGo').disabled=true;out.innerHTML='';
+    const res={sol:'',crit:'',comp:'',verdict:''};
+    const say=t=>{st.textContent=t},wait=s=>say(s?'Rate limit: waiting '+s+' s\u2026':'Output was too large for your Groq limit, retrying with a shorter limit\u2026');
+    const paint=()=>{
+      out.innerHTML='<div class="msg bot" style="max-width:100%">'+rich(res.sol)+'</div>'
+        +(res.verdict?'<div class="hint">Checker verdict: <b>'+esc(res.verdict)+'</b></div>':'')
+        +(res.crit?'<details><summary>Checker report</summary><div class="msg bot" style="max-width:100%">'+rich(res.crit)+'</div></details>':'')
+        +(res.comp?'<details><summary>Computation check</summary><pre class="out" style="white-space:pre-wrap">'+esc(res.comp)+'</pre></details>':'')
+        +'<div class="row" style="margin-top:8px"><button class="ghost" id="stCopy">Copy answer</button><button class="ghost" id="stDl">Download .md</button></div>'
+        +'<div class="hint">AI can make mistakes, especially on hard olympiad problems. Treat this as a worked draft and verify the key steps yourself.</div>';
+      $('#stCopy').onclick=()=>navigator.clipboard.writeText(res.sol).then(()=>toast('Copied.')).catch(()=>toast('Could not copy.'));
+      $('#stDl').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([res.sol],{type:'text/markdown'}));a.download='vision-solution.md';a.click()};
+      out.scrollIntoView({behavior:'smooth',block:'nearest'});
+    };
+    try{
+      await ensureKatex().catch(()=>{});
+      let problem=q,mine='';
+      if(task==='check'){const p=q.split(/-{3,}\s*SOLUTION\s*-{3,}/i);problem=p[0].trim();mine=(p[1]||'').trim();if(!mine)throw new Error('For "Check my solution" write the problem, then a line ---SOLUTION---, then your solution.')}
+      const sys=SYS_BASE+'\n'+SUBJ_SYS[subj]+'\n'+(COMP_SYS[comp]||'');
+      const effort=mode==='quick'?'medium':'high';
+      say('Thinking\u2026 hard problems can take 30\u2013120 seconds.');
+      res.sol=await groqR([{role:'system',content:sys},{role:'user',content:taskMsg(task,problem,mine)}],{effort,max:7000,temperature:.25,signal:sig,onWait:wait});
+      paint();
+      if(mode!=='quick'&&task==='solve'){
+        const loops=mode==='max'?2:1;
+        if(mode==='max'){
+          say('Writing a computational check\u2026');
+          try{
+            const code=(await groqR([{role:'system',content:'Write a short plain JavaScript program (no libraries, no DOM, no network) that numerically or by brute force checks the key claims or final answer of the given solution on small cases or by exact computation. Use print(...) to output results (BigInt allowed). It must finish in under 5 seconds. Output ONLY the code.'},{role:'user',content:'PROBLEM:\n'+problem+'\n\nSOLUTION:\n'+res.sol}],{effort:'medium',max:2500,signal:sig,onWait:wait})).replace(/^```(?:javascript|js)?\s*|```\s*$/gim,'').trim();
+            if(BAD_JS.test(code))res.comp='The generated check used a disallowed feature and was not run.';
+            else{say('Running the computational check\u2026');res.comp='Code:\n'+code+'\n\nOutput:\n'+await runJS(code,8000)}
+          }catch(e){if(e.name==='AbortError')throw e;res.comp='Could not generate a check: '+e.message}
+          paint();
+        }
+        for(let k=0;k<loops;k++){
+          say('Independent checker is reviewing the solution\u2026');
+          res.crit=await groqR([{role:'system',content:CRIT_SYS},{role:'user',content:'PROBLEM:\n'+problem+'\n\nCANDIDATE SOLUTION:\n'+res.sol+(res.comp?'\n\nCOMPUTATION RESULT:\n'+res.comp.slice(-2500):'')}],{effort:'high',max:4500,temperature:.1,signal:sig,onWait:wait});
+          const v=res.crit.match(/VERDICT:\s*(CORRECT|MINOR_ISSUES|WRONG)/i);res.verdict=v?v[1].toUpperCase():'unclear';paint();
+          if(res.verdict==='CORRECT'||k===loops-1&&res.verdict!=='WRONG'&&res.verdict!=='MINOR_ISSUES')break;
+          if(res.verdict==='unclear')break;
+          say('Fixing the issues the checker found\u2026');
+          res.sol=await groqR([{role:'system',content:sys},{role:'user',content:'PROBLEM:\n'+problem+'\n\nYOUR PREVIOUS SOLUTION:\n'+res.sol+'\n\nA GRADER FOUND THESE ISSUES:\n'+res.crit+'\n\nWrite the complete corrected solution in the same format. Fix every issue. If the final answer changes, say so clearly and explain why. If the grader is wrong about something, explain why it is right.'}],{effort:'high',max:7000,temperature:.2,signal:sig,onWait:wait});
+          paint();
+          if(k===loops-1){res.verdict+=' (before fix). The solution above is the corrected version; run again for a fresh check.'}
+        }
+      }
+      say('Done.');
+    }catch(e){say(e.name==='AbortError'?'Stopped.':'\u26A0 '+e.message)}
+    $('#stGo').disabled=false;
+  }
+  function resizeImage(file,max){
+    return new Promise((res,rej)=>{
+      const u=URL.createObjectURL(file),im=new Image();
+      im.onload=()=>{const s=Math.min(1,max/Math.max(im.naturalWidth,im.naturalHeight)),c=document.createElement('canvas');c.width=Math.round(im.naturalWidth*s);c.height=Math.round(im.naturalHeight*s);c.getContext('2d').drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);res(c.toDataURL('image/jpeg',.88))};
+      im.onerror=()=>{URL.revokeObjectURL(u);rej(new Error('Could not read that image.'))};im.src=u;
+    });
+  }
+
+  /* =====================================================================
+     UI
+     ===================================================================== */
+  const nav=document.querySelector('nav'),settingsBtn=nav&&nav.querySelector('[data-t="settings"]');
+  [['stem','\uD83E\uDDEA','STEM'],['lab','\uD83E\uDDEC','3D Lab']].forEach(a=>{
+    if(nav.querySelector('[data-t="'+a[0]+'"]'))return;
+    const b=document.createElement('button');b.dataset.t=a[0];b.innerHTML='<span class="ic">'+a[1]+'</span><span>'+a[2]+'</span>';b.onclick=()=>go(a[0]);nav.insertBefore(b,settingsBtn||null);
+  });
+  const css=document.createElement('style');
+  css.textContent='.v34host{position:relative;width:100%;height:min(66vh,560px);border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#07030c;margin-top:8px;touch-action:none}'
+   +'.v34tip{position:absolute;pointer-events:none;background:#1a0a10;border:1px solid var(--gold);color:var(--text);padding:4px 10px;border-radius:8px;font-size:14px;display:none;z-index:5;white-space:nowrap}'
+   +'#p-lab .seg{flex-wrap:wrap}#p-lab .seg button{flex:1 1 110px}.labp{display:none}.labp.on{display:block}'
+   +'#ptLay{display:flex;gap:8px;margin:8px 0}#ptLay button{flex:1;font:inherit;text-transform:uppercase;letter-spacing:.08em;padding:7px;color:#e9c98d;background:rgba(245,197,24,.05);border:1px solid var(--line);border-radius:10px;cursor:pointer}#ptLay button.on{background:rgba(224,49,63,.4);border-color:var(--gold);color:#fff}'
+   +'#ptLegend{display:flex;gap:6px;overflow-x:auto;padding:4px 0}#ptLegend .chip.on{background:rgba(245,197,24,.3);color:#fff}'
+   +'#ptModal{display:none;position:fixed;inset:0;z-index:2000;background:rgba(3,1,6,.94);overflow-y:auto;padding:12px}'
+   +'.ptbox{max-width:1100px;margin:0 auto}.ptgrid{display:grid;grid-template-columns:1.2fr 1fr;gap:14px}@media(max-width:820px){.ptgrid{grid-template-columns:1fr}}'
+   +'#ptAtomHost{height:min(60vh,520px)}#ptInfo .item{background:rgba(0,0,0,.3)}.aibox{margin-top:10px}'
+   +'#stOut details{margin:8px 0}#stOut summary{cursor:pointer;color:var(--gold)}.katex-display{overflow-x:auto;overflow-y:hidden;max-width:100%}.katex{font-size:1.05em}';
+  document.head.appendChild(css);
+  const SUBJS='<option value="auto">Subject: auto-detect</option><option value="math">Mathematics</option><option value="phys">Physics</option><option value="chem">Chemistry</option><option value="bio">Biology</option><option value="ai">AI / informatics</option>';
+  const EXAMPLES=[
+    ['Maths \u00B7 inequality','Prove that for all positive real numbers a, b, c: $\\frac{a}{b+c}+\\frac{b}{c+a}+\\frac{c}{a+b}\\ge\\frac32$.','math','imo'],
+    ['Maths \u00B7 functional equation','Find all functions $f:\\mathbb R\\to\\mathbb R$ such that $f(x+y)=f(x)+f(y)$ and $f(xy)=f(x)f(y)$ for all real $x,y$.','math','imo'],
+    ['Physics \u00B7 ladder','A uniform ladder of mass m and length L leans against a smooth vertical wall, making angle $\\theta$ with the rough horizontal floor (friction coefficient $\\mu$). Find the minimum $\\mu$ for which the ladder does not slip, and evaluate it for $\\theta=60^\\circ$.','phys','ipho'],
+    ['Chemistry \u00B7 buffer','Calculate the pH of 0.10 M acetic acid ($K_a=1.8\\times10^{-5}$) and of the solution obtained by adding 0.050 mol of NaOH to 1.00 L of that solution (no volume change).','chem','icho'],
+    ['Biology \u00B7 genetics','An autosomal recessive disease affects 1 in 10 000 newborns in a population in Hardy-Weinberg equilibrium. Estimate the carrier frequency, and the probability that two unrelated healthy people both carry the allele.','bio','ibo'],
+    ['AI \u00B7 gradient','Derive the gradient of the softmax cross-entropy loss with respect to the logits, and explain why it is numerically stable to compute it with log-sum-exp.','ai','ioai']
+  ];
+  document.querySelector('main').insertAdjacentHTML('beforeend',
+    '<section class="panel" id="p-stem"><div class="card"><h3>\uD83E\uDDEA Olympiad solver: IMO \u00B7 IPhO \u00B7 IChO \u00B7 IBO \u00B7 IOAI</h3>'
+   +'<div class="row"><select id="stSubj" style="margin:0">'+SUBJS+'</select>'
+   +'<select id="stComp" style="margin:0"><option value="auto">Competition: auto</option><option value="imo">IMO (maths)</option><option value="ipho">IPhO (physics)</option><option value="icho">IChO (chemistry)</option><option value="ibo">IBO (biology)</option><option value="ioai">IOAI (AI)</option><option value="other">Other / university</option></select>'
+   +'<select id="stTask" style="margin:0"><option value="solve">Solve fully</option><option value="hints">Hints only (no spoilers)</option><option value="check">Check my solution</option><option value="concept">Explain the concept + practice</option><option value="similar">Make similar problems</option></select></div>'
+   +'<div class="row" style="margin-top:6px"><select id="stMode" style="margin:0"><option value="quick">Quick (one pass)</option><option value="careful" selected>Careful (solve, check, fix)</option><option value="max">Maximum (+ computational check)</option></select>'
+   +'<input id="stModel" placeholder="Model (blank = openai/gpt-oss-120b; or openai/gpt-oss-20b, qwen/qwen3-32b)" style="margin:0"></div>'
+   +'<textarea id="stQ" rows="7" placeholder="Paste the problem here (LaTeX is fine). For \'Check my solution\': write the problem, then a line ---SOLUTION---, then your solution." style="margin-top:8px"></textarea>'
+   +'<div class="row"><button class="ghost" id="stImg">\uD83D\uDCF7 Problem from a photo</button><button class="btn" id="stGo">Solve</button><button class="ghost" id="stStop">Stop</button></div>'
+   +'<input type="file" id="stFile" accept="image/*" hidden><div class="hint" id="stSt">Hard problems use many tokens. On the free Groq tier use Quick or the 20B model if you hit limits.</div><div id="stOut"></div></div>'
+   +'<div class="card"><h3>Example problems</h3><div class="chips" id="stEx"></div></div></section>');
+  document.querySelector('main').insertAdjacentHTML('beforeend',
+    '<section class="panel" id="p-lab"><div class="seg"><button class="on" data-lab="pt">Periodic table</button><button data-lab="atom">Atom lab</button><button data-lab="model">Model maker</button></div>'
+   +'<div class="card labp on" id="lab-pt"><h3>\uD83C\uDF10 3D periodic table</h3><div class="hint">Drag to rotate, scroll or pinch to zoom, tap an element to open its 3D atom and full information.</div>'
+   +'<div class="row"><input id="ptFind" placeholder="Find: name, symbol or number" style="margin:0"><button class="btn sm" id="ptFindBtn">Open</button><select id="ptMode" style="margin:0"><option value="cat">Colour by category</option><option value="block">Colour by block (s p d f)</option></select></div>'
+   +'<div id="ptLay"><button class="on" data-l="table">Table</button><button data-l="sphere">Sphere</button><button data-l="helix">Helix</button></div>'
+   +'<div id="ptLegend"></div><div id="ptHost" class="v34host"></div><div class="hint" id="ptSt"></div></div>'
+   +'<div class="card labp" id="lab-atom"><h3>\u269B Atom lab</h3><div class="row"><input id="atFind" placeholder="Element name, symbol or number" style="margin:0"><button class="btn sm" id="atGo">Show</button></div>'
+   +'<div id="atHost" class="v34host"></div><div id="atCtrl"></div><div id="atInfo" style="margin-top:8px"></div></div>'
+   +'<div class="card labp" id="lab-model"><h3>\uD83E\uDDF1 3D model maker</h3>'
+   +'<div class="hint">Molecules, crystals, maths surfaces and curves are built exactly. Anatomy, cells, machines and anything else are designed by the AI from 3D shapes (check proportions, then use Refine). Maths plots use z as the vertical axis.</div>'
+   +'<div class="chips" id="mmChips"></div>'
+   +'<textarea id="mmIn" rows="2" placeholder="e.g. 3D model of a water molecule \u00B7 animal cell \u00B7 z = sin(x)*cos(y) \u00B7 human heart \u00B7 M\u00F6bius strip \u00B7 DNA \u00B7 solar system"></textarea>'
+   +'<div class="row"><button class="btn" id="mmGo">Build 3D model</button><button class="ghost" id="mmShot">\uD83D\uDCF7 PNG</button><button class="ghost" id="mmJson">\u2B07 JSON</button>'
+   +'<label class="tg" style="margin:0"><input type="checkbox" id="mmLab" checked> Labels</label><label class="tg" style="margin:0"><input type="checkbox" id="mmSpin"> Auto-rotate</label></div>'
+   +'<div class="row" style="margin-top:6px"><input id="mmRef" placeholder="Refine: e.g. make the left ventricle bigger, add the aorta" style="margin:0"><button class="ghost" id="mmRefBtn">Refine</button></div>'
+   +'<div class="hint" id="mmSt"></div><div id="mmHost" class="v34host"></div><div class="out" id="mmNotes"></div>'
+   +'<details><summary>Model data (JSON, editable)</summary><textarea id="mmSrc" rows="10" spellcheck="false" style="font:12px ui-monospace,Consolas,monospace"></textarea><button class="ghost" id="mmRun">Run edited JSON</button></details></div></section>'
+   +'<div id="ptModal"><div class="ptbox"><div class="row" style="margin-bottom:8px"><button class="btn sm" id="ptClose" style="flex:0 0 auto">\u2715 Close</button></div>'
+   +'<div class="ptgrid"><div><div id="ptAtomHost" class="v34host"></div><div id="ptCtrl"></div></div><div id="ptInfo"></div></div></div></div>');
+
+  /* STEM wiring */
+  EXAMPLES.forEach(x=>{const b=document.createElement('button');b.className='chip';b.textContent=x[0];b.onclick=()=>{$('#stQ').value=x[1];$('#stSubj').value=x[2];$('#stComp').value=x[3]};$('#stEx').appendChild(b)});
+  $('#stModel').value=store.get('stmodel');
+  $('#stGo').onclick=stRun;$('#stStop').onclick=()=>{if(stAbort)stAbort.abort()};
+  $('#stImg').onclick=()=>$('#stFile').click();
+  $('#stFile').onchange=async e=>{
+    const f=e.target.files[0];e.target.value='';if(!f)return;
+    if(!store.get('groq'))return toast('Add your Groq key in Settings first.');
+    $('#stSt').textContent='Reading the problem from the photo\u2026';
+    try{
+      const url=await resizeImage(f,1600);
+      const t=await groq([{role:'user',content:[{type:'text',text:'Transcribe the exam problem in this image exactly. Write all mathematics in LaTeX ($...$). Describe any figure, circuit, graph, structure or table in precise words inside [Figure: ...]. Reply with ONLY the transcription.'},{type:'image_url',image_url:{url}}]}],{model:CFG.visionModel,max:1800,temperature:.1});
+      $('#stQ').value=t;$('#stSt').textContent='Problem transcribed. Check it for mistakes, then press Solve.';
+    }catch(x){$('#stSt').textContent='\u26A0 '+x.message}
+  };
+
+  /* Lab wiring */
+  let labK='pt';
+  function labSub(k){
+    labK=k;$$('#p-lab .seg button').forEach(b=>b.classList.toggle('on',b.dataset.lab===k));$$('#p-lab .labp').forEach(p=>p.classList.toggle('on',p.id==='lab-'+k));
+    go('lab');
+  }
+  $$('#p-lab .seg button').forEach(b=>b.onclick=()=>labSub(b.dataset.lab));
+  async function labOpen(){
+    const hint=$('#ptSt'),mm=$('#mmSt');
+    try{
+      await ensureThree();
+      if(labK==='pt')await mountTable();
+      else if(labK==='atom'){if(!ATC)ATC=mountAtom($('#atHost'),$('#atCtrl'),$('#atInfo'),6)}
+      else if(!MMV){MMV=makeViewer($('#mmHost'),{dist:14,auto:false});MMV.onClick=null;if(!mmSpec)await mmShowSpec(PRE[13][1](),'Water is not loaded yet').catch(()=>{})}
+    }catch(e){(labK==='model'?mm:hint).textContent='\u26A0 '+e.message}
+  }
+  $('#atGo').onclick=async()=>{const z=findEl($('#atFind').value);if(!z)return toast('No element found.');await ensureThree();if(!ATC)ATC=mountAtom($('#atHost'),$('#atCtrl'),$('#atInfo'),z);else ATC.setZ(z)};
+  $('#atFind').addEventListener('keydown',e=>{if(e.key==='Enter')$('#atGo').click()});
+  $('#ptClose').onclick=closeElement;
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#ptModal').style.display==='block')closeElement()});
+
+  /* Model maker wiring */
+  async function mmShowSpec(spec,msg){
+    await ensureThree();
+    if(!MMV)MMV=makeViewer($('#mmHost'),{dist:14});
+    mmSpec=spec;const bad=renderSpec(MMV,spec,$('#mmLab').checked);MMV.auto=$('#mmSpin').checked;
+    $('#mmSrc').value=JSON.stringify(spec,null,1);
+    $('#mmNotes').innerHTML='<b>'+esc(spec.title||'Model')+'</b><br>'+esc(spec.summary||'')+(Array.isArray(spec.parts)&&spec.parts.length?'<br><br>'+spec.parts.map(p=>'\u2022 <b>'+esc(p.name||'')+'</b>: '+esc(p.desc||'')).join('<br>'):'');
+    $('#mmSt').textContent=(msg||'')+(bad?' ('+bad+' object(s) could not be drawn)':'');
+  }
+  async function mmBuild(text){
+    text=String(text||'').trim();if(!text)return toast('Describe the model first.');
+    const st=$('#mmSt');
+    try{
+      await ensureThree();
+      const z=atomRequest(text);
+      if(z){labSub('atom');await labOpen();if(ATC)ATC.setZ(z);else{ATC=mountAtom($('#atHost'),$('#atCtrl'),$('#atInfo'),z)}return}
+      if(/periodic table/i.test(text)){labSub('pt');return}
+      labSub('model');await labOpen();
+      let spec=null;
+      try{spec=quickSpec(text)}catch(e){st.textContent='\u26A0 '+e.message;return}
+      if(spec){await mmShowSpec(spec,'Built exactly from known geometry or your expression. Drag to rotate, scroll to zoom.');return}
+      if(!store.get('groq'))return toast('Add your Groq key in Settings first.');
+      st.textContent='VISION is designing the 3D model\u2026 (up to a minute)';$('#mmGo').disabled=true;
+      try{spec=await aiSpec(text);await mmShowSpec(spec,'AI-designed from 3D shapes: check proportions and use Refine to improve it.')}
+      catch(e){st.textContent='\u26A0 '+e.message}
+      $('#mmGo').disabled=false;
+    }catch(e){st.textContent='\u26A0 '+e.message}
+  }
+  $('#mmGo').onclick=()=>mmBuild($('#mmIn').value);
+  $('#mmIn').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();mmBuild($('#mmIn').value)}});
+  $('#mmRefBtn').onclick=async()=>{
+    const c=$('#mmRef').value.trim();if(!c)return toast('Say what to change.');if(!mmSpec)return toast('Build a model first.');
+    if(!store.get('groq'))return toast('Add your Groq key in Settings first.');
+    $('#mmSt').textContent='Refining\u2026';
+    try{await mmShowSpec(await aiSpec('',mmSpec,c),'Updated.');$('#mmRef').value=''}catch(e){$('#mmSt').textContent='\u26A0 '+e.message}
+  };
+  $('#mmRun').onclick=async()=>{try{await mmShowSpec(JSON.parse($('#mmSrc').value),'Ran your JSON.')}catch(e){$('#mmSt').textContent='\u26A0 '+e.message}};
+  $('#mmLab').onchange=e=>{if(MMV)MMV.lbls.forEach(l=>{l.visible=e.target.checked})};
+  $('#mmSpin').onchange=e=>{if(MMV)MMV.auto=e.target.checked};
+  $('#mmShot').onclick=()=>{if(!MMV)return toast('Build a model first.');const a=document.createElement('a');a.href=MMV.snapshot();a.download='vision-3d-model.png';a.click()};
+  $('#mmJson').onclick=()=>{if(!mmSpec)return toast('Build a model first.');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(mmSpec,null,1)],{type:'application/json'}));a.download='vision-3d-model.json';a.click()};
+  ['Water molecule','Methane','Benzene','Buckyball C60','Graphene','NaCl crystal','DNA double helix','Carbon atom','Iron atom orbitals','M\u00F6bius strip','Klein bottle','Trefoil knot','z = sin(x)*cos(y)','y = x^3 - 3*x','Lorenz attractor','Platonic solids','Cross product','Animal cell','Human heart','Neuron','Mitochondrion','Solar system','Human eye (cross-section)','Virus (icosahedral capsid)'].forEach(s=>{const b=document.createElement('button');b.className='chip';b.textContent=s;b.onclick=()=>{$('#mmIn').value=/atom/i.test(s)?'3D model of '+s:'3D model of '+s;mmBuild(s)};$('#mmChips').appendChild(b)});
+
+  /* hooks: tab changes and chat commands */
+  const _go=go;
+  go=function(n){_go(n);if(n==='lab')labOpen();if(n==='stem')ensureKatex().catch(()=>{})};
+  const _route=route;
+  route=async function(t){
+    const s=String(t).trim();let m;
+    if(/\bperiodic table\b/i.test(s)&&/^(?:open|show|make|build|create|generate|display|give me|launch)\b/i.test(s)){botSay('Opening the 3D periodic table.',{silent:true});labSub('pt');return true}
+    if(m=s.match(/^(?:solve|olympiad|imo|ipho|icho|ibo|ioai)\b\s*(?:problem)?[:,\-\s]+([\s\S]{15,})/i)||s.match(/^(prove\b[\s\S]{15,})/i)){
+      const first=s.split(/[\s:,\-]/)[0].toLowerCase(),map={imo:['math','imo'],ipho:['phys','ipho'],icho:['chem','icho'],ibo:['bio','ibo'],ioai:['ai','ioai']};
+      go('stem');$('#stQ').value=m[1];$('#stSubj').value=(map[first]||['auto'])[0];$('#stComp').value=(map[first]||[0,'auto'])[1];$('#stTask').value='solve';
+      botSay('Opening the STEM solver. It may take a minute or two.',{silent:true});stRun();return true;
+    }
+    const verb=/^(?:please\s+)?(?:make|build|create|generate|show|draw|display|give me|visuali[sz]e|plot|graph)\b/i.test(s);
+    if(verb&&!/\b(games?|stickman|shooter|racer)\b/i.test(s)&&(/\b(3d|three[- ]?d)\b/i.test(s)&&/\b(model|diagram|structure|atom|molecule|plot|graph|surface|anatomy|cell|orbitals?|crystal|visuali|animation)\b/i.test(s)||/\b(bohr model|atomic structure|electron shells?|orbitals? of)\b/i.test(s)||(/^(?:plot|graph)\b/i.test(s)&&exprFromText(s)))){
+      const subj=s.replace(/^(?:please\s+)?(?:make|build|create|generate|show|draw|display|give me|visuali[sz]e)\s+(?:me\s+)?(?:an?\s+|the\s+)?/i,'').replace(/^(?:3d|three[- ]?d)\s+/i,'');
+      botSay('Opening the 3D Lab for: '+subj,{silent:true});labSub('model');$('#mmIn').value=subj;mmBuild(subj);return true;
+    }
+    return _route(t);
+  };
+  window.V34={EL,compileExpr,cfgOf,findEl,openElement,mmBuild,stRun};
+})()}catch(e){console.error('PACK 34 (STEM + 3D Lab) failed:',e)}
+/* ================= END PACK 34 ================= */
 </script>
 </body>
 </html>
