@@ -8136,6 +8136,1991 @@ try{(function(){
   window.V34={EL,compileExpr,cfgOf,findEl,openElement,mmBuild,stRun};
 })()}catch(e){console.error('PACK 34 (STEM + 3D Lab) failed:',e)}
 /* ================= END PACK 34 ================= */
+ /* ================= PACK 35: 3D models inside the chat + voice narration + voice/typed editing + maths display fix ================= */
+/* Paste this AFTER PACK 34 (it needs Pack 34's element data). No new tab: just type or say in the chat, for example:                */
+/*   "make a 3D model of a carbon atom"  ->  then say  "remove one electron"  /  "add a neutron"  /  "make it an ion"                  */
+/*   "3D model of caffeine" / "animal cell" / "z = sin(x)*cos(y)" / "human heart" / "solar system" ...  then  "remove the nucleus"  */
+try{(function(){
+  if(window.__pack35)return;
+  if(!window.V34||!V34.EL||!V34.compileExpr||!V34.cfgOf||!V34.findEl){console.error('PACK 35 needs PACK 34 pasted above it.');return}
+  window.__pack35=1;
+  const EL=V34.EL,cfgN=V34.cfgOf,findEl=V34.findEl,compileExpr=V34.compileExpr;
+  const TAU=Math.PI*2,SUBL='spdf';
+  const SUPD='⁰¹²³⁴⁵⁶⁷⁸⁹',SUBD='₀₁₂₃₄₅₆₇₈₉';
+  const supN=n=>String(n).split('').map(d=>SUPD[+d]).join(''),subN=n=>String(n).split('').map(d=>SUBD[+d]).join('');
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const num=(v,d)=>{v=+v;return isFinite(v)?v:d};
+  const THREE_URL='https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+  const KATEX_JS='https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js',KATEX_CSS='https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css';
+  const ensureThree=async()=>{if(!window.THREE)await loadScript(THREE_URL)};
+  let kP=null;
+  function ensureKatex(){
+    if(window.katex)return Promise.resolve();
+    if(!kP){
+      if(!document.getElementById('katexCss')){const l=document.createElement('link');l.id='katexCss';l.rel='stylesheet';l.href=KATEX_CSS;document.head.appendChild(l)}
+      kP=loadScript(KATEX_JS).catch(e=>{kP=null;throw e});
+    }
+    return kP;
+  }
+  const dbounce=(f,ms)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>f(...a),ms)}};
+
+  /* =====================================================================
+     1) MATHS DISPLAY FIX: every chat bubble (yours and VISION's) and the STEM question box now show real maths
+     ===================================================================== */
+  const MXR=[[/\$\$([\s\S]+?)\$\$/g,1],[/\\\[([\s\S]+?)\\\]/g,1],[/\\\(([\s\S]+?)\\\)/g,0],[/\$([^\s$](?:[^$\n]*?[^\s$])?)\$/g,0]];
+  const mathOK=t=>/[\\^_{}=<>]/.test(t)||/^[A-Za-z]$/.test(t)||/^[A-Za-z0-9]+\s*[+\-*\/]\s*[A-Za-z0-9]+$/.test(t);
+  const decodeH=s=>{const x=document.createElement('textarea');x.innerHTML=s;return x.value};
+  function pullMath(text,isHtml){
+    const list=[],code=[];let t=String(text);
+    t=t.replace(/```[\s\S]*?```|`[^`\n]+`/g,m=>{code.push(m);return '\u0003'+(code.length-1)+'\u0003'});
+    MXR.forEach(r=>{t=t.replace(r[0],(m,x)=>{
+      const tex=isHtml?decodeH(x):x;
+      if(!r[1]&&!mathOK(tex))return m;
+      list.push({tex,d:r[1],raw:m});return '\u0002'+(list.length-1)+'\u0002';
+    })});
+    t=t.replace(/\u0003(\d+)\u0003/g,(m,i)=>code[+i]);
+    return {t,list};
+  }
+  const mxSpan=(p,isHtml)=>'<span class="mx" data-d="'+p.d+'" data-tex="'+esc(p.tex)+'">'+(isHtml?p.raw:esc(p.raw))+'</span>';
+  function typeset(root){
+    if(!window.katex)return;
+    (root||document).querySelectorAll('.mx:not([data-ok])').forEach(el=>{
+      el.setAttribute('data-ok','1');
+      try{katex.render(el.dataset.tex,el,{displayMode:el.dataset.d==='1',throwOnError:false,strict:false})}catch(e){}
+    });
+  }
+  const queueTypeset=()=>{ensureKatex().then(()=>typeset()).catch(()=>{})};
+  const _md=md;
+  md=function(text){
+    const p=pullMath(text,false),h=_md(p.t);
+    return p.list.length?h.replace(/\u0002(\d+)\u0002/g,(m,i)=>mxSpan(p.list[+i],false)):h;
+  };
+  const _addMsg=addMsg;
+  addMsg=function(cls,html){
+    if(/\buser\b/.test(cls)&&/\$|\\\(|\\\[/.test(html)){
+      const p=pullMath(html,true);
+      if(p.list.length)html=p.t.replace(/\u0002(\d+)\u0002/g,(m,i)=>mxSpan(p.list[+i],true));
+    }
+    return _addMsg(cls,html);
+  };
+  new MutationObserver(dbounce(()=>{if(document.querySelector('.mx:not([data-ok])'))queueTypeset()},40)).observe(document.body,{childList:true,subtree:true});
+
+  /* live rendered preview + symbol bar under the STEM question box */
+  (function(){
+    const ta=document.getElementById('stQ');if(!ta||document.getElementById('stPrev'))return;
+    ta.insertAdjacentHTML('afterend','<div class="row" id="stSym" style="flex-wrap:wrap;gap:6px;margin:0 0 8px"></div><div id="stPrevW" style="display:none"><div class="hint">How VISION reads your question:</div><div id="stPrev" class="msg bot" style="max-width:100%;margin-top:4px"></div></div>');
+    const SYM=[['a/b','$\\frac{|}{}$'],['xⁿ','$x^{|}$'],['xₙ','$x_{|}$'],['√','$\\sqrt{|}$'],['∑','$\\sum_{i=1}^{n} |$'],['∫','$\\int_{a}^{b} | \\,dx$'],['lim','$\\lim_{x\\to |}$'],['π','$\\pi$'],['θ','$\\theta$'],['Δ','$\\Delta$'],['≤','$\\le$'],['≥','$\\ge$'],['≠','$\\ne$'],['∞','$\\infty$'],['→','$\\to$'],['°','$^\\circ$'],['×','$\\times$'],['vec','$\\vec{|}$'],['Wrap in $…$','']];
+    const bar=document.getElementById('stSym');
+    SYM.forEach(s=>{
+      const b=document.createElement('button');b.type='button';b.className='chip';b.textContent=s[0];
+      b.onclick=()=>{
+        const a=ta.selectionStart,z=ta.selectionEnd,v=ta.value;let ins,cur;
+        if(!s[1]){const sel=v.slice(a,z)||'x';ins='$'+sel+'$';cur=a+ins.length}
+        else{const m=s[1].indexOf('|');ins=s[1].replace('|',v.slice(a,z));cur=a+(m<0?ins.length:m+(z-a))}
+        ta.value=v.slice(0,a)+ins+v.slice(z);ta.focus();ta.setSelectionRange(cur,cur);upd();
+      };
+      bar.appendChild(b);
+    });
+    let last=null;
+    function upd(){
+      const v=ta.value.trim(),W=document.getElementById('stPrevW'),P=document.getElementById('stPrev');
+      last=ta.value;if(!v){W.style.display='none';return}
+      W.style.display='block';P.innerHTML=md(v);queueTypeset();
+    }
+    ta.addEventListener('input',dbounce(upd,160));
+    document.getElementById('stEx')&&document.getElementById('stEx').addEventListener('click',()=>setTimeout(upd,0));
+    setInterval(()=>{if(ta.value!==last&&document.getElementById('p-stem')&&document.getElementById('p-stem').classList.contains('on'))upd()},700);
+    upd();
+  })();
+
+  /* =====================================================================
+     2) VOICE: narration (text to speech) and listening (speech to text)
+     ===================================================================== */
+  const SPK={'⁺':' plus','⁻':' minus','→':' to ','Å':' angstroms','°':' degrees ','≈':' about ','×':' times ','·':' ','≤':' at most ','≥':' at least ','≠':' not equal to ','θ':' theta ','π':' pi ','Δ':' delta ','λ':' lambda ','ℓ':' l ','↑':' up ','↓':' down ','½':' half'};
+  const TTS={
+    on:store.get('v35speak','1')!=='0',rate:clamp(num(store.get('v35rate','0.98'),.98),.5,1.6),gen:0,busy:0,
+    voice(){if(!('speechSynthesis' in window))return null;const v=speechSynthesis.getVoices(),n=store.get('voice');return v.find(x=>x.name===n)||v.find(x=>/en-GB/i.test(x.lang))||v.find(x=>/^en/i.test(x.lang))||null},
+    clean(t){
+      let s=String(t).replace(/<[^>]+>/g,' ').replace(/\$\$?/g,'').replace(/[*_#`>~|\[\]]/g,' ');
+      s=s.replace(/[⁰¹²³⁴-⁹]/g,c=>{const i=SUPD.indexOf(c);return i>=0?String(i):c}).replace(/[₀-₉]/g,c=>String(SUBD.indexOf(c)));
+      s=s.replace(/(\d)([spdf])(\d)/g,'$1 $2 with $3,').replace(/\bn\s*=\s*(\d)/g,'n equals $1').replace(/\be⁻|\be-\b/g,'electron');
+      for(const k in SPK)s=s.split(k).join(SPK[k]);
+      return s.replace(/\s+/g,' ').trim();
+    },
+    stop(){this.gen++;this.busy=0;try{speechSynthesis.cancel()}catch(e){}},
+    say(text,o){
+      o=o||{};
+      return new Promise(res=>{
+        if(!('speechSynthesis' in window)||(!o.force&&!this.on))return res();
+        const g=++this.gen,txt=this.clean(text).slice(0,o.max||1800);if(!txt)return res();
+        const parts=txt.match(/[^.!?;]+[.!?;]*\s*/g)||[txt],ch=[];let cur='';
+        parts.forEach(p=>{if((cur+p).length>190&&cur){ch.push(cur);cur=p}else cur+=p});if(cur)ch.push(cur);
+        let i=0;this.busy=1;
+        const fin=()=>{if(g===this.gen)this.busy=0;res()};
+        const next=()=>{
+          if(g!==this.gen||i>=ch.length)return fin();
+          const u=new SpeechSynthesisUtterance(ch[i++]);u.voice=this.voice();u.rate=this.rate;u.pitch=.95;
+          u.onend=next;u.onerror=next;
+          try{speechSynthesis.speak(u)}catch(e){fin()}
+        };
+        try{speechSynthesis.cancel()}catch(e){}
+        setTimeout(next,70);
+      });
+    },
+    setOn(v){this.on=!!v;store.set('v35speak',v?'1':'0');if(!v)this.stop()}
+  };
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const Mic={
+    r:null,on:false,hands:false,card:null,errs:0,
+    start(card,hands){
+      if(!SR)return toast('Voice input needs Chrome.');
+      this.stop();
+      try{if(typeof wakeMode!=='undefined'&&wakeMode){toast('Wake-word mode is on. Say: "Vision, remove one electron".');return}}catch(e){}
+      try{if(typeof listening!=='undefined'&&listening&&typeof rec!=='undefined'&&rec)rec.stop()}catch(e){}
+      this.card=card;this.hands=!!hands;this.on=true;this.errs=0;
+      const r=new SR();r.lang=store.get('v35lang','en-IN');r.interimResults=true;r.continuous=!!hands;r.maxAlternatives=1;
+      r.onresult=e=>{
+        let fin='',tmp='';
+        for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i];if(x.isFinal)fin+=x[0].transcript;else tmp+=x[0].transcript}
+        card.heard(fin||tmp,!!fin);
+        if(fin.trim()&&!TTS.busy){this.errs=0;card.command(fin.trim(),'voice')}
+      };
+      r.onend=()=>{
+        if(this.on&&this.hands&&card.alive()&&this.errs<6){setTimeout(()=>{if(this.on&&this.r===r){try{r.start()}catch(e){}}},250)}
+        else{this.on=false;card.micState(false)}
+      };
+      r.onerror=e=>{
+        if(/not-allowed|service-not-allowed/.test(e.error)){this.on=false;this.hands=false;card.micState(false);toast('Microphone permission denied.')}
+        else if(e.error!=='no-speech'&&e.error!=='aborted')this.errs++;
+      };
+      this.r=r;
+      try{r.start();card.micState(true,this.hands)}catch(e){this.on=false;card.micState(false)}
+    },
+    stop(){const r=this.r;this.on=false;this.hands=false;this.r=null;if(r){try{r.stop()}catch(e){}}if(this.card)try{this.card.micState(false)}catch(e){}}
+  };
+
+  /* styles */
+  const css=document.createElement('style');
+  css.textContent='.mx{display:inline}.mx[data-d="1"][data-ok]{display:block;margin:6px 0}.msg .katex-display{overflow-x:auto;overflow-y:hidden;max-width:100%;margin:.4em 0}.msg .katex{font-size:1.04em}'
+   +'.msg.v35msg{width:100%;max-width:100%;padding:8px}.v35{width:100%}.v35 .ghost,.v35 .chip{padding:4px 11px;font-size:14px}'
+   +'.v35h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}.v35t{font-family:Orbitron,sans-serif;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold)}.v35k{font-size:12px;color:var(--muted)}'
+   +'.v35v{position:relative;width:100%;height:min(52vh,430px);border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#07030c;touch-action:none}'
+   +'.v35:fullscreen{background:#05020a;padding:10px;overflow:auto}.v35:fullscreen .v35v{height:68vh}'
+   +'.v35bar{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.v35bar .on{background:rgba(224,49,63,.45);color:#fff;border-color:var(--gold)}'
+   +'.v35stat{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.v35stat span{border:1px solid var(--line);border-radius:999px;padding:2px 10px;font-size:13px;background:rgba(0,0,0,.3)}'
+   +'.v35info{font-size:15px;line-height:1.45}.v35log{max-height:260px;overflow-y:auto;font-size:15px;line-height:1.45}'
+   +'.v35log .ev{border-left:2px solid var(--gold);padding:4px 8px;margin:6px 0;background:rgba(0,0,0,.25);border-radius:6px}.v35log .you{color:var(--gold);font-size:13px;margin-top:6px}.v35log .err{color:#ff8a8a}'
+   +'.v35in{display:flex;gap:6px;align-items:center;margin-top:6px}.v35in input{margin:0;flex:1}.v35mic.live{background:rgba(224,49,63,.7);animation:pulse 1.2s infinite}'
+   +'.v35tip{position:absolute;left:8px;bottom:8px;max-width:86%;background:rgba(10,4,12,.9);border:1px solid var(--gold);border-radius:8px;padding:5px 9px;font-size:13px;pointer-events:none;display:none;z-index:3}'
+   +'.v35fz{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#07030c}.v35fz img{max-width:100%;max-height:100%;opacity:.75}.v35fz button{position:absolute}'
+   +'.v35opt{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:6px 0}@media(max-width:560px){.v35opt{grid-template-columns:1fr}}.v35opt button.ok{background:rgba(57,217,138,.35);border-color:var(--green)}.v35opt button.no{background:rgba(224,49,63,.4)}'
+   +'.v35more{margin-top:6px}.v35more summary{cursor:pointer;color:var(--gold);font-size:14px}.v35more label{display:flex;align-items:center;gap:8px;font-size:14px;margin:4px 0}.v35more input[type=range]{margin:0;padding:0}.v35more input[type=checkbox]{width:auto;margin:0}';
+  document.head.appendChild(css);
+
+  /* =====================================================================
+     3) CHEMISTRY AND PHYSICS ENGINE (atoms, ions, isotopes, photons)
+     ===================================================================== */
+  const CATN={alkali:'alkali metal',alkaline:'alkaline earth metal',transition:'transition metal',post:'post-transition metal',metalloid:'metalloid',nonmetal:'reactive nonmetal',halogen:'halogen',noble:'noble gas',lanth:'lanthanide',actin:'actinide'};
+  const IE1={1:13.598,2:24.587,3:5.392,4:9.323,5:8.298,6:11.26,7:14.534,8:13.618,9:17.423,10:21.565,11:5.139,12:7.646,13:5.986,14:8.152,15:10.487,16:10.36,17:12.968,18:15.76,19:4.341,20:6.113,21:6.561,22:6.828,23:6.746,24:6.767,25:7.434,26:7.902,27:7.881,28:7.64,29:7.726,30:9.394,31:5.999,32:7.899,33:9.789,34:9.752,35:11.814,36:14.0,37:4.177,38:5.695,39:6.217,40:6.634,41:6.759,42:7.092,43:7.28,44:7.361,45:7.459,46:8.337,47:7.576,48:8.994,49:5.786,50:7.344,51:8.608,52:9.01,53:10.451,54:12.13,55:3.894,56:5.212,57:5.577,58:5.539,74:7.864,78:8.959,79:9.226,80:10.438,81:6.108,82:7.417,83:7.286,86:10.749,92:6.194};
+  const EA={1:.754,3:.618,5:.28,6:1.262,8:1.461,9:3.401,11:.548,13:.433,14:1.39,15:.746,16:2.077,17:3.613,19:.501,29:1.236,32:1.233,33:.804,34:2.021,35:3.364,37:.486,47:1.302,50:1.112,51:1.046,52:1.971,53:3.059,55:.472,78:2.128,79:2.309};
+  const NOBLE={2:'He',10:'Ne',18:'Ar',36:'Kr',54:'Xe',86:'Rn'};
+  const ANION={H:['hydride',1],F:['fluoride',1],Cl:['chloride',1],Br:['bromide',1],I:['iodide',1],O:['oxide',2],S:['sulfide',2],Se:['selenide',2],Te:['telluride',2],N:['nitride',3],P:['phosphide',3],As:['arsenide',3],C:['carbide',4]};
+  const ROM=['','I','II','III','IV','V','VI','VII','VIII'];
+  const ORD=[[1,0],[2,0],[2,1],[3,0],[3,1],[4,0],[3,2],[4,1],[5,0],[4,2],[5,1],[6,0],[4,3],[5,2],[6,1],[7,0],[5,3],[6,2],[7,1]];
+  const keysOf=c=>Object.keys(c).sort((a,b)=>(+a[0])-(+b[0])||SUBL.indexOf(a[1])-SUBL.indexOf(b[1]));
+  const cfgStr=c=>keysOf(c).map(k=>k+supN(c[k])).join(' ');
+  const cfgSay=c=>keysOf(c).map(k=>k[0]+' '+k[1]+' '+c[k]).join(', ');
+  const occN=c=>Object.keys(c).reduce((a,k)=>a+c[k],0);
+  const capOf=k=>2*(2*SUBL.indexOf(k[1])+1);
+  const shellCounts=occ=>{const a=[];Object.keys(occ).forEach(k=>{const n=+k[0];while(a.length<n)a.push(0);a[n-1]+=occ[k]});return a};
+  const chg=q=>q===0?'':(Math.abs(q)>1?supN(Math.abs(q)):'')+(q>0?'⁺':'⁻');
+  const fmtQ=q=>q===0?'0 (neutral)':(q>0?'+':'−')+Math.abs(q);
+  const pl=(n,w)=>n+' '+w+(n===1?'':'s');
+  const kJ=ev=>Math.round(ev*96.485);
+  function ionOcc(z,e){
+    e=clamp(Math.round(e),0,118);const base=Object.assign({},cfgN(z)),tot=occN(base);
+    if(e===tot)return base;
+    if(e<tot){let r=tot-e;while(r>0){if(!removeDefault(base))break;r--}return base}
+    return Object.assign({},cfgN(e));
+  }
+  function removeDefault(occ,n){
+    const ks=Object.keys(occ).filter(k=>occ[k]>0&&(!n||+k[0]===n)).sort((a,b)=>(+b[0])-(+a[0])||SUBL.indexOf(b[1])-SUBL.indexOf(a[1]));
+    if(!ks.length)return null;const k=ks[0];occ[k]--;if(!occ[k])delete occ[k];return k;
+  }
+  function addDefault(occ){
+    for(const o of ORD){const k=o[0]+SUBL[o[1]];if((occ[k]||0)<capOf(k)){occ[k]=(occ[k]||0)+1;return k}}
+    return null;
+  }
+  function unpaired(occ){let u=0;Object.keys(occ).forEach(k=>{const o=2*SUBL.indexOf(k[1])+1,c=occ[k];u+=c<=o?c:2*o-c});return u}
+  function qnList(occ){
+    const out=[];
+    keysOf(occ).forEach(k=>{const n=+k[0],l=SUBL.indexOf(k[1]),c=occ[k];for(let i=0;i<c;i++)out.push({n,l,ml:(i%(2*l+1))-l,ms:i<2*l+1?1:-1,sub:k})});
+    return out;
+  }
+  function ionInfo(p,n,e){
+    const el=EL[p],q=p-e,sym=el.sym+chg(q);
+    if(q===0)return {sym:el.sym,long:el.name.toLowerCase()+' atom'};
+    if(e===0){
+      if(p===1)return {sym,long:n===0?'proton, a bare hydrogen nucleus':n===1?'deuteron, the nucleus of deuterium':n===2?'triton, the nucleus of tritium':'bare hydrogen nucleus'};
+      if(p===2&&n===2)return {sym,long:'alpha particle, a bare helium-4 nucleus'};
+      return {sym,long:'bare '+el.name.toLowerCase()+' nucleus, fully ionized'};
+    }
+    if(q>0){
+      const roman=['transition','post','lanth','actin'].indexOf(el.cat)>=0?'('+(ROM[q]||q)+')':'';
+      return {sym,long:el.name.toLowerCase()+roman+' cation'};
+    }
+    const an=ANION[el.sym];
+    if(an&&an[1]===-q)return {sym,long:an[0]+' ion'};
+    return {sym,long:el.name.toLowerCase()+' anion'};
+  }
+  /* nuclear physics: liquid-drop binding energy, valley of stability */
+  const BEK={'1-1':1.112,'1-2':2.827,'2-1':2.573,'2-2':7.074,'3-3':5.332,'4-5':6.462,'5-5':6.475,'6-6':7.68,'6-7':7.47,'6-8':7.52,'7-7':7.476,'8-8':7.976,'26-30':8.79,'92-143':7.591,'92-146':7.57};
+  function bePer(p,n){
+    const k=p+'-'+n;if(BEK[k])return {v:BEK[k],approx:false};
+    const A=p+n;if(A<4)return null;
+    let d=0;if(p%2===0&&n%2===0)d=11.18/Math.sqrt(A);else if(p%2===1&&n%2===1)d=-11.18/Math.sqrt(A);
+    const B=15.75*A-17.8*Math.pow(A,2/3)-.711*p*(p-1)/Math.pow(A,1/3)-23.7*Math.pow(A-2*p,2)/A+d;
+    return B>0?{v:B/A,approx:true}:{v:0,approx:true};
+  }
+  function nOpt(Z){let best=Z,bd=1e9;for(let A=Z;A<=Z*3+5;A++){const d=Math.abs(A/(1.98+.0155*Math.pow(A,2/3))-Z);if(d<bd){bd=d;best=A-Z}}return best}
+  const NOTABLE={'1-0':['protium (ordinary hydrogen)','stable.'],'1-1':['deuterium (heavy hydrogen)','stable.'],'1-2':['tritium','radioactive, half-life about 12.3 years (beta-minus decay).'],'6-6':['carbon-12','stable; it defines the atomic mass unit.'],'6-7':['carbon-13','stable (about 1.1% of natural carbon).'],'6-8':['carbon-14','radioactive, half-life about 5,730 years (beta-minus decay); used for radiocarbon dating.'],'2-2':['helium-4 (alpha particle nucleus)','stable and extremely tightly bound.'],'2-1':['helium-3','stable.'],'8-8':['oxygen-16','stable (the most common oxygen isotope).'],'19-21':['potassium-40','radioactive, half-life about 1.25 billion years; it makes bananas slightly radioactive.'],'27-33':['cobalt-60','radioactive, half-life about 5.27 years; a gamma-ray source.'],'53-78':['iodine-131','radioactive, half-life about 8 days.'],'92-143':['uranium-235','radioactive, half-life about 704 million years; it can sustain a fission chain reaction.'],'92-146':['uranium-238','radioactive, half-life about 4.5 billion years.'],'26-30':['iron-56','stable, with one of the highest binding energies per nucleon.'],'94-145':['plutonium-239','radioactive, half-life about 24,100 years; fissile.']};
+  function isoInfo(p,n){
+    const A=p+n,el=EL[p],k=p+'-'+n,nt=NOTABLE[k];
+    const name=nt?nt[0]:el.name.toLowerCase()+'-'+A,sym=supN(A)+el.sym;
+    let st;
+    if(nt)st=nt[1];
+    else if(p>=84||p===43||p===61)st='no stable isotopes exist for this element, so this nucleus is radioactive.';
+    else if(A<2)st='a lone proton is stable.';
+    else{const d=Math.abs(n-nOpt(p));st=d<=1?'close to the valley of stability: probably stable or very long-lived.':d<=3?'off the valley of stability: probably radioactive, though a nuclide chart is the final authority.':'far from the valley of stability: extremely short-lived, or not bound at all.'}
+    return {name,sym,st};
+  }
+  /* photons and hydrogen-like energy levels */
+  const hlE=(Z,n)=>-13.605693*Z*Z/(n*n);
+  function photon(Z,n1,n2){
+    const dE=Math.abs(hlE(Z,n1)-hlE(Z,n2)),nm=1239.84198/dE,lo=Math.min(n1,n2);
+    return {dE,nm,series:({1:'Lyman',2:'Balmer',3:'Paschen',4:'Brackett',5:'Pfund'})[lo]||'higher',region:nm<380?'ultraviolet':nm>750?'infrared':'visible '+(nm<450?'violet':nm<495?'blue':nm<570?'green':nm<590?'yellow':nm<620?'orange':'red'),color:wlHex(nm)};
+  }
+  function wlHex(nm){
+    if(nm<380)return '#b388ff';if(nm>750)return '#ff4545';
+    let r=0,g=0,b=0;
+    if(nm<440){r=(440-nm)/60;b=1}else if(nm<490){g=(nm-440)/50;b=1}else if(nm<510){g=1;b=(510-nm)/20}else if(nm<580){r=(nm-510)/70;g=1}else if(nm<645){r=1;g=(645-nm)/65}else r=1;
+    const f=nm<420?.45+.55*(nm-380)/40:nm>700?.45+.55*(750-nm)/50:1,h=v=>('0'+Math.round(clamp(v*f,0,1)*255).toString(16)).slice(-2);
+    return '#'+h(r)+h(g)+h(b);
+  }
+  /* atom state and facts */
+  function newAtom(z,extra){
+    const el=EL[z];
+    return Object.assign({p:z,n:Math.max(0,el.A-z),occ:Object.assign({},cfgN(z)),mode:'bohr',sub:null,orb:'all',exc:null,labels:true,colors:{}},extra||{});
+  }
+  function facts(st){
+    const p=st.p,e=occN(st.occ),q=p-e,el=EL[p],sh=shellCounts(st.occ),info=ionInfo(p,st.n,e);
+    return {p,n:st.n,e,q,A:p+st.n,el,sym:el.sym,name:el.name,ion:info.sym,long:info.long,sh,outer:sh.length?sh[sh.length-1]:0,unp:unpaired(st.occ),cfg:cfgStr(st.occ),iso:isoInfo(p,st.n)};
+  }
+  const brief=(t,max)=>{const s=String(t).match(/[^.!?]+[.!?]+\s*/g)||[String(t)];let o='';for(const x of s){if((o+x).length>max&&o)break;o+=x}return o.trim()};
+  function describeAtom(st){
+    const f=facts(st),el=f.el;
+    let s=f.name+(f.q?' ('+f.ion+', '+f.long+')':'')+', atomic number '+f.p+'. This model has '+pl(f.p,'proton')+', '+pl(f.n,'neutron')+' and '+pl(f.e,'electron')+', so the net charge is '+fmtQ(f.q)+'. ';
+    if(f.e){
+      s+='The electrons fill the shells as '+f.sh.join(', ')+', giving the configuration '+f.cfg+'. ';
+      s+=f.unp?pl(f.outer,'electron')+' sit in the outer shell and '+f.unp+' '+(f.unp===1?'is':'are')+' unpaired, so it is paramagnetic. ':pl(f.outer,'electron')+' sit in the outer shell and all electrons are paired, so it is diamagnetic. ';
+    }else s+='No electrons are left. ';
+    s+=f.name+' is a '+CATN[el.cat]+' in '+(el.g?'group '+el.g:'the f-block')+', period '+el.p+', and a '+el.state.toLowerCase().replace(/ \(.*/,'')+' at room temperature. ';
+    s+='The isotope shown has mass number '+f.A+(f.iso.name?' ('+f.iso.name+')':'')+'. ';
+    s+='Tap an electron to hear its quantum numbers. Say things like: remove an electron, add a neutron, make it an ion, excite the electron, or show the orbitals.';
+    return s;
+  }
+  const typicalIon=f=>{const g=f.el.g;return (g===1&&f.q===1)||(g===2&&f.q===2)||(g===13&&f.q===3)||(g===17&&f.q===-1)||(g===16&&f.q===-2)||(g===15&&f.q===-3)};
+  function explainElectrons(b,a,shellN){
+    const fb=facts(b),fa=facts(a),d=fa.e-fb.e,k=Math.abs(d),o=[];
+    if(!d)return 'Nothing changed: the electron count is already '+fa.e+'.';
+    if(d<0){
+      o.push(pl(k,'electron')+' removed'+(shellN?' from shell n='+shellN:' from the outermost occupied shell')+'. The nucleus still has '+fa.p+' protons but now only '+fa.e+' electrons, so the net charge is '+fmtQ(fa.q)+': '+fa.ion+' ('+fa.long+').');
+      if(fb.q===0&&k===1&&IE1[fa.p])o.push('Energy cost: the first ionization energy of '+fa.name.toLowerCase()+' is about '+IE1[fa.p]+' eV (≈ '+kJ(IE1[fa.p])+' kJ/mol).');
+      else if(fb.q===0)o.push('Each further electron costs more energy than the one before, because the nuclear pull on the remaining electrons gets stronger.');
+      else o.push('Pulling electrons off an ion costs more energy than from the neutral atom, because the nuclear charge is no longer balanced.');
+      if(fa.e===0)o.push('No electrons are left, so this is a bare nucleus. That only exists in plasmas, stars and accelerators.');
+      else{
+        o.push('New configuration: '+fa.cfg+'; '+(fa.unp?fa.unp+' unpaired, so paramagnetic.':'all paired, so diamagnetic.'));
+        if(NOBLE[fa.e]&&fa.e!==fa.p)o.push('With '+fa.e+' electrons it is isoelectronic with '+NOBLE[fa.e]+', a closed and unusually stable shell'+(typicalIon(fa)?', which is why '+fa.name.toLowerCase()+' typically forms this ion.':'.'));
+        o.push('The remaining electrons are pulled closer to the nucleus, so the ion is smaller than the neutral atom.');
+      }
+    }else{
+      o.push(pl(k,'electron')+' added. Now '+fa.e+' electrons surround '+fa.p+' protons: net charge '+fmtQ(fa.q)+', so this is '+fa.ion+' ('+fa.long+').');
+      if(fb.q===0&&k===1)o.push(EA[fa.p]?'Adding the electron releases about '+EA[fa.p]+' eV (the electron affinity of '+fa.name.toLowerCase()+').':'An isolated '+fa.name.toLowerCase()+' atom does not hold on to an extra electron (its electron affinity is about zero or negative), so '+fa.ion+' would be unstable.');
+      o.push('New configuration: '+fa.cfg+'; '+(fa.unp?fa.unp+' unpaired, so paramagnetic.':'all paired, so diamagnetic.'));
+      if(NOBLE[fa.e]&&fa.e!==fa.p)o.push('With '+fa.e+' electrons it is isoelectronic with '+NOBLE[fa.e]+', a closed and unusually stable shell'+(typicalIon(fa)?', which is why '+fa.name.toLowerCase()+' typically forms this ion.':'.'));
+      if(fa.q<=-3)o.push('Highly charged anions like this are not stable on their own; they only survive surrounded by cations in a crystal or by solvent.');
+      o.push('Extra electrons repel each other, so the ion is larger than the neutral atom.');
+    }
+    return o.join(' ');
+  }
+  function explainProton(b,a){
+    const fb=facts(b),fa=facts(a),d=fa.p-fb.p,k=Math.abs(d),o=[];
+    o.push(pl(k,'proton')+(d>0?' added':' removed')+'. The atomic number changes from '+fb.p+' to '+fa.p+', so the element changes from '+fb.name.toLowerCase()+' to '+fa.name.toLowerCase()+' ('+fa.sym+'). In nature this needs a nuclear reaction, not chemistry: for example proton capture in a star, a particle accelerator, or radioactive decay.');
+    o.push('The electrons were not touched, so there are '+fa.e+' electrons around '+fa.p+' protons: net charge '+fmtQ(fa.q)+' ('+fa.ion+', '+fa.long+').');
+    o.push('This nucleus ('+fa.iso.name+') is '+fa.iso.st);
+    return o.join(' ');
+  }
+  function explainNeutron(b,a){
+    const fb=facts(b),fa=facts(a),d=fa.n-fb.n,k=Math.abs(d),o=[],be=bePer(fa.p,fa.n);
+    o.push(pl(k,'neutron')+(d>0?' added':' removed')+'. The element is still '+fa.name.toLowerCase()+' (atomic number '+fa.p+') but the mass number is now '+fa.A+': this is '+fa.iso.name+' ('+fa.iso.sym+'). Neutrons carry no charge, so the electrons and the chemistry stay the same.');
+    if(be&&be.v>0)o.push('Binding energy is about '+be.v.toFixed(2)+' MeV per nucleon'+(be.approx?' (liquid-drop estimate, rough for light nuclei)':'')+'.');
+    o.push('Stability: '+fa.iso.st);
+    return o.join(' ');
+  }
+  function explainElement(a){
+    const f=facts(a),el=f.el;
+    return 'Switched to '+f.name.toLowerCase()+' ('+f.sym+'), atomic number '+f.p+': a neutral atom with '+f.p+' protons, '+f.n+' neutrons (most abundant isotope, mass number '+f.A+') and '+f.e+' electrons. Configuration '+f.cfg+'. It is a '+CATN[el.cat]+' in '+(el.g?'group '+el.g:'the f-block')+', period '+el.p+'.';
+  }
+  function explainExc(st,from,to,emit,dEinfo){
+    const f=facts(st),o=[];
+    if(f.e===1){
+      const Z=f.p,ph=photon(Z,from,to);
+      o.push(emit?'The electron falls from n='+from+' to n='+to+' and emits a photon of '+ph.dE.toFixed(3)+' eV, wavelength '+ph.nm.toFixed(1)+' nm ('+ph.region+'). That is a line of the '+ph.series+' series.'
+                 :'The electron absorbs a photon of '+ph.dE.toFixed(3)+' eV ('+ph.nm.toFixed(1)+' nm, '+ph.region+') and jumps from n='+from+' to n='+to+'.');
+      o.push('Level energies follow E = −13.6 Z² / n² eV: E'+subN(from)+' = '+hlE(Z,from).toFixed(2)+' eV and E'+subN(to)+' = '+hlE(Z,to).toFixed(2)+' eV. An excited electron usually falls back within about 10−8 seconds.');
+    }else{
+      o.push(emit?'The outer electron drops to n='+to+' and the atom releases the energy as a photon.':'The outermost electron is promoted from n='+from+' to n='+to+' (shown in the model).');
+      o.push('Exact level energies of multi-electron atoms need quantum calculations because electrons repel each other, so no number is shown. For one-electron atoms such as H, He⁺ or Li²⁺ the Bohr formula is exact.');
+    }
+    return o.join(' ');
+  }
+  function atomQuiz(st){
+    const f=facts(st),Q=[];
+    const opts=(right,wrongs)=>{const s=new Set([String(right)]);wrongs.forEach(w=>s.add(String(w)));const a=[...s].slice(0,4);while(a.length<4)a.push(String(+right+a.length+1));return a.sort(()=>Math.random()-.5)};
+    const mk=(q,right,wr,why)=>{const o=opts(right,wr);Q.push({q,options:o,answer:o.indexOf(String(right)),why})};
+    mk('How many electrons does this model have right now?',f.e,[f.e+1,Math.max(0,f.e-1),f.p+f.n],'The electron count is '+f.e+' ('+f.cfg+').');
+    mk('What is the net charge of this particle?',fmtQ(f.q).replace(' (neutral)',''),['0','+1','−1','+2','−2'].filter(x=>x!==fmtQ(f.q).replace(' (neutral)','')).slice(0,3),'Charge = protons − electrons = '+f.p+' − '+f.e+' = '+f.q+'.');
+    mk('What is the mass number (protons + neutrons)?',f.A,[f.A+1,f.A-1,f.p],'Mass number = '+f.p+' + '+f.n+' = '+f.A+'.');
+    mk('How many electrons are in the outermost occupied shell?',f.outer,[f.outer+1,Math.max(0,f.outer-1),f.outer+2],'Shell occupancy is '+f.sh.join(', ')+', so the outer shell holds '+f.outer+'.');
+    mk('How many unpaired electrons does it have (Hund’s rule)?',f.unp,[f.unp+1,f.unp+2,Math.max(0,f.unp-1)],f.cfg+' has '+f.unp+' unpaired electron(s).');
+    return Q.sort(()=>Math.random()-.5).slice(0,3);
+  }
+
+  /* =====================================================================
+     4) MOLECULES: SMILES parser, hydrogen filler, 3D geometry builder (VSEPR-style), group finder
+     ===================================================================== */
+  const VAL={B:[3],C:[4],N:[3,5],O:[2],P:[3,5],S:[2,4,6],F:[1],Cl:[1],Br:[1],I:[1],Si:[4],Se:[2,4,6]};
+  const COV={H:.31,B:.84,C:.76,N:.71,O:.66,F:.57,Si:1.11,P:1.07,S:1.05,Cl:1.02,Br:1.2,I:1.39,Se:1.2,Li:1.28,Na:1.66,K:2.03,Mg:1.41,Ca:1.76,Al:1.21,Fe:1.32,Cu:1.32,Zn:1.22,Ag:1.45,Au:1.36,Xe:1.4};
+  const VDW={H:1.2,C:1.7,N:1.55,O:1.52,F:1.47,P:1.8,S:1.8,Cl:1.75,Br:1.85,I:1.98,B:1.92,Si:2.1,Se:1.9};
+  const VE={H:1,Li:1,Na:1,K:1,Mg:2,Ca:2,B:3,Al:3,C:4,Si:4,N:5,P:5,O:6,S:6,Se:6,F:7,Cl:7,Br:7,I:7};
+  const CPK={H:'#ffffff',He:'#d9ffff',Li:'#cc80ff',B:'#ffb5b5',C:'#666666',N:'#3050f8',O:'#ff0d0d',F:'#90e050',Ne:'#b3e3f5',Na:'#ab5cf2',Mg:'#8aff00',Al:'#bfa6a6',Si:'#f0c8a0',P:'#ff8000',S:'#ffff30',Cl:'#1ff01f',Ar:'#80d1e3',K:'#8f40d4',Ca:'#3dff00',Fe:'#e06633',Cu:'#c88033',Zn:'#7d80b0',Br:'#a62929',I:'#940094',Au:'#ffd123',Ag:'#c0c0c0',Se:'#ffa100'};
+  const RAD={H:.31,He:.28,C:.7,N:.65,O:.6,F:.5,Cl:.99,S:1,P:1,Br:1.14,I:1.33,Na:1.3,K:1.6,Ca:1.4,Mg:1.2,Fe:1.2,Si:1.1,B:.85,Li:1,Al:1.2,Cu:1.2,Zn:1.2,Au:1.3,Ne:.5,Ar:.9,Se:1.1,Ag:1.3};
+  const covR=el=>COV[el]||1.3;
+  function parseSmiles(s){
+    s=String(s||'').replace(/\s+/g,'');if(!s||s.length>400)return null;
+    const A=[],B=[],stack=[],ring={};let prev=-1,bo=0;
+    const add=a=>{A.push(a);const i=A.length-1;if(prev>=0)B.push([prev,i,bo||(A[prev].ar&&a.ar?1.5:1)]);prev=i;bo=0};
+    for(let i=0;i<s.length;){
+      const c=s[i];
+      if(c==='('){stack.push(prev);i++}
+      else if(c===')'){if(!stack.length)return null;prev=stack.pop();i++}
+      else if(c==='-'){bo=1;i++}else if(c==='='){bo=2;i++}else if(c==='#'){bo=3;i++}else if(c===':'){bo=1.5;i++}
+      else if(c==='/'||c==='\\')i++;
+      else if(c==='.'){prev=-1;bo=0;i++}
+      else if(c==='['){
+        const j=s.indexOf(']',i);if(j<0)return null;
+        const m=/^(\d*)([A-Za-z][a-z]?)(@{0,2})(?:(H)(\d*))?([+-]+\d*)?(?::\d+)?$/.exec(s.slice(i+1,j));if(!m)return null;
+        let el=m[2],ar=false;if(/^[a-z]/.test(el)){ar=true;el=el[0].toUpperCase()+el.slice(1)}
+        if(!findEl(el)||el.length>2)return null;
+        let q=0;if(m[6]){q=/\d/.test(m[6])?parseInt(m[6].slice(1),10)*(m[6][0]==='-'?-1:1):(m[6][0]==='-'?-1:1)*m[6].length}
+        add({el,ar,q,h:m[4]?(m[5]===''?1:+m[5]):0,br:true});i=j+1;
+      }
+      else if(/[A-Za-z]/.test(c)){
+        let el=c;const ar=c===c.toLowerCase();
+        if(c==='C'&&s[i+1]==='l'){el='Cl';i++}else if(c==='B'&&s[i+1]==='r'){el='Br';i++}else el=c.toUpperCase();
+        if(!VAL[el])return null;i++;add({el,ar,q:0,h:-1,br:false});
+      }
+      else if(/[0-9%]/.test(c)){
+        let d=c;if(c==='%'){d=s.substr(i+1,2);i+=3}else i++;
+        if(prev<0)return null;
+        if(ring[d]){const r=ring[d];delete ring[d];B.push([r.a,prev,bo||r.bo||(A[prev].ar&&A[r.a].ar?1.5:1)]);bo=0}else{ring[d]={a:prev,bo};bo=0}
+      }else return null;
+    }
+    if(stack.length||Object.keys(ring).length||!A.length)return null;
+    return {A,B};
+  }
+  function expandH(g){
+    const atoms=g.A.map(a=>({el:a.el,q:a.q||0,ar:!!a.ar})),bonds=g.B.map(b=>b.slice());
+    g.A.forEach((a,i)=>{
+      let h=a.h;
+      if(h<0){
+        let sum=0;g.B.forEach(b=>{if(b[0]===i||b[1]===i)sum+=b[2]});
+        const vals=VAL[a.el]||[4];
+        if(a.ar)h=Math.max(0,vals[0]-Math.ceil(sum-1e-9));
+        else{const v=vals.find(x=>x>=sum-1e-9);h=v===undefined?0:Math.round(v-sum)}
+      }
+      for(let k=0;k<h;k++){atoms.push({el:'H',q:0,ar:false});bonds.push([i,atoms.length-1,1])}
+    });
+    return {atoms,bonds};
+  }
+  function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+  function embed(atoms,bonds,init,seed){
+    const n=atoms.length;if(!n)return [];if(n===1)return [[0,0,0]];
+    const nb=atoms.map(()=>[]);bonds.forEach(b=>{nb[b[0]].push(b);nb[b[1]].push(b)});
+    const key=(i,j)=>i<j?i*100000+j:j*100000+i;
+    const blen=b=>(covR(atoms[b[0]].el)+covR(atoms[b[1]].el))*(b[2]>=2.9?.79:b[2]>=1.9?.88:b[2]>=1.4&&b[2]<1.6?.92:1);
+    const cons=[],near=new Set();
+    bonds.forEach(b=>{cons.push([b[0],b[1],blen(b),1]);near.add(key(b[0],b[1]))});
+    atoms.forEach((a,c)=>{
+      const ns=nb[c];if(ns.length<2)return;
+      let sum=0;ns.forEach(b=>sum+=b[2]);
+      const lp=Math.max(0,Math.floor(((VE[a.el]!==undefined?VE[a.el]:4)-(a.q||0)-sum)/2+1e-9)),sn=ns.length+lp;
+      for(let x=0;x<ns.length;x++)for(let y=x+1;y<ns.length;y++){
+        const i=ns[x][0]===c?ns[x][1]:ns[x][0],j=ns[y][0]===c?ns[y][1]:ns[y][0];near.add(key(i,j));
+        const d1=blen(ns[x]),d2=blen(ns[y]);
+        if(sn>=5)cons.push([i,j,Math.hypot(d1,d2),.5,1]);
+        else{const ang=(sn<=2?180:sn===3?120:109.5-2.5*Math.min(lp,2))*Math.PI/180;cons.push([i,j,Math.sqrt(Math.max(.01,d1*d1+d2*d2-2*d1*d2*Math.cos(ang))),.6,0])}
+      }
+    });
+    const iters=n>120?120:n>60?250:400;
+    const run=sd=>{
+      const rnd=mulberry(sd),P=[];
+      if(init&&init.length===n)init.forEach(p=>P.push([p[0]+(rnd()-.5)*.05,p[1]+(rnd()-.5)*.05,p[2]+(rnd()-.5)*.05]));
+      else{
+        const seen=new Array(n).fill(false);let off=0;
+        for(let s0=0;s0<n;s0++){
+          if(seen[s0])continue;P[s0]=[off,0,0];seen[s0]=true;const q=[s0];
+          while(q.length){const i=q.shift();nb[i].forEach(b=>{const j=b[0]===i?b[1]:b[0];if(seen[j])return;seen[j]=true;
+            let x=rnd()*2-1,y=rnd()*2-1,z=rnd()*2-1;const l=Math.hypot(x,y,z)||1,d=blen(b);P[j]=[P[i][0]+x/l*d,P[i][1]+y/l*d,P[i][2]+z/l*d];q.push(j)})}
+          off+=8;
+        }
+      }
+      for(let it=0;it<iters;it++){
+        for(const c of cons){
+          const i=c[0],j=c[1],dx=P[j][0]-P[i][0],dy=P[j][1]-P[i][1],dz=P[j][2]-P[i][2],d=Math.hypot(dx,dy,dz)||1e-6;
+          if(c[4]&&d>=c[2])continue;
+          const f=(d-c[2])/d*c[3]*.5;P[i][0]+=dx*f;P[i][1]+=dy*f;P[i][2]+=dz*f;P[j][0]-=dx*f;P[j][1]-=dy*f;P[j][2]-=dz*f;
+        }
+        for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){
+          if(near.has(key(i,j)))continue;
+          const dm=.7*((VDW[atoms[i].el]||1.8)+(VDW[atoms[j].el]||1.8)),dx=P[j][0]-P[i][0],dy=P[j][1]-P[i][1],dz=P[j][2]-P[i][2],d2=dx*dx+dy*dy+dz*dz;
+          if(d2<dm*dm){const d=Math.sqrt(d2)||1e-6,f=(d-dm)/d*.25;P[i][0]+=dx*f;P[i][1]+=dy*f;P[i][2]+=dz*f;P[j][0]-=dx*f;P[j][1]-=dy*f;P[j][2]-=dz*f}
+        }
+      }
+      let E=0;for(const c of cons){const d=Math.hypot(P[c[1]][0]-P[c[0]][0],P[c[1]][1]-P[c[0]][1],P[c[1]][2]-P[c[0]][2]);if(!(c[4]&&d>=c[2]))E+=c[3]*(d-c[2])*(d-c[2])}
+      return {P,E};
+    };
+    let best=run((seed||7)+1);
+    if(!(init&&init.length===n))for(let t=1;t<3;t++){const r=run((seed||7)+1+t*977);if(r.E<best.E)best=r}
+    const P=best.P,cx=P.reduce((s,p)=>s+p[0],0)/n,cy=P.reduce((s,p)=>s+p[1],0)/n,cz=P.reduce((s,p)=>s+p[2],0)/n;
+    return P.map(p=>[+(p[0]-cx).toFixed(3),+(p[1]-cy).toFixed(3),+(p[2]-cz).toFixed(3)]);
+  }
+  function molFormula(atoms){
+    const c={};atoms.forEach(a=>c[a.el]=(c[a.el]||0)+1);const keys=Object.keys(c);
+    const order=c.C?['C','H'].filter(k=>c[k]).concat(keys.filter(k=>k!=='C'&&k!=='H').sort()):keys.sort();
+    const q=atoms.reduce((s,a)=>s+(a.q||0),0);
+    return order.map(k=>k+(c[k]>1?subN(c[k]):'')).join('')+chg(q);
+  }
+  const molMass=atoms=>atoms.reduce((s,a)=>s+((EL[findEl(a.el)]||{mass:0}).mass),0);
+  function groupsOf(atoms,bonds){
+    const nb=atoms.map(()=>[]);bonds.forEach(b=>{nb[b[0]].push([b[1],b[2]]);nb[b[1]].push([b[0],b[2]])});
+    const el=i=>atoms[i].el,cnt={},add=k=>cnt[k]=(cnt[k]||0)+1;
+    const dbl=(i,e)=>nb[i].some(x=>x[1]===2&&el(x[0])===e),single=(i,e)=>nb[i].filter(x=>x[1]===1&&el(x[0])===e);
+    const hasH=i=>nb[i].some(x=>el(x[0])==='H');
+    atoms.forEach((a,i)=>{
+      if(a.el==='C'&&!a.ar){
+        if(dbl(i,'O')){
+          const os=single(i,'O');
+          if(os.some(x=>hasH(x[0])))add('carboxylic acid');
+          else if(os.some(x=>nb[x[0]].some(y=>y[0]!==i&&el(y[0])==='C')))add('ester');
+          else if(single(i,'N').length)add('amide');
+          else if(hasH(i))add('aldehyde');
+          else add('ketone');
+        }
+        if(nb[i].some(x=>x[1]===3&&el(x[0])==='N'))add('nitrile');
+        if(nb[i].some(x=>x[1]===3&&el(x[0])==='C'&&x[0]>i))add('alkyne (C≡C)');
+        if(nb[i].some(x=>x[1]===2&&el(x[0])==='C'&&x[0]>i))add('alkene (C=C)');
+        if(nb[i].some(x=>['F','Cl','Br','I'].indexOf(el(x[0]))>=0))add('alkyl/aryl halide');
+      }
+      if(a.el==='O'&&!a.ar&&hasH(i)&&nb[i].length===2){
+        const c=nb[i].find(x=>el(x[0])!=='H');
+        if(c&&el(c[0])==='C'&&!dbl(c[0],'O'))add(atoms[c[0]].ar?'phenol (O–H on a ring)':'alcohol (O–H)');
+      }
+      if(a.el==='O'&&!a.ar&&nb[i].length===2&&nb[i].every(x=>el(x[0])==='C'&&!dbl(x[0],'O')))add('ether');
+      if(a.el==='N'&&!a.ar&&a.q===0&&nb[i].every(x=>x[1]===1)&&nb[i].length===3&&!nb[i].some(x=>el(x[0])==='C'&&dbl(x[0],'O'))&&!nb[i].some(x=>el(x[0])==='O'))add('amine');
+      if(a.el==='N'&&a.q===1&&nb[i].some(x=>el(x[0])==='O'&&atoms[x[0]].q===-1))add('nitro group');
+      if(a.el==='S'&&hasH(i))add('thiol');
+    });
+    const ar=atoms.filter(a=>a.ar).length;if(ar>=5)add('aromatic ring'+(ar>6?'s':''));
+    return Object.keys(cnt).map(k=>cnt[k]>1?k+' ×'+cnt[k]:k);
+  }
+  function angleAt(P,i,j,k){
+    const a=[P[i][0]-P[j][0],P[i][1]-P[j][1],P[i][2]-P[j][2]],b=[P[k][0]-P[j][0],P[k][1]-P[j][1],P[k][2]-P[j][2]];
+    const d=a[0]*b[0]+a[1]*b[1]+a[2]*b[2],m=Math.hypot(...a)*Math.hypot(...b);return Math.acos(clamp(d/(m||1),-1,1))*180/Math.PI;
+  }
+  function valenceIssues(atoms,bonds){
+    const sum=atoms.map(()=>0);bonds.forEach(b=>{sum[b[0]]+=b[2];sum[b[1]]+=b[2]});
+    const out=[];
+    atoms.forEach((a,i)=>{
+      if(a.el==='H'){if(sum[i]>1.01)out.push('a hydrogen atom has '+sum[i]+' bonds (it can form only 1)');else if(sum[i]<.99)out.push('a hydrogen atom is left without a bond');return}
+      const v=VAL[a.el];if(!v)return;
+      const q=a.q||0,eff=v.map(x=>x+(a.el==='N'||a.el==='P'||a.el==='O'||a.el==='S'?q:-Math.abs(q)*(a.el==='B'?-1:1)));
+      const s=Math.round(sum[i]*10)/10;
+      if(a.ar)return;
+      if(eff.indexOf(s)<0){const max=Math.max.apply(null,eff);out.push(a.el+' atom #'+(i+1)+' has '+s+' bond'+(s===1?'':'s')+' (normally '+eff.join(' or ')+')'+(s<max?': a reactive radical or ion site':': not a valid valence'))}
+    });
+    return out.slice(0,4);
+  }
+  function molCentralAngle(m){
+    const P=m.atoms.map(a=>a.pos),nb=m.atoms.map(()=>[]);m.bonds.forEach(b=>{nb[b[0]].push(b[1]);nb[b[1]].push(b[0])});
+    let best=-1,bn=1;m.atoms.forEach((a,i)=>{const heavy=a.el!=='H';if(heavy&&nb[i].length>bn&&nb[i].length<=4){bn=nb[i].length;best=i}});
+    if(best<0)return '';
+    const j=best,i=nb[j][0],k=nb[j][1];
+    return 'In this model the '+m.atoms[i].el+'–'+m.atoms[j].el+'–'+m.atoms[k].el+' angle is about '+angleAt(P,i,j,k).toFixed(1)+'°.';
+  }
+  function molObj(atoms,bonds,P,extra){
+    return Object.assign({t:'molecule',name:'molecule',style:'ball',atoms:atoms.map((a,i)=>{const o={el:a.el,pos:P[i]};if(a.q)o.q=a.q;if(a.ar)o.ar=1;if(a.r)o.r=a.r;return o}),bonds:bonds.map(b=>[b[0],b[1],b[2]])},extra||{});
+  }
+  function molNarr(m,title){
+    const f=molFormula(m.atoms),mass=molMass(m.atoms),g=groupsOf(m.atoms,m.bonds),ang=molCentralAngle(m),iss=valenceIssues(m.atoms,m.bonds);
+    let s=title+'. Molecular formula '+f+', molar mass about '+mass.toFixed(2)+' grams per mole. It has '+m.atoms.length+' atoms and '+m.bonds.length+' bonds. ';
+    if(g.length)s+='Functional groups found: '+g.join(', ')+'. ';
+    if(ang)s+=ang+' ';
+    if(iss.length)s+='Valence check: '+iss.join('; ')+'. ';
+    s+='Geometry comes from a built-in VSEPR-style builder, so lengths and angles are approximate. Say things like: remove a hydrogen, replace oxygen with sulfur, show bond lengths, or use space-filling.';
+    return s;
+  }
+  function fromSmiles(smi,name){
+    const g=parseSmiles(smi);if(!g)return null;
+    const ex=expandH(g);if(ex.atoms.length>220)return null;
+    const P=embed(ex.atoms,ex.bonds,null,3);
+    const m=molObj(ex.atoms,ex.bonds,P,{smiles:smi}),title=name||molFormula(ex.atoms);
+    return {title,kind:'mol',summary:molNarr(m,title),parts:[],objects:[m]};
+  }
+
+  /* =====================================================================
+     5) MODEL LIBRARY (exact models that need no AI) + request reading
+     ===================================================================== */
+  const MOLS={'water':'O','hydrogen peroxide':'OO','ammonia':'N','methane':'C','ethane':'CC','propane':'CCC','butane':'CCCC','isobutane':'CC(C)C','pentane':'CCCCC','hexane':'CCCCCC','cyclohexane':'C1CCCCC1','cyclopropane':'C1CC1','ethene':'C=C','propene':'C=CC','ethyne':'C#C','benzene':'c1ccccc1','toluene':'Cc1ccccc1','phenol':'Oc1ccccc1','aniline':'Nc1ccccc1','naphthalene':'c1ccc2ccccc2c1','pyridine':'c1ccncc1','methanol':'CO','ethanol':'CCO','propanol':'CCCO','isopropanol':'CC(C)O','glycerol':'OCC(O)CO','ethylene glycol':'OCCO','formaldehyde':'C=O','acetaldehyde':'CC=O','acetone':'CC(C)=O','formic acid':'OC=O','acetic acid':'CC(=O)O','lactic acid':'CC(O)C(=O)O','citric acid':'OC(=O)CC(O)(CC(=O)O)C(=O)O','oxalic acid':'OC(=O)C(=O)O','benzoic acid':'OC(=O)c1ccccc1','ethyl acetate':'CCOC(C)=O','diethyl ether':'CCOCC','chloroform':'ClC(Cl)Cl','carbon tetrachloride':'ClC(Cl)(Cl)Cl','dichloromethane':'ClCCl','chloromethane':'CCl','carbon dioxide':'O=C=O','carbon monoxide':'[C-]#[O+]','sulfur dioxide':'O=S=O','sulfur trioxide':'O=S(=O)=O','sulfuric acid':'OS(=O)(=O)O','nitric acid':'O[N+](=O)[O-]','phosphoric acid':'OP(=O)(O)O','hydrogen chloride':'Cl','hydrogen fluoride':'F','hydrogen cyanide':'C#N','nitrogen':'N#N','oxygen':'O=O','hydrogen':'[H][H]','chlorine':'ClCl','fluorine':'FF','ozone':'[O-][O+]=O','nitrogen dioxide':'[O-][N+]=O','nitrous oxide':'[N-]=[N+]=O','methylamine':'CN','urea':'NC(N)=O','glycine':'NCC(=O)O','alanine':'CC(N)C(=O)O','serine':'NC(CO)C(=O)O','cysteine':'NC(CS)C(=O)O','glutamic acid':'NC(CCC(=O)O)C(=O)O','phenylalanine':'NC(Cc1ccccc1)C(=O)O','tryptophan':'NC(Cc1c[nH]c2ccccc12)C(=O)O','glucose':'OCC1OC(O)C(O)C(O)C1O','fructose':'OCC1(O)OCC(O)C(O)C1O','sucrose':'OCC1OC(OC2(CO)OC(CO)C(O)C2O)C(O)C(O)C1O','aspirin':'CC(=O)Oc1ccccc1C(=O)O','paracetamol':'CC(=O)Nc1ccc(O)cc1','ibuprofen':'CC(C)Cc1ccc(cc1)C(C)C(=O)O','caffeine':'Cn1cnc2c1c(=O)n(C)c(=O)n2C','nicotine':'CN1CCCC1c1cccnc1','dopamine':'NCCc1ccc(O)c(O)c1','serotonin':'NCCc1c[nH]c2ccc(O)cc12','adrenaline':'CNCC(O)c1ccc(O)c(O)c1','ascorbic acid':'OCC(O)C1OC(=O)C(O)=C1O','adenine':'Nc1ncnc2[nH]cnc12','guanine':'Nc1nc2[nH]cnc2c(=O)[nH]1','cytosine':'Nc1cc[nH]c(=O)n1','thymine':'Cc1c[nH]c(=O)[nH]c1=O','uracil':'O=c1cc[nH]c(=O)[nH]1','ethylene oxide':'C1CO1','tetrahydrofuran':'C1CCOC1','dmso':'CS(C)=O','acetonitrile':'CC#N','ethylamine':'CCN','acetamide':'CC(N)=O','propanone':'CC(C)=O','ammonium':'[NH4+]','hydronium':'[OH3+]','hydroxide':'[OH-]','nitrate':'[O-][N+](=O)[O-]','carbonate':'[O-]C(=O)[O-]','sulfate':'[O-]S(=O)(=O)[O-]','acetate':'CC(=O)[O-]','methyl radical':'[CH3]'};
+  const MALIAS={'h2o':'water','co2':'carbon dioxide','ch4':'methane','nh3':'ammonia','o2':'oxygen','n2':'nitrogen','h2':'hydrogen','hcl':'hydrogen chloride','c6h6':'benzene','c2h5oh':'ethanol','ch3cooh':'acetic acid','h2so4':'sulfuric acid','hno3':'nitric acid','c6h12o6':'glucose','h2o2':'hydrogen peroxide','so2':'sulfur dioxide','so3':'sulfur trioxide','co':'carbon monoxide','o3':'ozone','c2h4':'ethene','ethylene':'ethene','c2h2':'ethyne','acetylene':'ethyne','vitamin c':'ascorbic acid','acetaminophen':'paracetamol','epinephrine':'adrenaline','table sugar':'sucrose','rubbing alcohol':'isopropanol','laughing gas':'nitrous oxide','h3po4':'phosphoric acid','hf':'hydrogen fluoride','hcn':'hydrogen cyanide','no2':'nitrogen dioxide','n2o':'nitrous oxide','ccl4':'carbon tetrachloride','chcl3':'chloroform','ch3oh':'methanol','c3h8':'propane','c4h10':'butane','c2h6':'ethane','nh4+':'ammonium','h3o+':'hydronium','oh-':'hydroxide','no3-':'nitrate','co3 2-':'carbonate','so4 2-':'sulfate','ch3coo-':'acetate','vinegar':'acetic acid','alcohol':'ethanol','sugar':'glucose','propylene':'propene','nitrogen gas':'nitrogen','oxygen gas':'oxygen','hydrogen gas':'hydrogen','chlorine gas':'chlorine','glycine amino acid':'glycine','heavy water':'water'};
+  function subjectOf(t){
+    let s=' '+String(t).toLowerCase().replace(/[?!.,]/g,' ')+' ';
+    s=s.replace(/\b(please|can you|could you|i want|i would like|i'd like|to see|let me see|vision|hey|ok|okay)\b/g,' ')
+      .replace(/\b(make|build|create|generate|show|display|draw|give|visuali[sz]e|render|design|illustrate|construct|demonstrate|view|open|plot|graph|animate|simulate)\b/g,' ')
+      .replace(/\b(me|us|for|of|a|an|the|in|with|using|its|it|my|some)\b/g,' ')
+      .replace(/\b(3\s?-?d|three[- ]?d(?:imensional)?|models?|diagrams?|structures?|molecules?|molecular|compounds?|visuali[sz]ations?|pictures?|interactive|animations?|animated|ball and stick)\b/g,' ');
+    return s.replace(/\s+/g,' ').trim();
+  }
+  const cap1=s=>s.charAt(0).toUpperCase()+s.slice(1);
+  const axesO=sz=>({t:'axes',size:sz,name:'axes'});
+  const mk=(title,summary,objects,parts,extra)=>Object.assign({title,summary,parts:parts||[],objects},extra||{});
+  const par=(title,summary,x,y,z,u,v,nu,nv,sz)=>mk(title,summary,[axesO(sz||4),{t:'param',name:title.toLowerCase(),x,y,z,u,v,nu:nu||120,nv:nv||40}]);
+  const surf=(title,summary,expr,r,n)=>mk(title,summary,[axesO(r||4),{t:'surface',name:'surface',expr,x:[-(r||4),r||4],y:[-(r||4),r||4],n:n||90}]);
+  function c60(){
+    const p=(1+Math.sqrt(5))/2,base=[[0,1,3*p],[1,2+p,2*p],[p,2,2*p+1]],pts=[];
+    base.forEach(b=>{for(let sx=-1;sx<=1;sx+=2)for(let sy=-1;sy<=1;sy+=2)for(let sz=-1;sz<=1;sz+=2){const v=[b[0]*sx,b[1]*sy,b[2]*sz];for(let k=0;k<3;k++){const w=[v[k%3],v[(k+1)%3],v[(k+2)%3]];if(!pts.some(q=>Math.hypot(q[0]-w[0],q[1]-w[1],q[2]-w[2])<1e-6))pts.push(w)}}});
+    const sc=.7,atoms=pts.map(q=>({el:'C',pos:[+(q[0]*sc).toFixed(3),+(q[1]*sc).toFixed(3),+(q[2]*sc).toFixed(3)]})),bonds=[];
+    for(let i=0;i<pts.length;i++)for(let j=i+1;j<pts.length;j++)if(Math.abs(Math.hypot(pts[i][0]-pts[j][0],pts[i][1]-pts[j][1],pts[i][2]-pts[j][2])-2)<.05)bonds.push([i,j,1]);
+    return mk('Buckminsterfullerene C\u2086\u2080','Sixty carbon atoms at the corners of a truncated icosahedron: 12 pentagons and 20 hexagons. Every carbon bonds to 3 others ('+bonds.length+' bonds). It is a closed carbon cage about 0.7 nm across, discovered in 1985.',[{t:'molecule',name:'C60 cage',atoms,bonds,style:'ball'}]);
+  }
+  function graphene(){
+    const atoms=[],bonds=[],a1=[2.46,0],a2=[1.23,2.13];
+    for(let i=-4;i<=4;i++)for(let j=-4;j<=4;j++)[[0,0],[1.23,.71]].forEach(b=>{const x=i*a1[0]+j*a2[0]+b[0],y=i*a1[1]+j*a2[1]+b[1];if(Math.hypot(x,y)<7)atoms.push({el:'C',pos:[+x.toFixed(3),0,+y.toFixed(3)]})});
+    for(let i=0;i<atoms.length;i++)for(let j=i+1;j<atoms.length;j++)if(Math.abs(Math.hypot(atoms[i].pos[0]-atoms[j].pos[0],atoms[i].pos[2]-atoms[j].pos[2])-1.42)<.05)bonds.push([i,j,1]);
+    return mk('Graphene sheet','A single layer of carbon atoms in a honeycomb lattice. The C\u2013C bond length is 1.42 \u00C5 and each carbon is sp\u00B2 hybridised, which makes graphene extremely strong and an excellent conductor.',[{t:'molecule',name:'graphene',atoms,bonds,style:'ball'}]);
+  }
+  function nacl(){
+    const atoms=[],d=2.82;
+    for(let i=0;i<4;i++)for(let j=0;j<4;j++)for(let k=0;k<4;k++){const na=(i+j+k)%2===0;atoms.push({el:na?'Na':'Cl',r:na?.9:1.35,pos:[+((i-1.5)*d).toFixed(2),+((j-1.5)*d).toFixed(2),+((k-1.5)*d).toFixed(2)]})}
+    return mk('Sodium chloride crystal','Rock-salt lattice: every Na\u207A (purple) has 6 Cl\u207B (green) neighbours and vice versa, a face-centred cubic arrangement with a 2.82 \u00C5 Na\u2013Cl spacing. Ion sizes are drawn smaller than real so the lattice stays visible.',[{t:'molecule',name:'NaCl lattice',atoms,bonds:[],style:'ball'}]);
+  }
+  function lattice(kind){
+    const N=2,a=2.2,base={sc:[[0,0,0]],bcc:[[0,0,0],[.5,.5,.5]],fcc:[[0,0,0],[.5,.5,0],[.5,0,.5],[0,.5,.5]]};
+    base.diamond=base.fcc.concat(base.fcc.map(b=>[b[0]+.25,b[1]+.25,b[2]+.25]));
+    const info={sc:['Simple cubic lattice','one atom per unit cell, coordination number 6, packing efficiency 52%',a],bcc:['Body-centred cubic (BCC) lattice','two atoms per cell, coordination number 8, packing efficiency 68% (iron at room temperature, sodium, tungsten)',a],fcc:['Face-centred cubic (FCC) lattice','four atoms per cell, coordination number 12, packing efficiency 74% (copper, aluminium, gold)',a],diamond:['Diamond cubic lattice','eight atoms per cell, each carbon bonded tetrahedrally to 4 others, packing efficiency 34%',a*1.5]};
+    let pts=[];
+    if(kind==='hcp'){
+      const A=1.8,c=1.633*A;
+      for(let l=0;l<3;l++)for(let i=-2;i<=2;i++)for(let j=-2;j<=2;j++){const x=i*A+j*A/2+(l%2?A/2:0),z=j*A*Math.sqrt(3)/2+(l%2?A/(2*Math.sqrt(3)):0);if(Math.hypot(x,z)<4.2)pts.push([x,(l-1)*c/2,z])}
+    }else{
+      const inf=info[kind],L=inf[2];
+      for(let i=0;i<=N;i++)for(let j=0;j<=N;j++)for(let k=0;k<=N;k++)base[kind].forEach(b=>{const p=[(i+b[0]),(j+b[1]),(k+b[2])];if(p.every(v=>v<=N+1e-9)&&!pts.some(q=>Math.abs(q[0]-p[0])+Math.abs(q[1]-p[1])+Math.abs(q[2]-p[2])<1e-6))pts.push(p)});
+      pts=pts.map(p=>[(p[0]-N/2)*L,(p[1]-N/2)*L,(p[2]-N/2)*L]);
+    }
+    const nn=kind==='hcp'?1.8:kind==='sc'?a:kind==='bcc'?a*Math.sqrt(3)/2:kind==='fcc'?a/Math.sqrt(2):a*1.5*Math.sqrt(3)/4;
+    const atoms=pts.map(p=>({el:kind==='diamond'?'C':'Fe',r:.3,pos:p.map(v=>+v.toFixed(3))})),bonds=[];
+    for(let i=0;i<atoms.length;i++)for(let j=i+1;j<atoms.length;j++)if(Math.abs(Math.hypot(pts[i][0]-pts[j][0],pts[i][1]-pts[j][1],pts[i][2]-pts[j][2])-nn)<.06)bonds.push([i,j,1]);
+    const t=kind==='hcp'?['Hexagonal close-packed (HCP) lattice','ABAB layer stacking, coordination number 12, packing efficiency 74% (magnesium, zinc, titanium)']:info[kind];
+    return mk(t[0],cap1(t[1])+'. Lines join nearest neighbours.',[{t:'molecule',name:'lattice',atoms,bonds,style:'ball'}]);
+  }
+  function platonic(){
+    const L=[['tetra','Tetrahedron V4 E6 F4','#ff7a7a'],['cube','Cube V8 E12 F6','#ffd23f'],['octa','Octahedron V6 E12 F8','#3ddc97'],['dodeca','Dodecahedron V20 E30 F12','#4a8cff'],['icosa','Icosahedron V12 E30 F20','#c77dff']];
+    return mk('The five Platonic solids','The only convex regular polyhedra. Euler\u2019s formula V \u2212 E + F = 2 holds for each of them.',L.map((q,i)=>({t:'poly',name:q[1].split(' ')[0].toLowerCase(),kind:q[0],pos:[(i-2)*3.6,0,0],r:1.3,color:q[2],label:q[1],anim:{type:'spin',speed:.6}})));
+  }
+  function dna(){
+    const N=30,seq='GATTACAGCTAGCTTAGGCATCGATCCGTA',cm={A:'#ff5252',T:'#4a8cff',G:'#ffd23f',C:'#3ddc97'},pr={A:'T',T:'A',G:'C',C:'G'},s1=[],s2=[],o=[];
+    for(let i=0;i<N;i++){const a=i*TAU/10.5,y=(i-N/2)*.5;s1.push([+(1.3*Math.cos(a)).toFixed(3),y,+(1.3*Math.sin(a)).toFixed(3)]);s2.push([+(1.3*Math.cos(a+2.6)).toFixed(3),y,+(1.3*Math.sin(a+2.6)).toFixed(3)])}
+    o.push({t:'tube',name:'backbone 1',points:s1,r:.12,color:'#b0bec5'});o.push({t:'tube',name:'backbone 2',points:s2,r:.12,color:'#90a4ae'});
+    const bases=[];
+    for(let i=0;i<N;i++){const b=seq[i],a=s1[i],c=s2[i],mid=a.map((v,k)=>(v+c[k])/2);bases.push({t:'cylinder',from:a,to:mid,r:.09,color:cm[b]},{t:'cylinder',from:mid,to:c,r:.09,color:cm[pr[b]]})}
+    o.push({t:'group',name:'base pairs',children:bases});
+    const ph=[];for(let i=0;i<N;i++){ph.push({t:'sphere',pos:s1[i],r:.17,color:'#ff9800'},{t:'sphere',pos:s2[i],r:.17,color:'#ff9800'})}
+    o.push({t:'group',name:'phosphate groups',children:ph});
+    return mk('DNA double helix','Two antiparallel sugar\u2013phosphate backbones wound into a right-handed helix with about 10.5 base pairs per turn. Adenine pairs with thymine (2 hydrogen bonds) and guanine pairs with cytosine (3 hydrogen bonds). Proportions are schematic.',o,[{name:'backbone 1',desc:'the sugar\u2013phosphate chain that runs 5\u2032 to 3\u2032'},{name:'backbone 2',desc:'the antiparallel partner chain'},{name:'base pairs',desc:'A\u2013T (red\u2013blue) and G\u2013C (yellow\u2013green) held by hydrogen bonds'},{name:'phosphate groups',desc:'orange spheres that give DNA its negative charge'}]);
+  }
+  function cross(){
+    const P=(a,b,c)=>[a,c,-b],a=P(3,0,0),b=P(1,2,0),c=P(0,0,6),ab=P(4,2,0);
+    return mk('Cross product a \u00D7 b','a = (3,0,0), b = (1,2,0), so a \u00D7 b = (0,0,6). The result is perpendicular to both vectors (right-hand rule) and its length, 6, equals the area of the shaded parallelogram.',[axesO(5),{t:'quad',name:'parallelogram',pts:[[0,0,0],a,ab,b],color:'#4a8cff',opacity:.35},{t:'vector',name:'a',from:[0,0,0],to:a,color:'#ff5252',label:'a'},{t:'vector',name:'b',from:[0,0,0],to:b,color:'#4cd964',label:'b'},{t:'vector',name:'a cross b',from:[0,0,0],to:c,color:'#ffd54a',label:'a \u00D7 b'}]);
+  }
+  function lorenz(){
+    let x=1,y=1,z=1;const pts=[];
+    for(let i=0;i<9000;i++){const dx=10*(y-x),dy=x*(28-z)-y,dz=x*y-8/3*z;x+=dx*.004;y+=dy*.004;z+=dz*.004;if(i%12===0&&i>200)pts.push([+(x*.3).toFixed(3),+((z-25)*.3).toFixed(3),+(-y*.3).toFixed(3)])}
+    return mk('Lorenz attractor','Numerical solution of dx/dt = \u03C3(y\u2212x), dy/dt = x(\u03C1\u2212z)\u2212y, dz/dt = xy\u2212\u03B2z with \u03C3=10, \u03C1=28, \u03B2=8/3: a classic example of deterministic chaos.',[{t:'tube',name:'trajectory',points:pts,r:.05,color:'#ff9f43'}]);
+  }
+  function sierpinski(){
+    const V=[[1,1,1],[1,-1,-1],[-1,1,-1],[-1,-1,1]].map(v=>v.map(c=>c/Math.sqrt(3))),o=[];
+    (function sub(c,r,L){if(!L){o.push({t:'poly',kind:'tetra',pos:c.map(v=>+v.toFixed(3)),r:+r.toFixed(3),color:['#ff7a7a','#ffd23f','#3ddc97','#4a8cff'][o.length%4]});return}V.forEach(v=>sub([c[0]+v[0]*r/2,c[1]+v[1]*r/2,c[2]+v[2]*r/2],r/2,L-1))})([0,0,0],4,3);
+    return mk('Sierpinski tetrahedron','A fractal built by repeatedly replacing a tetrahedron with four half-size copies. After n steps it has 4\u207F tetrahedra (64 here) and its fractal dimension is log 4 / log 2 = 2.',[{t:'group',name:'fractal',children:o,anim:{type:'spin',speed:.3}}]);
+  }
+  function solar(){
+    const P=[['Mercury',.12,2.4,'#b0a79b',4.1],['Venus',.2,3.4,'#e6c27a',1.6],['Earth',.22,4.5,'#4a8cff',1],['Mars',.16,5.6,'#d9603b',.53],['Jupiter',.7,7.8,'#d8a56f',.084],['Saturn',.6,10,'#e3cf9a',.034],['Uranus',.4,12,'#7fe0e6',.012],['Neptune',.38,13.8,'#4a5cff',.006]],o=[{t:'sphere',name:'Sun',pos:[0,0,0],r:1.5,color:'#ffcc33',glow:true,label:'Sun'}];
+    P.forEach(p=>{
+      const ring=[];for(let k=0;k<=72;k++){const a=k/72*TAU;ring.push([+(p[2]*Math.cos(a)).toFixed(3),0,+(p[2]*Math.sin(a)).toFixed(3)])}
+      o.push({t:'wire',name:p[0]+' orbit',points:ring,color:'#555a66'});
+      const g=[{t:'sphere',name:p[0],pos:[p[2],0,0],r:p[1],color:p[3],label:p[0]}];
+      if(p[0]==='Saturn')g.push({t:'torus',name:'Saturn rings',pos:[p[2],0,0],R:.95,r:.07,rot:[80,0,0],color:'#cdbb8a'});
+      o.push({t:'group',name:p[0],children:g,anim:{type:'orbit',speed:+(p[4]*.35).toFixed(3),center:[0,0,0]}});
+    });
+    return mk('Solar system','The Sun and the eight planets with their orbits. Sizes are exaggerated and distances compressed so everything fits. Orbital speed follows Kepler\u2019s third law: inner planets move much faster than outer ones.',o,[{name:'Sun',desc:'a star holding 99.8% of the Solar System\u2019s mass'},{name:'Earth',desc:'the third planet, with liquid water'},{name:'Jupiter',desc:'the largest planet, more than twice the mass of all others combined'},{name:'Saturn',desc:'famous for its ring system'}]);
+  }
+  const PRE=[
+    [/m[o\u00F6]bius/,()=>par('M\u00F6bius strip','A surface with one side and one edge: x=(2+v cos(u/2))cos u, y=(2+v cos(u/2)) sin u, z=v sin(u/2), with u from 0 to 2\u03C0 and v from \u22121 to 1.','(2+v*cos(u/2))*cos(u)','(2+v*cos(u/2))*sin(u)','v*sin(u/2)',[0,TAU],[-1,1],160,20,3)],
+    [/klein/,()=>par('Klein bottle (figure-8 immersion)','A closed surface with no inside or outside. This figure-eight immersion passes through itself, which a true Klein bottle only needs to do in 3D.','(3+cos(u/2)*sin(v)-sin(u/2)*sin(2*v))*cos(u)','(3+cos(u/2)*sin(v)-sin(u/2)*sin(2*v))*sin(u)','sin(u/2)*sin(v)+cos(u/2)*sin(2*v)',[0,TAU],[0,TAU],140,60,4)],
+    [/trefoil|torus knot/,()=>mk('Trefoil knot','x = sin t + 2 sin 2t, y = cos t \u2212 2 cos 2t, z = \u2212sin 3t: the simplest non-trivial knot.',[axesO(3.5),{t:'curve',name:'knot',x:'sin(t)+2*sin(2*t)',y:'cos(t)-2*cos(2*t)',z:'-sin(3*t)',t:[0,TAU],r:.18,n:600,color:'#ff7ab8'}])],
+    [/\btorus\b|\bdonut\b/,()=>par('Torus','Surface of revolution x=(R+r cos v)cos u, y=(R+r cos v) sin u, z=r sin v with R=3 and r=1. Its area is 4\u03C0\u00B2Rr and its volume 2\u03C0\u00B2Rr\u00B2.','cos(u)*(3+cos(v))','sin(u)*(3+cos(v))','sin(v)',[0,TAU],[0,TAU],100,50,4)],
+    [/^(?:circular |simple )?helix$|^(?:a )?spiral$/,()=>mk('Circular helix','x = 2 cos t, y = 2 sin t, z = t/3.',[axesO(3),{t:'curve',name:'helix',x:'2*cos(t)',y:'2*sin(t)',z:'t/3',t:[0,6*Math.PI],r:.12,color:'#4cd9a0'}])],
+    [/hyperboloid/,()=>par('Hyperboloid of one sheet','x\u00B2/a\u00B2 + y\u00B2/a\u00B2 \u2212 z\u00B2/c\u00B2 = 1, a doubly ruled surface that contains straight lines.','cos(u)*sqrt(1+v*v)','sin(u)*sqrt(1+v*v)','v',[0,TAU],[-2,2],100,40,3)],
+    [/saddle|hyperbolic paraboloid/,()=>surf('Saddle (hyperbolic paraboloid)','z = x\u00B2 \u2212 y\u00B2. The origin is a saddle point: a minimum along x and a maximum along y.','x^2-y^2',3)],
+    [/paraboloid/,()=>surf('Elliptic paraboloid','z = x\u00B2 + y\u00B2, a bowl with its minimum at the origin.','x^2+y^2',3)],
+    [/gaussian|bell surface/,()=>surf('2D Gaussian','z = 3 e^(\u2212(x\u00B2+y\u00B2)/4), the bell surface behind the normal distribution.','3*exp(-(x^2+y^2)/4)',5)],
+    [/ripple|sinc|wave surface/,()=>surf('Radial ripple','z = 4 sin(r)/r with r = \u221A(x\u00B2+y\u00B2).','4*sin(sqrt(x^2+y^2)+1e-9)/(sqrt(x^2+y^2)+1e-9)',12,110)],
+    [/catenoid/,()=>par('Catenoid','The minimal surface of revolution, the shape of a soap film between two rings: x = cosh(v) cos u, y = cosh(v) sin u, z = v. Its mean curvature is zero everywhere.','cosh(v)*cos(u)','cosh(v)*sin(u)','v',[0,TAU],[-1.5,1.5],100,40,3)],
+    [/helicoid/,()=>par('Helicoid','A ruled minimal surface like a spiral staircase: x = v cos u, y = v sin u, z = u.','v*cos(u)','v*sin(u)','u',[-2*Math.PI,2*Math.PI],[-2,2],140,20,3)],
+    [/enneper/,()=>par('Enneper surface','A self-intersecting minimal surface.','u-u^3/3+u*v^2','v-v^3/3+v*u^2','u^2-v^2',[-1.6,1.6],[-1.6,1.6],80,80,3)],
+    [/^(?:unit |a )?sphere$/,()=>par('Sphere','All points at a fixed distance from the centre: x\u00B2+y\u00B2+z\u00B2 = r\u00B2. Surface area 4\u03C0r\u00B2, volume 4\u03C0r\u00B3/3.','3*sin(v)*cos(u)','3*sin(v)*sin(u)','3*cos(v)',[0,TAU],[0,Math.PI],80,40,4)],
+    [/^(?:a )?cone$/,()=>surf('Cone','z = \u221A(x\u00B2+y\u00B2).','sqrt(x^2+y^2)',3)],
+    [/lorenz/,lorenz],[/sierpinski/,sierpinski],[/platonic/,platonic],[/cross product/,cross],[/\bdna\b|double helix/,dna],
+    [/buckyball|fullerene|\bc\s*60\b|buckminster/,c60],[/graphene/,graphene],[/nacl|sodium chloride|rock ?salt|table salt/,nacl],
+    [/simple cubic|primitive cubic/,()=>lattice('sc')],[/body[- ]centred cubic|body[- ]centered cubic|\bbcc\b/,()=>lattice('bcc')],[/face[- ]centred cubic|face[- ]centered cubic|\bfcc\b|cubic close/,()=>lattice('fcc')],[/hexagonal close|\bhcp\b/,()=>lattice('hcp')],[/diamond (?:cubic |crystal |lattice )?/,()=>lattice('diamond')],
+    [/solar system|planets/,solar]
+  ];
+  function exprFromText(t){
+    let m=t.match(/(?:^|[\s,;:])(?:z|f\s*\(\s*x\s*,\s*y\s*\))\s*=\s*([^;=]+)$/i);if(m)return {k:'surf',e:m[1].trim()};
+    m=t.match(/(?:^|[\s,;:])(?:y|f\s*\(\s*x\s*\))\s*=\s*([^;=]+)$/i);if(m)return {k:/\by\b/i.test(m[1])?'surf':'curve',e:m[1].trim()};
+    m=t.match(/\b(?:plot|graph|draw)\s+(?:the\s+)?(?:function\s+|surface\s+)?(?:of\s+)?(.+)$/i);
+    if(m&&/^[\w\s+\-*/^().,\u03C0]+$/.test(m[1])&&/\bx\b/.test(m[1])&&/[+\-*/^()]|sin|cos|exp|sqrt/.test(m[1]))return {k:/\by\b/.test(m[1])?'surf':'curve',e:m[1].trim()};
+    return null;
+  }
+  function paramFromText(t){
+    const m=t.match(/\bx\s*(?:\(\s*[tuv,\s]*\))?\s*=\s*([^,;]+?)\s*[,;]\s*y\s*(?:\(\s*[tuv,\s]*\))?\s*=\s*([^,;]+?)(?:\s*[,;]\s*z\s*(?:\(\s*[tuv,\s]*\))?\s*=\s*([^,;]+))?\s*$/i);
+    if(!m)return null;
+    const X=m[1].trim(),Y=m[2].trim(),Z=(m[3]||'0').trim(),uv=/\b[uv]\b/.test(X+Y+Z);
+    compileExpr(X,uv?['u','v']:['t']);compileExpr(Y,uv?['u','v']:['t']);compileExpr(Z,uv?['u','v']:['t']);
+    return uv?mk('Parametric surface','x = '+X+', y = '+Y+', z = '+Z+' for u and v from 0 to 2\u03C0.',[axesO(4),{t:'param',name:'surface',x:X,y:Y,z:Z,u:[0,TAU],v:[0,TAU],nu:120,nv:60}])
+             :mk('Parametric curve','x = '+X+', y = '+Y+', z = '+Z+' for t from 0 to 2\u03C0.',[axesO(4),{t:'curve',name:'curve',x:X,y:Y,z:Z,t:[0,TAU],r:.08,color:'#ffd54a'}]);
+  }
+  function exprSpec(t){
+    const p=paramFromText(t);if(p)return p;
+    const ex=exprFromText(t);if(!ex)return null;
+    compileExpr(ex.e,ex.k==='surf'?['x','y']:['x']);
+    if(ex.k==='surf')return mk('z = '+ex.e,'Surface plot of z = f(x, y) coloured by height (z is the vertical axis).',[axesO(5),{t:'surface',name:'surface',expr:ex.e,x:[-5,5],y:[-5,5],n:100}]);
+    return mk('y = '+ex.e,'Graph of y = f(x) drawn in 3D on the xy-plane.',[axesO(6),{t:'fcurve',name:'curve',expr:ex.e,x:[-6,6],r:.08,color:'#ffd54a'}]);
+  }
+  function libLookup(text){
+    const subj=subjectOf(text);
+    const key=MALIAS[subj]||subj;
+    if(MOLS[key]){const s=fromSmiles(MOLS[key],cap1(key));if(s)return s}
+    const ex=exprSpec(text);if(ex)return ex;
+    for(const p of PRE)if(p[0].test(subj))return p[1]();
+    return null;
+  }
+  function atomRequest(t){
+    if(!/\b(atoms?|atomic|bohr|orbitals?|electron (?:shells?|config\w*)|nucle(?:us|ar)|isotope|ions?)\b/i.test(t))return 0;
+    if(/\b(molecule|compound|crystal|lattice|ionic)\b/i.test(t)&&!/\batom\b/i.test(t))return 0;
+    let m=t.match(/\belement\s+(?:number\s+|no\.?\s*)?(\d{1,3})\b/i);if(m&&findEl(m[1]))return findEl(m[1]);
+    const w=t.match(/[A-Za-z]+/g)||[],stop=/^(?:i|am|is|it|atom|atoms|atomic|the|and|for|show|make|model|draw|bohr|of|an|a|in|ion|ions|isotope|nucleus|nuclear|orbital|orbitals|electron|electrons|shell|shells|structure|me|its|can|you|build|create|generate|display|give|please|with|3d|d|to|see|view|ok|vision|hey|diagram|three)$/i;
+    for(const x of w){if(stop.test(x))continue;const z=findEl(x.toLowerCase());if(z&&(x.length>2||/^[A-Z][a-z]?$/.test(x)))return z}
+    return /\b(atom|atomic structure|bohr)\b/i.test(t)?6:0;
+  }
+
+  /* =====================================================================
+     6) 3D ENGINE: viewer, shape builders, atom scene
+     ===================================================================== */
+  const m3=(x,y,z)=>[x,z,-y];
+  const colorOf=(c,d)=>{try{return new THREE.Color(c==null?d:c)}catch(e){return new THREE.Color(d)}};
+  const vec=(a,d)=>Array.isArray(a)&&a.length>=3?new THREE.Vector3(num(a[0],0),num(a[1],0),num(a[2],0)):new THREE.Vector3(d?d[0]:0,d?d[1]:0,d?d[2]:0);
+  const rng=(a,d)=>Array.isArray(a)&&a.length>=2&&isFinite(+a[0])&&isFinite(+a[1])?[+a[0],+a[1]]:d;
+  function label(text,o){
+    o=o||{};const c=document.createElement('canvas'),x=c.getContext('2d'),fs=o.fs||46;
+    x.font='700 '+fs+'px Segoe UI,Arial,sans-serif';const w=Math.ceil(x.measureText(text).width)+28;
+    c.width=w;c.height=fs+22;x.font='700 '+fs+'px Segoe UI,Arial,sans-serif';x.textBaseline='middle';x.textAlign='center';
+    x.lineWidth=7;x.strokeStyle='rgba(0,0,0,.88)';x.strokeText(text,w/2,c.height/2+2);x.fillStyle=o.color||'#ffffff';x.fillText(text,w/2,c.height/2+2);
+    const tx=new THREE.CanvasTexture(c);tx.minFilter=THREE.LinearFilter;
+    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tx,transparent:true,depthTest:false}));
+    const sz=o.size||1;sp.scale.set(sz*c.width/c.height,sz,1);sp.renderOrder=10;return sp;
+  }
+  function makeViewer(host,o){
+    o=o||{};
+    const sc=new THREE.Scene();sc.background=new THREE.Color(0x07030c);
+    const cam=new THREE.PerspectiveCamera(50,1,.05,3000);
+    let rd;try{rd=new THREE.WebGLRenderer({antialias:true})}catch(e){throw new Error('WebGL 3D graphics are not available on this device.')}
+    rd.setPixelRatio(Math.min(devicePixelRatio||1,2));rd.localClippingEnabled=true;host.appendChild(rd.domElement);
+    const el=rd.domElement;el.style.cssText='display:block;width:100%;height:100%;touch-action:none';
+    sc.add(new THREE.HemisphereLight(0xffffff,0x445566,.95));
+    const sun=new THREE.DirectionalLight(0xffffff,.85);sun.position.set(5,10,7);sc.add(sun);
+    const back=new THREE.DirectionalLight(0x88aaff,.35);back.position.set(-6,-4,-8);sc.add(back);
+    const S={sc,cam,rd,host,th:.7,ph:1.2,dist:12,tg:new THREE.Vector3(),goal:{dist:12,tg:new THREE.Vector3()},tick:[],fxl:[],auto:!!o.auto,speed:1,dead:false,vis:true,onClick:null,root:new THREE.Group(),fxg:new THREE.Group(),lbls:[],w:0,h:0,min:.3,max:500,view:null,grid:null,hl:null};
+    sc.add(S.root);sc.add(S.fxg);
+    const ptrs=new Map();let moved=0,pd=0;
+    const d2=()=>{const a=[...ptrs.values()];return Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1])||1};
+    el.addEventListener('pointerdown',e=>{try{el.setPointerCapture(e.pointerId)}catch(x){}ptrs.set(e.pointerId,[e.clientX,e.clientY]);moved=0;if(ptrs.size===2)pd=d2()});
+    el.addEventListener('pointermove',e=>{
+      const p=ptrs.get(e.pointerId);if(!p)return;
+      const dx=e.clientX-p[0],dy=e.clientY-p[1];moved+=Math.abs(dx)+Math.abs(dy);p[0]=e.clientX;p[1]=e.clientY;
+      if(ptrs.size===1){
+        if(e.shiftKey||e.buttons===2){cam.updateMatrix();const r=new THREE.Vector3().setFromMatrixColumn(cam.matrix,0),u=new THREE.Vector3().setFromMatrixColumn(cam.matrix,1),k=S.dist*.0016;S.tg.addScaledVector(r,-dx*k).addScaledVector(u,dy*k);S.goal.tg.copy(S.tg)}
+        else{S.th-=dx*.008;S.ph=clamp(S.ph-dy*.008,.05,Math.PI-.05)}
+        S.auto=false;if(S.onUser)S.onUser();
+      }else if(ptrs.size===2){const d=d2();S.dist=clamp(S.dist*pd/d,S.min,S.max);S.goal.dist=S.dist;pd=d;S.auto=false;if(S.onUser)S.onUser()}
+    });
+    const up=e=>{const had=ptrs.has(e.pointerId);ptrs.delete(e.pointerId);if(had&&moved<6&&ptrs.size===0&&S.onClick&&e.type==='pointerup')S.onClick(e)};
+    el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);
+    el.addEventListener('wheel',e=>{e.preventDefault();S.dist=clamp(S.dist*Math.exp(e.deltaY*.0012),S.min,S.max);S.goal.dist=S.dist},{passive:false});
+    el.addEventListener('contextmenu',e=>e.preventDefault());
+    const rc=new THREE.Raycaster(),nd=new THREE.Vector2();
+    S.pick=(e,objs)=>{const r=el.getBoundingClientRect();nd.set((e.clientX-r.left)/r.width*2-1,-((e.clientY-r.top)/r.height)*2+1);rc.setFromCamera(nd,cam);const h=rc.intersectObjects(objs,false);return h.length?h[0]:null};
+    let io=null;try{io=new IntersectionObserver(es=>{S.vis=es[es.length-1].isIntersecting});io.observe(host)}catch(e){}
+    let last=performance.now(),t=0;
+    function fr(now){
+      if(S.dead)return;requestAnimationFrame(fr);
+      if(!host.isConnected){S.dispose();return}
+      if(!S.vis||!host.getClientRects().length){last=now;return}
+      const w=host.clientWidth,h=host.clientHeight;
+      if(w&&h&&(w!==S.w||h!==S.h)){S.w=w;S.h=h;rd.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix()}
+      const dt=Math.min(.05,(now-last)/1000);last=now;
+      const k=1-Math.pow(.0005,dt);S.dist+=(S.goal.dist-S.dist)*k;S.tg.lerp(S.goal.tg,k);
+      const sdt=dt*S.speed;t+=sdt;
+      if(S.auto)S.th+=sdt*.25;
+      const sp=Math.sin(S.ph);
+      cam.position.set(S.tg.x+S.dist*sp*Math.sin(S.th),S.tg.y+S.dist*Math.cos(S.ph),S.tg.z+S.dist*sp*Math.cos(S.th));
+      cam.lookAt(S.tg);cam.updateMatrix();
+      for(let i=0;i<S.tick.length;i++)S.tick[i](sdt,t);
+      for(let i=S.fxl.length-1;i>=0;i--){const f=S.fxl[i];f.t+=dt;let done=false;try{done=f.u(dt,f.t)===true}catch(e){done=true}if(done){S.fxl.splice(i,1);S.fxg.remove(f.o);killObj(f.o);f.res()}}
+      rd.render(sc,cam);
+    }
+    requestAnimationFrame(fr);
+    const killObj=n=>n.traverse(x=>{if(x.geometry)x.geometry.dispose();const ms=x.material?(Array.isArray(x.material)?x.material:[x.material]):[];ms.forEach(m=>{if(m.map)m.map.dispose();m.dispose()})});
+    S.addFx=(obj,u)=>new Promise(res=>{S.fxg.add(obj);S.fxl.push({o:obj,u,t:0,res})});
+    S.fitSphere=(R,c,imm)=>{
+      const asp=(host.clientWidth||600)/(host.clientHeight||400),d=R/Math.sin(25*Math.PI/180)*(asp<1?1/asp:1)*1.02;
+      S.goal.tg.copy(c||new THREE.Vector3());S.goal.dist=d;S.min=d*.05;S.max=d*6;
+      if(imm){S.tg.copy(S.goal.tg);S.dist=d}
+    };
+    S.fit=imm=>{
+      S.root.updateMatrixWorld(true);const b=new THREE.Box3().setFromObject(S.root);if(b.isEmpty())return;
+      const c=b.getCenter(new THREE.Vector3()),R=Math.max(.5,b.getSize(new THREE.Vector3()).length()/2);S.fitSphere(R,c,imm);
+    };
+    S.focus=(obj,f)=>{
+      S.root.updateMatrixWorld(true);const b=new THREE.Box3().setFromObject(obj);if(b.isEmpty())return;
+      const R=Math.max(.4,b.getSize(new THREE.Vector3()).length()/2),c=b.getCenter(new THREE.Vector3()),asp=(host.clientWidth||600)/(host.clientHeight||400);
+      S.goal.tg.copy(c);S.goal.dist=clamp(R/Math.sin(25*Math.PI/180)*(asp<1?1/asp:1)*(f||1.2),S.min,S.max);
+    };
+    S.highlight=obj=>{
+      if(S.hl){S.hl.forEach(r=>{try{r.m.emissive.setHex(r.hex)}catch(e){}});S.hl=null}
+      if(!obj)return;const saved=[];
+      obj.traverse(n=>{const ms=n.material?(Array.isArray(n.material)?n.material:[n.material]):[];ms.forEach(m=>{if(m.emissive&&m.isMeshStandardMaterial){saved.push({m,hex:m.emissive.getHex()});m.emissive.setHex(0x7a5200)}})});
+      S.hl=saved;
+    };
+    S.clear=()=>{
+      S.highlight(null);S.tick.length=0;S.lbls=[];
+      while(S.root.children.length){const c=S.root.children[0];S.root.remove(c);killObj(c)}
+    };
+    S.snapshot=()=>{rd.render(sc,cam);return el.toDataURL('image/png')};
+    S.setBg=hex=>{sc.background=new THREE.Color(hex)};
+    S.setGrid=on=>{
+      if(S.grid){sc.remove(S.grid);S.grid=null}
+      if(on){const b=new THREE.Box3().setFromObject(S.root),sz=Math.max(6,Math.ceil(b.getSize(new THREE.Vector3()).length()));S.grid=new THREE.GridHelper(sz*1.6,Math.round(sz*1.6),0x886622,0x332211);S.grid.position.y=b.isEmpty()?0:b.min.y-.01;sc.add(S.grid)}
+    };
+    S.dispose=()=>{if(S.dead)return;S.dead=true;try{io&&io.disconnect()}catch(e){}S.clear();S.fxl.forEach(f=>f.res());S.fxl.length=0;rd.dispose();if(el.parentNode)el.parentNode.removeChild(el)};
+    return S;
+  }
+  function applyView(S,v){
+    if(!v)return;
+    let planes=null;
+    if(v.clip&&v.clip.frac<.995){
+      S.root.updateMatrixWorld(true);const b=new THREE.Box3().setFromObject(S.root),ax=v.clip.axis||'y',nrm=new THREE.Vector3(ax==='x'?-1:0,ax==='y'?-1:0,ax==='z'?-1:0),lo=b.min[ax],hi=b.max[ax];
+      planes=[new THREE.Plane(nrm,lo+(hi-lo)*v.clip.frac)];
+    }
+    S.root.traverse(n=>{
+      const ms=n.material?(Array.isArray(n.material)?n.material:[n.material]):[];
+      ms.forEach(m=>{
+        if(!m.isMeshStandardMaterial)return;
+        if(!m.userData.o0)m.userData.o0={op:m.opacity,tr:m.transparent,dw:m.depthWrite};
+        const o0=m.userData.o0;
+        m.wireframe=!!v.wire;m.opacity=v.xray?Math.min(o0.op,.28):o0.op;m.transparent=v.xray||o0.tr;m.depthWrite=v.xray?false:o0.dw;
+        m.clippingPlanes=planes;m.side=THREE.DoubleSide;m.needsUpdate=true;
+      });
+    });
+    S.lbls.forEach(l=>{l.visible=v.labels!==false});
+    S.setGrid(!!v.grid);
+  }
+  /* ---------- spec builders ---------- */
+  const std=(o,def)=>{
+    const op=clamp(num(o.opacity,1),.04,1),col=colorOf(o.color,def||'#9aa5b1');
+    const m=new THREE.MeshStandardMaterial({color:col,roughness:o.glow?.3:.45,metalness:num(o.metal,.06),transparent:op<1,opacity:op,side:THREE.DoubleSide,depthWrite:op>=.95});
+    if(o.glow)m.emissive.copy(col).multiplyScalar(.7);return m;
+  };
+  function rod(a,b,r,mat,seg){
+    const d=b.clone().sub(a),len=d.length();if(len<1e-6)return new THREE.Group();
+    const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,len,seg||14),mat);
+    m.position.copy(a).add(b).multiplyScalar(.5);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize());return m;
+  }
+  function gridMesh(P,OK,nu,nv,hv){
+    const pos=new Float32Array(P.length*3),col=new Float32Array(P.length*3);let lo=Infinity,hi=-Infinity;
+    for(let k=0;k<P.length;k++){pos[k*3]=P[k][0];pos[k*3+1]=P[k][1];pos[k*3+2]=P[k][2];if(OK[k]){lo=Math.min(lo,hv[k]);hi=Math.max(hi,hv[k])}}
+    const c=new THREE.Color();
+    for(let k=0;k<P.length;k++){const t=hi>lo?(hv[k]-lo)/(hi-lo):.5;c.setHSL(.68-.68*clamp(t,0,1),.8,.55);col[k*3]=c.r;col[k*3+1]=c.g;col[k*3+2]=c.b}
+    const idx=[];
+    for(let j=0;j<nv;j++)for(let i=0;i<nu;i++){const a=j*(nu+1)+i,b=a+1,c2=a+nu+1,d=c2+1;if(OK[a]&&OK[b]&&OK[c2]&&OK[d])idx.push(a,c2,b,b,c2,d)}
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('color',new THREE.BufferAttribute(col,3));g.setIndex(idx);g.computeVertexNormals();return g;
+  }
+  const surfMat=op=>new THREE.MeshStandardMaterial({vertexColors:true,roughness:.45,metalness:.05,side:THREE.DoubleSide,transparent:op<1,opacity:op});
+  function surfGroup(g,op){const grp=new THREE.Group();grp.add(new THREE.Mesh(g,surfMat(op)));return grp}
+  function buildSurface(o){
+    const f=compileExpr(o.expr,['x','y']),X=rng(o.x,[-5,5]),Y=rng(o.y,[-5,5]),n=clamp(Math.round(num(o.n,80)),10,140),lim=num(o.zlim,60),P=[],OK=[],H=[];
+    for(let j=0;j<=n;j++)for(let i=0;i<=n;i++){const x=X[0]+(X[1]-X[0])*i/n,y=Y[0]+(Y[1]-Y[0])*j/n;let z=f([x,y]);const ok=isFinite(z)&&Math.abs(z)<=lim;if(!ok)z=0;P.push(m3(x,y,z));OK.push(ok);H.push(z)}
+    return surfGroup(gridMesh(P,OK,n,n,H),num(o.opacity,1));
+  }
+  function buildParam(o){
+    const fx=compileExpr(o.x,['u','v']),fy=compileExpr(o.y,['u','v']),fz=compileExpr(o.z,['u','v']),U=rng(o.u,[0,TAU]),V=rng(o.v,[0,TAU]),nu=clamp(Math.round(num(o.nu,100)),4,200),nv=clamp(Math.round(num(o.nv,50)),2,140),P=[],OK=[],H=[];
+    for(let j=0;j<=nv;j++)for(let i=0;i<=nu;i++){const u=U[0]+(U[1]-U[0])*i/nu,v=V[0]+(V[1]-V[0])*j/nv,a=[u,v],x=fx(a),y=fy(a),z=fz(a),ok=isFinite(x)&&isFinite(y)&&isFinite(z);P.push(ok?m3(x,y,z):[0,0,0]);OK.push(ok);H.push(ok?z:0)}
+    return surfGroup(gridMesh(P,OK,nu,nv,H),num(o.opacity,1));
+  }
+  function tubeRuns(pts,r,color){
+    const grp=new THREE.Group(),mat=new THREE.MeshStandardMaterial({color,roughness:.4,metalness:.1});let run=[];
+    const flush=()=>{if(run.length>=2){const cv=new THREE.CatmullRomCurve3(run.map(p=>new THREE.Vector3(p[0],p[1],p[2])),false);grp.add(new THREE.Mesh(new THREE.TubeGeometry(cv,Math.min(500,Math.max(8,run.length*(run.length>100?2:10))),r,8,false),mat))}run=[]};
+    pts.forEach(p=>{if(p&&isFinite(p[0])&&isFinite(p[1])&&isFinite(p[2]))run.push(p);else flush()});flush();return grp;
+  }
+  function buildCurve(o){
+    const fx=compileExpr(o.x,['t']),fy=compileExpr(o.y,['t']),fz=compileExpr(o.z==null?'0':o.z,['t']),T=rng(o.t,[0,TAU]),n=clamp(Math.round(num(o.n,500)),10,1500),pts=[];
+    for(let k=0;k<=n;k++){const t=T[0]+(T[1]-T[0])*k/n,a=[t],x=fx(a),y=fy(a),z=fz(a);pts.push(isFinite(x)&&isFinite(y)&&isFinite(z)?m3(x,y,z):null)}
+    return tubeRuns(pts,num(o.r,.07),colorOf(o.color,'#ffd54a'));
+  }
+  function buildFCurve(o){
+    const f=compileExpr(o.expr,['x']),X=rng(o.x,[-6,6]),pts=[];
+    for(let k=0;k<=600;k++){const x=X[0]+(X[1]-X[0])*k/600,y=f([x]);pts.push(isFinite(y)&&Math.abs(y)<60?m3(x,y,0):null)}
+    return tubeRuns(pts,num(o.r,.07),colorOf(o.color,'#ffd54a'));
+  }
+  const polyGeo=(kind,r)=>{const k=String(kind).toLowerCase();return /tetra/.test(k)?new THREE.TetrahedronGeometry(r):/octa/.test(k)?new THREE.OctahedronGeometry(r):/dodeca/.test(k)?new THREE.DodecahedronGeometry(r):/icosa/.test(k)?new THREE.IcosahedronGeometry(r):new THREE.BoxGeometry(r*1.5,r*1.5,r*1.5)};
+  const nameOf=o=>String(o.name||o.label||o.t||'').trim();
+  const matCache=new Map();
+  const cpkMat=hex=>{let m=matCache.get(hex);if(!m){m=new THREE.MeshStandardMaterial({color:colorOf(hex,'#cc99cc'),roughness:.35,metalness:.1});matCache.set(hex,m)}return m};
+  function buildMolecule(o,ctx,idx){
+    const g=new THREE.Group(),at=(Array.isArray(o.atoms)?o.atoms:[]).slice(0,500),sc=num(o.scale,1),style=o.style||'ball',pos=at.map(a=>vec(a.pos));
+    const rad=a=>{const el=String(a.el||'C');return a.r!=null?num(a.r,.7)*sc:style==='space'?(VDW[el]||1.8)*.95*sc:style==='stick'?.13*sc:(RAD[el]||.8)*sc};
+    at.forEach((a,i)=>{
+      const el=String(a.el||'C'),r=rad(a),m=new THREE.Mesh(new THREE.SphereGeometry(Math.max(.05,r),style==='space'?32:20,style==='space'?20:14),cpkMat(a.color||CPK[el]));
+      m.position.copy(pos[i]);m.userData.atom=i;m.userData.mol=idx;g.add(m);
+      if(o.atomLabels&&(at.length<=40||el!=='H')){const lb=label(el,{size:.5*Math.max(1,sc)});lb.position.copy(pos[i]).add(new THREE.Vector3(0,Math.max(.3,r)+.3,0));g.add(lb);ctx.lbls.push(lb)}
+    });
+    if(style!=='space'){
+      const br=(style==='stick'?.13:.09)*sc;
+      (Array.isArray(o.bonds)?o.bonds:[]).slice(0,1200).forEach(b=>{
+        const i=b[0]|0,j=b[1]|0,ord=num(b[2],1);if(!pos[i]||!pos[j])return;
+        const A=pos[i],B=pos[j],d=B.clone().sub(A).normalize();let p=d.clone().cross(new THREE.Vector3(0,1,0));if(p.length()<.1)p=d.clone().cross(new THREE.Vector3(1,0,0));p.normalize();
+        const gap=.17*sc,offs=ord>=3?[-gap,0,gap]:ord>=2?[-gap/2,gap/2]:ord>=1.4?[-gap/3,gap/2]:[0],mid=A.clone().add(B).multiplyScalar(.5);
+        const mA=cpkMat(at[i].color||CPK[at[i].el]||'#bbbbbb'),mB=cpkMat(at[j].color||CPK[at[j].el]||'#bbbbbb');
+        offs.forEach((off,k)=>{const r=(ord>=1.4&&ord<2&&k===1)?br*.55:br,sh=p.clone().multiplyScalar(off);g.add(rod(A.clone().add(sh),mid.clone().add(sh),r,mA,10));g.add(rod(mid.clone().add(sh),B.clone().add(sh),r,mB,10))});
+      });
+    }
+    if(o.measure){
+      const nb=at.map(()=>[]);(o.bonds||[]).forEach(b=>{if(pos[b[0]]&&pos[b[1]]){nb[b[0]].push(b[1]);nb[b[1]].push(b[0])}});
+      let cnt=0;
+      if(o.measure==='bonds'||o.measure==='both')(o.bonds||[]).forEach(b=>{if(cnt>60||!pos[b[0]]||!pos[b[1]])return;cnt++;const lb=label(pos[b[0]].distanceTo(pos[b[1]]).toFixed(2)+' Å',{size:.42,color:'#8fe7ff'});lb.position.copy(pos[b[0]]).add(pos[b[1]]).multiplyScalar(.5).add(new THREE.Vector3(0,.22,0));g.add(lb);ctx.lbls.push(lb)});
+      if(o.measure==='angles'||o.measure==='both')at.forEach((a,c)=>{
+        if(a.el==='H'||nb[c].length<2||nb[c].length>4)return;
+        for(let x=0;x<nb[c].length;x++)for(let y=x+1;y<nb[c].length;y++){
+          if(cnt>60)return;cnt++;
+          const u=pos[nb[c][x]].clone().sub(pos[c]).normalize(),v=pos[nb[c][y]].clone().sub(pos[c]).normalize(),ang=Math.acos(clamp(u.dot(v),-1,1))*180/Math.PI,dir=u.clone().add(v);
+          if(dir.length()<1e-3)dir.set(0,1,0);dir.normalize();
+          const lb=label(ang.toFixed(1)+'°',{size:.42,color:'#ffd54a'});lb.position.copy(pos[c]).addScaledVector(dir,.85);g.add(lb);ctx.lbls.push(lb);
+        }
+      });
+    }
+    return g;
+  }
+  function buildNode(o,ctx,idx,depth){
+    depth=depth|0;if(depth>5||!o||typeof o!=='object'||o.hidden)return null;
+    const t=String(o.t||'').toLowerCase(),S=ctx.S;let m=null;
+    const rot=n=>{if(Array.isArray(o.rot))n.rotation.set(num(o.rot[0],0)*Math.PI/180,num(o.rot[1],0)*Math.PI/180,num(o.rot[2],0)*Math.PI/180)};
+    const kids=a=>{const g=new THREE.Group();(Array.isArray(a)?a:[]).slice(0,300).forEach(c=>{try{const n=buildNode(c,ctx,idx,depth+1);if(n)g.add(n)}catch(e){console.warn('child skipped',e.message)}});return g};
+    if(t==='sphere'){m=new THREE.Mesh(new THREE.SphereGeometry(Math.max(.01,num(o.r,1)),28,18),std(o));m.position.copy(vec(o.pos))}
+    else if(t==='ellipsoid'){const r=Array.isArray(o.radii)?o.radii:[1,1,1];m=new THREE.Mesh(new THREE.SphereGeometry(1,28,18),std(o));m.scale.set(Math.max(.01,num(r[0],1)),Math.max(.01,num(r[1],1)),Math.max(.01,num(r[2],1)));m.position.copy(vec(o.pos));rot(m)}
+    else if(t==='cylinder')m=rod(vec(o.from),vec(o.to,[0,1,0]),Math.max(.005,num(o.r,.1)),std(o),16);
+    else if(t==='capsule'){m=new THREE.Group();const a=vec(o.from),b=vec(o.to,[0,1,0]),r=Math.max(.01,num(o.r,.2)),mt=std(o);m.add(rod(a,b,r,mt,16));[a,b].forEach(p=>{const s=new THREE.Mesh(new THREE.SphereGeometry(r,16,12),mt);s.position.copy(p);m.add(s)})}
+    else if(t==='cone'){const a=vec(o.from),b=vec(o.to,[0,1,0]),d=b.clone().sub(a),len=d.length();if(len>1e-6){m=new THREE.Mesh(new THREE.ConeGeometry(Math.max(.01,num(o.r,.3)),len,20),std(o));m.position.copy(a).add(b).multiplyScalar(.5);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize())}}
+    else if(t==='box'){const s=Array.isArray(o.size)?o.size:[1,1,1];m=new THREE.Mesh(new THREE.BoxGeometry(num(s[0],1),num(s[1],1),num(s[2],1)),std(o));m.position.copy(vec(o.pos));rot(m)}
+    else if(t==='torus'){m=new THREE.Mesh(new THREE.TorusGeometry(Math.max(.05,num(o.R,1)),Math.max(.01,num(o.r,.2)),16,48),std(o));m.position.copy(vec(o.pos));rot(m)}
+    else if(t==='plane'){const s=Array.isArray(o.size)?o.size:[2,2];m=new THREE.Mesh(new THREE.PlaneGeometry(num(s[0],2),num(s[1],2)),std(o));m.position.copy(vec(o.pos));rot(m)}
+    else if(t==='disc'){m=new THREE.Mesh(new THREE.CircleGeometry(Math.max(.05,num(o.r,1)),48),std(o));m.position.copy(vec(o.pos));rot(m)}
+    else if(t==='lathe'){
+      const pr=(Array.isArray(o.profile)?o.profile:[]).filter(q=>Array.isArray(q)&&q.length>=2).slice(0,80).map(q=>new THREE.Vector2(Math.max(0,num(q[0],0)),num(q[1],0)));
+      if(pr.length>=2){m=new THREE.Mesh(new THREE.LatheGeometry(pr,clamp(Math.round(num(o.segments,40)),8,96)),std(o));m.position.copy(vec(o.pos));rot(m)}
+    }
+    else if(t==='extrude'){
+      const pts=(Array.isArray(o.shape)?o.shape:[]).filter(q=>Array.isArray(q)&&q.length>=2).slice(0,200);
+      if(pts.length>=3){const sh=new THREE.Shape(pts.map(q=>new THREE.Vector2(num(q[0],0),num(q[1],0)))),dp=Math.max(.02,num(o.depth,.5)),ge=new THREE.ExtrudeGeometry(sh,{depth:dp,bevelEnabled:false});ge.translate(0,0,-dp/2);m=new THREE.Mesh(ge,std(o));m.position.copy(vec(o.pos));rot(m)}
+    }
+    else if(t==='tube'){const p=(Array.isArray(o.points)?o.points:[]).filter(q=>Array.isArray(q)&&q.length>=3).slice(0,600).map(q=>new THREE.Vector3(num(q[0],0),num(q[1],0),num(q[2],0)));if(p.length>=2){const cv=new THREE.CatmullRomCurve3(p,!!o.closed);m=new THREE.Mesh(new THREE.TubeGeometry(cv,clamp(p.length*10,8,500),Math.max(.01,num(o.r,.1)),10,!!o.closed),std(o))}}
+    else if(t==='wire'){const p=(Array.isArray(o.points)?o.points:[]).filter(q=>Array.isArray(q)&&q.length>=3).slice(0,800).map(q=>new THREE.Vector3(num(q[0],0),num(q[1],0),num(q[2],0)));if(p.length>=2)m=new THREE.Line(new THREE.BufferGeometry().setFromPoints(p),new THREE.LineBasicMaterial({color:colorOf(o.color,'#aaaaaa')}))}
+    else if(t==='points'){
+      const n=clamp(Math.round(num(o.count,600)),10,4000),r=num(o.r,2),pos=new Float32Array(n*3);
+      for(let i=0;i<n;i++){let x,y,z;if(o.kind==='gauss'){x=gauss()*r*.4;y=gauss()*r*.4;z=gauss()*r*.4}else if(o.kind==='box'){x=(Math.random()*2-1)*r;y=(Math.random()*2-1)*r;z=(Math.random()*2-1)*r}else{do{x=Math.random()*2-1;y=Math.random()*2-1;z=Math.random()*2-1}while(x*x+y*y+z*z>1);x*=r;y*=r;z*=r}pos[i*3]=x;pos[i*3+1]=y;pos[i*3+2]=z}
+      const ge=new THREE.BufferGeometry();ge.setAttribute('position',new THREE.BufferAttribute(pos,3));
+      m=new THREE.Points(ge,new THREE.PointsMaterial({color:colorOf(o.color,'#7be8ff'),size:num(o.size,.06),transparent:true,opacity:.85,depthWrite:false}));m.position.copy(vec(o.pos));
+    }
+    else if(t==='vector'){m=new THREE.Group();const a=vec(o.from),b=vec(o.to,[0,1,0]),d=b.clone().sub(a),len=d.length(),mt=std(o,'#ffd54a');if(len>1e-6){const hl=Math.min(len*.3,.6),sh=b.clone().sub(d.clone().normalize().multiplyScalar(hl));m.add(rod(a,sh,.06,mt,10));const hd=new THREE.Mesh(new THREE.ConeGeometry(.17,hl,16),mt);hd.position.copy(sh).add(b).multiplyScalar(.5);hd.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.clone().normalize());m.add(hd)}}
+    else if(t==='poly'){m=new THREE.Group();const geo=polyGeo(o.kind,Math.max(.05,num(o.r,1))),mt=std(o,'#7fb0ff');mt.flatShading=true;m.add(new THREE.Mesh(geo,mt));m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),new THREE.LineBasicMaterial({color:0xffffff})));m.position.copy(vec(o.pos));rot(m)}
+    else if(t==='quad'){const p=(Array.isArray(o.pts)?o.pts:[]).slice(0,4).map(q=>vec(q));if(p.length===4){const ge=new THREE.BufferGeometry().setFromPoints([p[0],p[1],p[2],p[0],p[2],p[3]]);ge.computeVertexNormals();m=new THREE.Mesh(ge,std(o,'#4a8cff'))}}
+    else if(t==='label'){m=new THREE.Group();const lb=label(String(o.text||'').slice(0,60),{size:num(o.size,.6),color:o.color||'#ffffff'});lb.position.copy(vec(o.pos));m.add(lb);ctx.lbls.push(lb)}
+    else if(t==='surface')m=buildSurface(o);else if(t==='param')m=buildParam(o);else if(t==='curve')m=buildCurve(o);else if(t==='fcurve')m=buildFCurve(o);
+    else if(t==='axes'){
+      m=new THREE.Group();const sz=Math.max(1,num(o.size,5)),mt=c=>new THREE.MeshBasicMaterial({color:c});
+      [['x',[sz,0,0],0xff5252],['y',[0,sz,0],0x4cd964],['z',[0,0,sz],0x4a8cff]].forEach(a=>{const b=m3(a[1][0],a[1][1],a[1][2]);m.add(rod(new THREE.Vector3(),new THREE.Vector3(b[0],b[1],b[2]),.02,mt(a[2]),6));const lb=label(a[0],{size:.5,color:'#'+new THREE.Color(a[2]).getHexString()});lb.position.set(b[0]*1.06,b[1]*1.06,b[2]*1.06);m.add(lb);ctx.lbls.push(lb)});
+      m.userData.axes=true;
+    }
+    else if(t==='molecule')m=buildMolecule(o,ctx,idx);
+    else if(t==='group'){m=kids(o.children);m.position.copy(vec(o.pos));rot(m);if(o.scale!=null){if(Array.isArray(o.scale))m.scale.set(num(o.scale[0],1),num(o.scale[1],1),num(o.scale[2],1));else m.scale.setScalar(num(o.scale,1))}}
+    else if(t==='array'){
+      m=new THREE.Group();const cnt=clamp(Math.round(num(o.count,3)),1,200),st=vec(o.step,[1,0,0]);
+      for(let i=0;i<cnt;i++){const n=buildNode(o.of,ctx,idx,depth+1);if(n){n.position.addScaledVector(st,i);m.add(n)}}
+    }
+    else if(t==='circle'){
+      m=new THREE.Group();const cnt=clamp(Math.round(num(o.count,6)),1,200),R=num(o.radius,2),ax=String(o.axis||'y'),st=num(o.start,0)*Math.PI/180;
+      for(let i=0;i<cnt;i++){
+        const n=buildNode(o.of,ctx,idx,depth+1);if(!n)continue;
+        const inner=new THREE.Group();inner.add(n);inner.position.set(ax==='x'?0:R,ax==='x'?R:0,0);
+        const w=new THREE.Group();w.add(inner);const a=st+i/cnt*TAU;
+        if(ax==='x')w.rotation.x=a;else if(ax==='z')w.rotation.z=a;else w.rotation.y=a;
+        m.add(w);
+      }
+      m.position.copy(vec(o.pos));
+    }
+    if(!m)return null;
+    if(o.off){const f=vec(o.off);m.position.add(f)}
+    if(o.sc&&o.sc!==1){
+      m.updateMatrixWorld(true);const bb=new THREE.Box3().setFromObject(m),c=bb.getCenter(new THREE.Vector3()),w=new THREE.Group(),k=clamp(num(o.sc,1),.05,20);
+      w.add(m);w.scale.setScalar(k);w.position.copy(c).multiplyScalar(1-k);m=w;
+    }
+    if(o.label&&t!=='label'){
+      m.updateMatrixWorld(true);const bb=new THREE.Box3().setFromObject(m),lb=label(String(o.label).slice(0,40),{size:.55,color:o.labelColor||'#ffffff'});
+      lb.position.set((bb.min.x+bb.max.x)/2,bb.max.y+.45,(bb.min.z+bb.max.z)/2);ctx.lbls.push(lb);
+      const h=new THREE.Group();h.add(m);h.add(lb);m=h;
+    }
+    const A=o.anim&&typeof o.anim==='object'?o.anim:null;
+    if(A){
+      const sp=num(A.speed,1),node=m;
+      if(A.type==='spin')S.tick.push(dt=>{node.rotation.y+=dt*sp});
+      else if(A.type==='pulse'){const s0=node.scale.clone();S.tick.push((dt,tt)=>{const k=1+.1*Math.sin(tt*2*sp);node.scale.set(s0.x*k,s0.y*k,s0.z*k)})}
+      else if(A.type==='bob'){const y0=node.position.y;S.tick.push((dt,tt)=>{node.position.y=y0+.3*Math.sin(tt*2*sp)})}
+      else if(A.type==='orbit'||A.type==='swing'){
+        const c=vec(A.center),pv=new THREE.Group();pv.position.copy(c);node.position.sub(c);pv.add(node);m=pv;
+        if(A.type==='orbit')S.tick.push(dt=>{pv.rotation.y+=dt*sp});
+        else{const amp=num(A.amp,30)*Math.PI/180;S.tick.push((dt,tt)=>{pv.rotation.z=amp*Math.sin(tt*2*sp)})}
+      }
+    }
+    m.userData.nm=nameOf(o).toLowerCase();
+    return m;
+  }
+  function renderSpec(S,spec,view){
+    S.clear();S.view=view;const ctx={S,lbls:S.lbls};let bad=0;
+    (Array.isArray(spec.objects)?spec.objects:[]).slice(0,500).forEach((o,i)=>{
+      try{const n=buildNode(o,ctx,i,0);if(!n)return;n.userData.top=i;S.root.add(n)}catch(e){bad++;console.warn('PACK 35 object skipped:',e.message)}
+    });
+    S.root.updateMatrixWorld(true);
+    const bb=new THREE.Box3().setFromObject(S.root),c=bb.getCenter(new THREE.Vector3());
+    S.root.children.forEach(n=>{
+      const b=new THREE.Box3().setFromObject(n),cc=b.isEmpty()?c.clone():b.getCenter(new THREE.Vector3());
+      n.userData.home=n.position.clone();n.userData.dir=n.userData.axes?new THREE.Vector3():cc.sub(c);
+    });
+    S.tick.push(dt=>{
+      const ex=S.view?num(S.view.explode,0):0,k=1-Math.pow(.002,dt);
+      S.root.children.forEach(n=>{if(!n.userData.home)return;const tg=n.userData.home.clone().addScaledVector(n.userData.dir,ex);n.position.lerp(tg,k)});
+    });
+    applyView(S,view);S.fit(true);
+    return bad;
+  }
+  /* ---------- orbitals ---------- */
+  const ORBS=[
+    [{n:'s',f:()=>1}],
+    [{n:'px',f:(x,y,z)=>x},{n:'py',f:(x,y,z)=>y},{n:'pz',f:(x,y,z)=>z}],
+    [{n:'dxy',f:(x,y,z)=>x*y},{n:'dxz',f:(x,y,z)=>x*z},{n:'dyz',f:(x,y,z)=>y*z},{n:'dx²-y²',f:(x,y,z)=>x*x-y*y},{n:'dz²',f:(x,y,z)=>3*z*z-1}],
+    [{n:'fz³',f:(x,y,z)=>z*(5*z*z-3)},{n:'fxz²',f:(x,y,z)=>x*(5*z*z-1)},{n:'fyz²',f:(x,y,z)=>y*(5*z*z-1)},{n:'fz(x²-y²)',f:(x,y,z)=>z*(x*x-y*y)},{n:'fxyz',f:(x,y,z)=>x*y*z},{n:'fx(x²-3y²)',f:(x,y,z)=>x*(x*x-3*y*y)},{n:'fy(3x²-y²)',f:(x,y,z)=>y*(3*x*x-y*y)}]
+  ];
+  function orbGeos(f){
+    const base=new THREE.SphereGeometry(1,56,36),pa=base.attributes.position,n=pa.count,vals=new Float32Array(n);let mx=1e-6;
+    for(let k=0;k<n;k++){const v=f(pa.getX(k),-pa.getZ(k),pa.getY(k));vals[k]=v;mx=Math.max(mx,Math.abs(v))}
+    const c1=new Float32Array(n*3),c2=new Float32Array(n*3);
+    for(let k=0;k<n;k++){const r=Math.abs(vals[k])/mx;pa.setXYZ(k,pa.getX(k)*r,pa.getY(k)*r,pa.getZ(k)*r);const pos=vals[k]>=0,a=pos?[1,.78,.1]:[.3,.55,1],b=pos?[.3,.55,1]:[1,.78,.1];c1.set(a,k*3);c2.set(b,k*3)}
+    base.setAttribute('color',new THREE.BufferAttribute(c1,3));base.computeVertexNormals();
+    const g2=base.clone();g2.setAttribute('color',new THREE.BufferAttribute(c2,3));return [base,g2];
+  }
+  const shellCol=n=>new THREE.Color().setHSL((.52+n*.11)%1,.85,.62);
+  /* ---------- atom scene (nucleus, shells, clouds, orbitals, effects) ---------- */
+  function AtomView(S){
+    const A={pool:[],phase:[0,0,0,0,0,0,0,0,0],elecs:[],grps:[],nr:1,byN:{}};
+    A.rn=n=>A.nr+1.1+(n-1)*1.0;
+    function ensurePool(n){
+      while(A.pool.length<n){
+        let best=null,bd=-1;
+        for(let t=0;t<10;t++){let x,y,z;do{x=Math.random()*2-1;y=Math.random()*2-1;z=Math.random()*2-1}while(x*x+y*y+z*z>1);let md=9;for(const q of A.pool){const d=(q.x-x)*(q.x-x)+(q.y-y)*(q.y-y)+(q.z-z)*(q.z-z);if(d<md)md=d}if(md>bd){bd=md;best=new THREE.Vector3(x,y,z)}}
+        A.pool.push(best);
+      }
+    }
+    A.viewShells=st=>{const sc=shellCounts(st.occ).slice();if(st.exc&&sc[st.exc.from-1]>0){sc[st.exc.from-1]--;while(sc.length<st.exc.to)sc.push(0);sc[st.exc.to-1]++}return sc};
+    A.subOf=st=>{const ks=keysOf(st.occ);if(st.sub&&st.occ[st.sub])return st.sub;return ks.length?ks[ks.length-1]:'1s'};
+    A.build=function(st){
+      S.clear();const g=S.root;A.elecs=[];A.grps=[];A.byN={};
+      const nn=st.p+st.n;A.nr=Math.max(.32,.235*Math.cbrt(Math.max(1,nn)));ensurePool(nn);
+      const cP=colorOf(st.colors.p,'#ff4d5a'),cN=colorOf(st.colors.n,'#7fb0ff'),cE=colorOf(st.colors.e,'#7be8ff');
+      const ng=new THREE.SphereGeometry(.19,10,8),mp=new THREE.InstancedMesh(ng,new THREE.MeshStandardMaterial({color:cP,roughness:.4}),Math.max(1,st.p)),mn=new THREE.InstancedMesh(ng,new THREE.MeshStandardMaterial({color:cN,roughness:.4}),Math.max(1,st.n)),d=new THREE.Object3D();
+      let ip=0,inn=0;
+      for(let i=0;i<nn;i++){
+        const isP=Math.floor((i+1)*st.p/nn)>Math.floor(i*st.p/nn);
+        if(nn===1)d.position.set(0,0,0);else d.position.copy(A.pool[i]).multiplyScalar(A.nr);
+        d.updateMatrix();if(isP)mp.setMatrixAt(ip++,d.matrix);else mn.setMatrixAt(inn++,d.matrix);
+      }
+      mp.count=st.p;mn.count=st.n;mp.userData.nuc=1;mn.userData.nuc=1;g.add(mp);g.add(mn);A.nuc=[mp,mn];
+      const f=facts(st);
+      if(st.labels){
+        const lb=label(st.p+' p⁺  '+st.n+' n⁰',{size:.5,color:'#ffd0d0'});lb.position.set(0,A.nr+.55,0);g.add(lb);S.lbls.push(lb);
+        const lc=label(f.ion+(f.q?'  charge '+fmtQ(f.q):''),{size:.62,color:f.q>0?'#ff9a9a':f.q<0?'#9ab8ff':'#ffe08a'});lc.position.set(0,-(A.rn(Math.max(1,shellCounts(st.occ).length))+.9),0);g.add(lc);S.lbls.push(lc);
+      }
+      const qn=qnList(st.occ);qn.forEach(q=>{(A.byN[q.n]=A.byN[q.n]||[]).push(q)});
+      const sh=A.viewShells(st);
+      if(st.mode==='orb'){
+        const sub=A.subOf(st),l=SUBL.indexOf(sub[1]),n=+sub[0],def=ORBS[l]||ORBS[0],s=.85+.28*n,L=Math.max(1,n-l),gap=2.4*s,x0=-(def.length-1)*gap/2,c=st.occ[sub]||0,no=def.length;
+        const sel=st.orb&&st.orb!=='all'?def.filter(o=>o.n===st.orb):def;
+        mp.visible=mn.visible=false;
+        const x1=-(sel.length-1)*gap/2;
+        sel.forEach((o,i)=>{
+          const idx=def.indexOf(o),el=c<=no?(idx<c?1:0):(idx<c-no?2:1);
+          const grp=new THREE.Group(),gs=orbGeos(o.f);
+          for(let k=0;k<L;k++){const m=new THREE.Mesh(gs[(L-1-k)%2],new THREE.MeshStandardMaterial({vertexColors:true,transparent:true,opacity:(k===L-1?.8:.6)*(el?1:.22),roughness:.4,side:THREE.DoubleSide,depthWrite:false}));m.scale.setScalar(s*(k+1)/L);grp.add(m)}
+          grp.position.x=x1+i*gap;g.add(grp);
+          const nuc=new THREE.Mesh(new THREE.SphereGeometry(.07,10,8),new THREE.MeshBasicMaterial({color:0xffffff}));nuc.position.copy(grp.position);g.add(nuc);
+          const lb=label(sub[0]+o.n+'  '+(el===2?'↑↓':el===1?'↑':'empty'),{size:.7,color:'#ffd54a'});lb.position.set(grp.position.x,-s*1.3-.4,0);g.add(lb);S.lbls.push(lb);
+        });
+        A.R=Math.max(2.5,(sel.length*gap)/2+s);return;
+      }
+      const eg=new THREE.SphereGeometry(.11,12,10);
+      sh.forEach((cnt,i)=>{
+        const n=i+1;if(cnt<=0)return;const r=A.rn(n),c=shellCol(n);
+        if(st.mode==='cloud'){
+          const pos=[],col=[];
+          for(let k=0;k<cnt*70;k++){const u=Math.random()*2-1,t=Math.random()*TAU,s=Math.sqrt(1-u*u),rr=r*(1+gauss()*.1);pos.push(rr*s*Math.cos(t),rr*u,rr*s*Math.sin(t));col.push(c.r,c.g,c.b)}
+          const pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));pg.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+          const cl=new THREE.Points(pg,new THREE.PointsMaterial({size:.09,vertexColors:true,transparent:true,opacity:.8,depthWrite:false,blending:THREE.AdditiveBlending}));g.add(cl);S.tick.push(dt=>{cl.rotation.y+=dt*.15});
+          if(st.labels){const lb=label('n='+n+': '+cnt+' e⁻',{size:.5,color:'#'+c.getHexString()});lb.position.set(r+.5,.3,0);g.add(lb);S.lbls.push(lb)}
+          return;
+        }
+        const grp=new THREE.Group();grp.rotation.set(n*.55,0,n*.9);g.add(grp);A.grps[n]=grp;
+        const pts=[];for(let k=0;k<=96;k++){const a=k/96*TAU;pts.push(new THREE.Vector3(Math.cos(a)*r,0,Math.sin(a)*r))}
+        grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:c,transparent:true,opacity:.55})));
+        const list=[],lst=A.byN[n]||[];
+        for(let k=0;k<cnt;k++){
+          const excited=!!(st.exc&&n===st.exc.to&&k===cnt-1),m=new THREE.Mesh(eg,new THREE.MeshStandardMaterial({color:excited?0xffd54a:cE,emissive:excited?0x996600:0x1aa0c0,roughness:.3}));
+          m.userData.qn=excited?{exc:true,n:n,from:st.exc.from}:(lst[k]||{n:n});m.userData.el=1;grp.add(m);list.push(m);
+        }
+        A.elecs[n]=list;
+        if(st.labels){const lb=label('n='+n+': '+cnt+' e⁻',{size:.5,color:'#'+c.getHexString()});lb.position.set(r+.5,.45,0);grp.add(lb);S.lbls.push(lb)}
+      });
+      if(st.mode==='bohr')S.tick.push(dt=>{
+        A.elecs.forEach((list,n)=>{
+          if(!list)return;const w=1.7/Math.pow(n,1.15),r=A.rn(n);A.phase[n]+=w*dt;
+          for(let k=0;k<list.length;k++){const a=A.phase[n]+k/list.length*TAU;list[k].position.set(Math.cos(a)*r,0,Math.sin(a)*r)}
+        });
+      });
+      A.R=A.rn(Math.max(sh.length,1))+1.2;
+    };
+    A.fit=imm=>S.fitSphere(A.R||4,new THREE.Vector3(),imm);
+    A.shellPos=n=>{const l=A.elecs[n];if(l&&l.length&&A.grps[n]){S.root.updateMatrixWorld(true);return l[l.length-1].getWorldPosition(new THREE.Vector3())}const a=Math.random()*TAU,r=A.rn(n);return new THREE.Vector3(Math.cos(a)*r,0,Math.sin(a)*r)};
+    const bead=(col,r)=>new THREE.Mesh(new THREE.SphereGeometry(r||.12,12,10),new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:1}));
+    A.fxOut=pos=>{
+      const b=bead(0x7be8ff,.13);b.position.copy(pos);const dir=pos.clone().normalize();if(dir.length()<.1)dir.set(1,0,0);
+      return S.addFx(b,(dt,t)=>{b.position.addScaledVector(dir,dt*4.5);b.material.opacity=Math.max(0,1-t/1.4);b.scale.setScalar(1+t*.6);return t>1.4});
+    };
+    A.fxIn=(mesh)=>{
+      if(!mesh)return Promise.resolve();
+      mesh.visible=false;const b=bead(0x7be8ff,.13),target=mesh.getWorldPosition(new THREE.Vector3()),dir=new THREE.Vector3(Math.random()-.5,Math.random()-.5,Math.random()-.5).normalize();
+      const start=target.clone().addScaledVector(dir,9);b.position.copy(start);
+      return S.addFx(b,(dt,t)=>{
+        const u=Math.min(1,t/1.2),e=u*u*(3-2*u);S.root.updateMatrixWorld(true);const tp=mesh.getWorldPosition(new THREE.Vector3());b.position.lerpVectors(start,tp,e);
+        if(u>=1){mesh.visible=true;return true}return false;
+      });
+    };
+    A.fxPhoton=(col,from,dirv,inward)=>{
+      const g=new THREE.Group(),n=40,pts=[];for(let k=0;k<n;k++){const x=k/n*1.6;pts.push(new THREE.Vector3(x,Math.sin(x*9)*.18,0))}
+      const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:colorOf(col,'#ffffff'),transparent:true,opacity:1}));g.add(line);
+      const head=bead(colorOf(col,'#ffffff'),.14);head.position.x=1.6;g.add(head);
+      const d=dirv.clone().normalize(),q=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1,0,0),inward?d.clone().negate():d);g.quaternion.copy(q);
+      const D=8,T=1.5;
+      return S.addFx(g,(dt,t)=>{const u=Math.min(1,t/T),dist=inward?(1-u)*D:u*D;g.position.copy(from).addScaledVector(d,dist);line.material.opacity=inward?Math.min(1,u*3):Math.max(0,1-u*.9);return t>T});
+    };
+    A.fxFlash=col=>{
+      const m=new THREE.Mesh(new THREE.RingGeometry(.2,.28,48),new THREE.MeshBasicMaterial({color:colorOf(col,'#ffd54a'),transparent:true,opacity:.9,side:THREE.DoubleSide,depthWrite:false,blending:THREE.AdditiveBlending}));
+      const R=(A.R||4)*.7;return S.addFx(m,(dt,t)=>{m.quaternion.copy(S.cam.quaternion);m.scale.setScalar(1+t*R*3);m.material.opacity=Math.max(0,.9-t*1.1);return t>.85});
+    };
+    return A;
+  }
+
+  /* =====================================================================
+     7) EDITING ENGINE: part finder, molecule edits, command reader, AI helpers
+     ===================================================================== */
+  const clone=o=>JSON.parse(JSON.stringify(o));
+  const COLORS={red:'#ff4d4d',green:'#3ddc84',blue:'#4a8cff',yellow:'#ffd54a',orange:'#ff9f43',purple:'#a66bff',violet:'#a66bff',pink:'#ff7ab8',white:'#ffffff',black:'#222222',gray:'#9aa5b1',grey:'#9aa5b1',brown:'#8b5a2b',cyan:'#35d6e8',gold:'#f5c518',silver:'#cfd8dc',teal:'#2bb3a3',magenta:'#e040fb',lime:'#b6ff3b',navy:'#1f3a93',maroon:'#800000'};
+  const gauss=()=>{let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(TAU*v)};
+  const stem=w=>w.length>3&&/ies$/.test(w)?w.slice(0,-3)+'y':w.length>3&&/(ses|xes|ches|shes)$/.test(w)?w.slice(0,-2):w.length>3&&/s$/.test(w)&&!/ss$/.test(w)?w.slice(0,-1):w;
+  function walk(arr,fn,top){
+    if(!Array.isArray(arr))return;
+    arr.forEach((o,i)=>{if(!o||typeof o!=='object')return;const tp=top===undefined?i:top;fn(o,arr,i,tp);if(Array.isArray(o.children))walk(o.children,fn,tp)});
+  }
+  const STOPW=new Set(['the','a','an','of','part','parts','all','this','that','my','side','whole','entire','piece','section','object','thing','things','it','its','model','in','from','to','on','one','single','please','now','then','also','and','out','off','away','just','only','me','up']);
+  function matchRefs(spec,phrase){
+    const toks=String(phrase).toLowerCase().replace(/[^a-z0-9\u00B2\u00B3 +-]/g,' ').split(/\s+/).filter(w=>w&&!STOPW.has(w)).map(stem);
+    if(!toks.length)return [];
+    const refs=[];
+    walk(spec.objects,(o,arr,i,top)=>{
+      const nt=((o.name||'')+' '+(o.label||'')).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map(stem);
+      if(!nt.length||o.t==='axes')return;
+      const hit=toks.filter(t=>nt.indexOf(t)>=0||nt.some(n=>n.length>3&&t.length>3&&(n.indexOf(t)>=0||t.indexOf(n)>=0))).length;
+      const sc=hit/toks.length+(hit===toks.length&&nt.length===toks.length?.5:0);
+      if(sc>0)refs.push({o,arr,i,top,sc});
+    });
+    const best=refs.reduce((m,r)=>Math.max(m,r.sc),0);
+    return best<.5?[]:refs.filter(r=>r.sc>=best-1e-9);
+  }
+  const namesOf=refs=>[...new Set(refs.map(r=>r.o.name||r.o.label||r.o.t))].slice(0,4).join(', ');
+  function specPart(spec,op,refs,val){
+    if(op==='remove'){
+      const by=new Map();refs.forEach(r=>{if(!by.has(r.arr))by.set(r.arr,[]);by.get(r.arr).push(r.i)});
+      by.forEach((ix,arr)=>{ix.sort((a,b)=>b-a).forEach(i=>arr.splice(i,1))});
+    }
+    else if(op==='hide')refs.forEach(r=>{r.o.hidden=true});
+    else if(op==='show')refs.forEach(r=>{delete r.o.hidden});
+    else if(op==='color')refs.forEach(r=>{r.o.color=val;if(r.o.t==='group')walk(r.o.children,c=>{c.color=val})});
+    else if(op==='scale')refs.forEach(r=>{r.o.sc=clamp((r.o.sc||1)*val,.05,20)});
+    else if(op==='opacity')refs.forEach(r=>{r.o.opacity=val;if(r.o.t==='group')walk(r.o.children,c=>{c.opacity=val})});
+    else if(op==='isolate'){const tops=new Set(refs.map(r=>r.top));spec.objects.forEach((o,i)=>{if(!tops.has(i)&&o.t!=='axes')o.hidden=true;else delete o.hidden})}
+  }
+  /* molecule edits */
+  const molOf=spec=>(spec.objects||[]).find(o=>o&&o.t==='molecule'&&Array.isArray(o.atoms)&&Array.isArray(o.bonds));
+  function molRelax(m){
+    const atoms=m.atoms.map(a=>({el:a.el,q:a.q||0,ar:!!a.ar})),P=embed(atoms,m.bonds,m.atoms.map(a=>a.pos.slice()),5);
+    m.atoms.forEach((a,i)=>{a.pos=P[i]});delete m.smiles;
+  }
+  function molPick(m,el,k){
+    const ix=[];m.atoms.forEach((a,i)=>{if(a.el===el)ix.push(i)});if(k==='all'||k>=ix.length)return ix;
+    const cx=m.atoms.reduce((s,a)=>[s[0]+a.pos[0],s[1]+a.pos[1],s[2]+a.pos[2]],[0,0,0]).map(v=>v/m.atoms.length);
+    return ix.sort((a,b)=>Math.hypot(...m.atoms[b].pos.map((v,j)=>v-cx[j]))-Math.hypot(...m.atoms[a].pos.map((v,j)=>v-cx[j]))).slice(0,k);
+  }
+  function molRemoveAtoms(m,idx){
+    const gone=new Set(idx),map={};let n=0;
+    const atoms=[];m.atoms.forEach((a,i)=>{if(!gone.has(i)){map[i]=n++;atoms.push(a)}});
+    m.bonds=m.bonds.filter(b=>!gone.has(b[0])&&!gone.has(b[1])).map(b=>[map[b[0]],map[b[1]],b[2]]);m.atoms=atoms;
+    if(m.atoms.length)molRelax(m);
+  }
+  function molAdd(m,newEl,targetEl,k){
+    const sum=m.atoms.map(()=>0);m.bonds.forEach(b=>{sum[b[0]]+=b[2];sum[b[1]]+=b[2]});
+    let added=0;
+    for(let c=0;c<k&&m.atoms.length<200;c++){
+      let cand=m.atoms.map((a,i)=>i).filter(i=>m.atoms[i].el!==undefined&&(!targetEl||m.atoms[i].el===targetEl));
+      if(!cand.length)break;
+      const need=i=>{const v=VAL[m.atoms[i].el];return v?Math.max.apply(null,v)-sum[i]:(m.atoms[i].el==='H'?1-sum[i]:0)};
+      cand.sort((a,b)=>need(b)-need(a)||(m.atoms[a].el==='H'?1:0)-(m.atoms[b].el==='H'?1:0));
+      const t=cand[0],P=m.atoms[t].pos,nbp=[];m.bonds.forEach(b=>{if(b[0]===t)nbp.push(m.atoms[b[1]].pos);else if(b[1]===t)nbp.push(m.atoms[b[0]].pos)});
+      let d=[0,0,0];nbp.forEach(q=>{d=[d[0]+P[0]-q[0],d[1]+P[1]-q[1],d[2]+P[2]-q[2]]});
+      if(Math.hypot(...d)<.2)d=[gauss(),gauss(),gauss()];const l=Math.hypot(...d)||1,bl=covR(m.atoms[t].el)+covR(newEl);
+      m.atoms.push({el:newEl,pos:[P[0]+d[0]/l*bl,P[1]+d[1]/l*bl,P[2]+d[2]/l*bl]});m.bonds.push([t,m.atoms.length-1,1]);sum[t]+=1;sum.push(1);added++;
+    }
+    if(added)molRelax(m);return added;
+  }
+  function molHydrogenate(m){
+    let n=0;const orig=m.bonds.length;
+    for(let i=0;i<orig;i++){
+      const b=m.bonds[i];if(b[2]!==2&&b[2]!==3)continue;
+      const a1=m.atoms[b[0]],a2=m.atoms[b[1]];if(a1.el==='H'||a2.el==='H'||(a1.el!=='C'&&a2.el!=='C'))continue;
+      b[2]-=1;[b[0],b[1]].forEach(t=>{const P=m.atoms[t].pos;m.atoms.push({el:'H',pos:[P[0]+(Math.random()-.5),P[1]+(Math.random()-.5),P[2]+(Math.random()-.5)]});m.bonds.push([t,m.atoms.length-1,1])});n++;
+    }
+    if(n)molRelax(m);return n;
+  }
+  const molSummary=(spec,m)=>{const f=molFormula(m.atoms),iss=valenceIssues(m.atoms,m.bonds),g=groupsOf(m.atoms,m.bonds);return 'Now: '+f+', molar mass about '+molMass(m.atoms).toFixed(2)+' g/mol, '+m.atoms.length+' atoms.'+(g.length?' Functional groups: '+g.join(', ')+'.':'')+(iss.length?' Valence check: '+iss.join('; ')+'.':' Every atom has a normal valence.')};
+
+  /* ---------- reading what the user says ---------- */
+  const NUMW={a:1,an:1,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,twenty:20,both:2,couple:2,single:1};
+  const NUMRE=Object.keys(NUMW).join('|');
+  const normT=s=>' '+String(s).toLowerCase().replace(/[\u2018\u2019\u201C\u201D"']/g,'').replace(/\bnew trons?\b/g,m=>/s$/.test(m)?'neutrons':'neutron').replace(/\bi on\b/g,'ion').replace(/[,.!?;:]+/g,' ').replace(/\s+/g,' ').trim()+' ';
+  function countOf(t,pw){
+    const m=t.match(new RegExp('\\b(\\d+|'+NUMRE+'|all|every|everything)\\s+(?:the\\s+|more\\s+|extra\\s+|additional\\s+|other\\s+|outer\\s+|outermost\\s+|inner\\s+|innermost\\s+|valence\\s+|of\\s+the\\s+)*(?:'+pw+')'));
+    if(!m)return /\ball\b|\bevery\b|\beverything\b/.test(t)?'all':1;
+    const w=m[1];if(w==='all'||w==='every'||w==='everything')return 'all';
+    return /^\d+$/.test(w)?parseInt(w,10):NUMW[w];
+  }
+  function shellOf(t){
+    let m=t.match(/\bn\s*=\s*(\d)\b/)||t.match(/\b(?:shell|level|orbit)\s+(\d)\b/)||t.match(/\b(\d)(?:st|nd|rd|th)\s+(?:shell|level|orbit)/);if(m)return +m[1];
+    const w={first:1,second:2,third:3,fourth:4,fifth:5,k:1,l:2,m:3};
+    m=t.match(/\b(first|second|third|fourth|fifth)\s+(?:shell|level|orbit)/)||t.match(/\b([klm])[- ]shell\b/);if(m)return w[m[1]];
+    if(/\binner(?:most)?\b/.test(t))return 1;
+    return 0;
+  }
+  function elemsIn(t){
+    const out=[];
+    t.trim().split(' ').forEach(w=>{if(w.length<3)return;let z=findEl(w),pluralW=false;if(!z&&w.length>3&&/s$/.test(w)){z=findEl(w.slice(0,-1));pluralW=!!z}if(z)out.push({z,sym:EL[z].sym,name:EL[z].name,plural:pluralW,w})});
+    return out;
+  }
+  const COMMON2=new Set(['in','at','as','be','he','no','us','am','or','so','to','on','is','it','if','do','go','my','by','we','me','hi','i','a']);
+  function elemOf(raw,t){
+    const em=elemsIn(t).filter(e=>!/^(lead|tin|iron)$/.test(e.w)||/\b(element|atom|metal|into|to)\b/.test(t));
+    if(em.length)return em[em.length-1].z;
+    const m=raw.match(/\b(?:to|into|as|element)\s+([A-Z][a-z]?)\b/);
+    if(m&&!COMMON2.has(m[1].toLowerCase())){const z=findEl(m[1].toLowerCase());if(z)return z}
+    return 0;
+  }
+  function colorIn(t){const w=t.trim().split(' ');for(const x of w)if(COLORS[x])return {name:x,hex:COLORS[x]};return null}
+  const VIEWSTRIP=/\b(make|set|turn|paint|color|colour|change|please|show|display|add|the|a|an|to|in|into|it|its|this|that|all|everything|whole|entire|model|part|parts|be|so|can|you|could|bigger|larger|smaller|twice|half|double|times|as|big|large|small|much|more|less|very|bit|little|slightly)\b/g;
+  function targetOf(t,extraRe){
+    let s=t;if(extraRe)s=s.replace(extraRe,' ');
+    s=s.replace(VIEWSTRIP,' ').replace(/\b(\d+(\.\d+)?)\s*(x|times)?\b/g,' ');
+    Object.keys(COLORS).forEach(c=>{s=s.replace(new RegExp('\\b'+c+'\\b','g'),' ')});
+    return s.replace(/\s+/g,' ').trim();
+  }
+  const ATOMW=/\b(electrons?|protons?|neutrons?|nucle(?:us|ons?)|isotopes?|ions?|cations?|anions?|orbitals?|shells?|valence|charge|photon|excite[d]?|spectrum|bohr)\b/;
+  function parseCmd(raw,C){
+    const t=normT(raw),T=t.trim(),has=re=>re.test(t),isAtom=C&&C.kind==='atom';
+    let m;
+    /* history and reset */
+    if(/^ (undo|undo that|undo it|revert that|step back|take that back|go back one step) $/.test(t))return {t:'undo'};
+    if(/^ (redo|redo that|do it again) $/.test(t))return {t:'redo'};
+    if(/^ (reset|start over|restart|restore|reset it|reset the model|put it back|back to (normal|original|default|the start|neutral)|original|default) /.test(t)||/\breset (it|the model|everything|the atom)\b/.test(t))return {t:'reset'};
+    /* voice */
+    if(/\b(stop|quiet|silence|shut up|be quiet|enough|cancel)\b.*\b(talking|speaking|narrat\w*|reading|explaining|voice)\b/.test(t)||/^ (stop|quiet|silence|shut up|be quiet|stop it) $/.test(t))return {t:'stopvoice',strong:true};
+    if(/\b(unmute|voice on|turn on (the )?(voice|narration|speaking)|speak (automatically|again)|start talking|talk to me)\b/.test(t))return {t:'voice',on:true,strong:true};
+    if(/\b(mute|voice off|stay silent|turn off (the )?(voice|narration|speaking|sound)|stop narrating|no voice)\b/.test(t))return {t:'voice',on:false,strong:true};
+    if(/\b(speak|talk|read) (slower|more slowly)\b/.test(t))return {t:'rate',v:-.15};
+    if(/\b(speak|talk|read) (faster|more quickly)\b/.test(t))return {t:'rate',v:.15};
+    if(/\bwhat happens\b|\bwhat changed\b|\bwhat did (that|it) do\b|\bwhat just happened\b|\bshow what happens\b/.test(t)&&!/\bif\b/.test(t))return {t:'what'};
+    if(/\b(tour|walk me through|guide me|go through (all )?(the )?parts|one by one|part by part)\b/.test(t)||/\bexplain (each|every|all) (the )?part/.test(t))return {t:'tour',strong:true};
+    if(/\bquiz\b|\btest me\b|\btest my knowledge\b/.test(t))return {t:'quiz',strong:true};
+    if(m=raw.match(/^\s*(?:please\s+)?save(?:\s+(?:this|it))?(?:\s+(?:3d\s+)?model)?(?:\s+as\s+(.+?))?\s*[.!]?$/i))return {t:'save',name:(m[1]||'').trim(),strong:/model/i.test(raw)};
+    if(/\b(export|download)\b/.test(t)||/\bsave (it )?as (an? )?(png|image|picture|obj|json)\b/.test(t))return {t:'export',fmt:/\bobj\b/.test(t)?'obj':/\bjson\b|\bdata\b/.test(t)?'json':'png',strong:true};
+    if(/\b(screenshot|snapshot|take a (picture|photo)|save (it )?as (an )?(image|png|picture))\b/.test(t))return {t:'export',fmt:'png',strong:true};
+    if(/\bfull ?screen\b/.test(t))return {t:'fullscreen'};
+    if(/\b(explain|describe|narrate|tell me about|talk about|give me (the )?(info|information|details)|read (it|that|this)( out)?|say it|info|information|summary|summari[sz]e)\b/.test(t)){
+      const rest=T.replace(/\b(explain|describe|narrate|tell|me|about|talk|give|the|info|information|details|read|it|that|this|out|say|again|model|atom|molecule|structure|diagram|everything|to|please|and|summary|summarize|summarise|loud|aloud|what|you|see|are|looking|at|here|now|more|can|could|you)\b/g,' ').replace(/\s+/g,' ').trim();
+      if(!rest)return {t:'info',strong:/\b(model|atom|molecule|structure|diagram)\b/.test(t)};
+    }
+    /* view controls */
+    if(/\blabels?\b|\blabel (everything|all)\b/.test(t)&&/\b(hide|remove|turn off|disable|clear|no|without|get rid of)\b/.test(t))return {t:'labels',on:false};
+    if(/\blabels?\b/.test(t)&&/\b(show|turn on|display|add|enable|with|put|give)\b/.test(t)||/\blabel (everything|all|the (parts|atoms|electrons|shells))\b/.test(t))return {t:'labels',on:true,atoms:/\batoms?\b/.test(t)};
+    if(/\bzoom (in|closer)\b|\bcome closer\b|\bget closer\b|\bcloser\b/.test(t))return {t:'zoom',f:.65};
+    if(/\bzoom out\b|\bmove back\b|\bfarther\b|\bfurther away\b/.test(t))return {t:'zoom',f:1.5};
+    if(/\b(reset|default|fit)\b.*\b(view|camera|screen)\b|\brecenter\b|\bre-center\b/.test(t))return {t:'resetview'};
+    if(/\b(top|front|side|back|bottom) view\b|\blook from (the )?(top|front|side|back|above|below)\b/.test(t)){const w=t.match(/\b(top|front|side|back|bottom|above|below)\b/)[1];return {t:'angle',w}}
+    if(/\b(stop|pause|freeze)\b.*\b(rotating|spinning|rotation|turning)\b|\bstop (the )?camera\b/.test(t))return {t:'auto',on:false};
+    if(/\b(pause|freeze|stop)\b.*\b(animation|electrons?|moving|motion|everything|orbit\w*)\b|\bstay still\b|\bhold still\b/.test(t))return {t:'speed',v:0};
+    if(/\b(start|resume|play|continue|begin)\b.*\b(animation|moving|motion|electrons?|orbit\w*)\b|\bresume\b|\bplay\b/.test(t)&&!/\b(song|video|music)\b/.test(t))return {t:'speed',v:1};
+    if(/\b(start|resume|begin|turn on|enable)\b.*\b(rotating|spinning|rotation)\b|\bauto ?rotate\b|\brotate (it|the model|slowly)\b|\bspin (it|the model)\b|\bturntable\b/.test(t))return {t:'auto',on:true};
+    if(/\bslow ?motion\b/.test(t))return {t:'speed',v:.25};
+    if(m=t.match(/\bspeed\s*(?:to|=|of)?\s*(\d+(?:\.\d+)?)\b/))return {t:'speed',v:clamp(+m[1],0,4)};
+    if(/\b(faster|speed up|quicker|more quickly|hurry)\b/.test(t))return {t:'speed',mul:1.7};
+    if(/\b(slower|slow down|slowly|calm down)\b/.test(t))return {t:'speed',mul:.55};
+    if(/\bwire ?frame\b/.test(t))return {t:'wire',on:!/\b(off|no|disable|solid|without|remove|hide|turn off)\b/.test(t)};
+    if(/\b(solid|normal)\b.*\b(view|mode)\b/.test(t))return {t:'wire',on:false};
+    if(/\bx[- ]?ray\b|\bsee[- ]through\b/.test(t))return {t:'xray',on:!/\b(off|no|disable|without|remove|turn off)\b/.test(t)};
+    if(/\bgrid\b|\bfloor\b/.test(t)&&/\b(show|add|turn on|display|enable|with)\b/.test(t))return {t:'grid',on:true};
+    if(/\bgrid\b|\bfloor\b/.test(t)&&/\b(hide|remove|turn off|disable|no|without)\b/.test(t))return {t:'grid',on:false};
+    if(/\bbackground\b/.test(t)){const c=colorIn(t);if(/\b(dark|black|night)\b/.test(t))return {t:'bg',hex:'#07030c'};if(/\b(white|light|bright|day)\b/.test(t))return {t:'bg',hex:'#f3f1ec'};if(c)return {t:'bg',hex:c.hex}}
+    if(/\b(explode|exploded view|blow (it )?apart|take (it )?apart|separate the parts|pull (it )?apart)\b/.test(t))return {t:'explode',v:/\b(little|slightly|bit)\b/.test(t)?.5:1.2};
+    if(/\b(assemble|put (it )?back together|collapse|un-?explode|bring (it )?together|close it)\b/.test(t))return {t:'explode',v:0};
+    if(/\b(cut|slice|cross[- ]?section|section)\b/.test(t)&&!/\b(cut off|cut out)\b/.test(t)){
+      if(/\b(uncut|whole|full|complete|undo the cut|close|remove the cut|restore)\b/.test(t))return {t:'clip',frac:1};
+      const ax=(t.match(/\b(?:along|through|across)?\s*(?:the\s+)?([xyz])[- ]?(?:axis|plane)?\b/)||[])[1]||(/\b(horizontal|top)\b/.test(t)?'y':'x');
+      const pc=t.match(/\b(\d{1,3})\s*(?:%|percent)/);return {t:'clip',axis:ax,frac:pc?clamp(+pc[1]/100,.02,1):.5,strong:true};
+    }
+    const mol=C&&C.kind==='spec'&&molOf(C.spec);
+    if(mol){
+      if(/\b(bond )?(lengths?|distances?)\b/.test(t)&&/\b(show|measure|display|add|what)\b/.test(t))return {t:'measure',v:/\bangles?\b/.test(t)?'both':'bonds',strong:true};
+      if(/\bangles?\b/.test(t)&&/\b(show|measure|display|add|what|bond)\b/.test(t))return {t:'measure',v:'angles',strong:true};
+      if(/\bmeasure\b|\bmeasurements?\b/.test(t))return {t:'measure',v:/\b(hide|remove|off|clear)\b/.test(t)?'':'both',strong:true};
+      if(/\bspace[- ]?filling\b|\bspacefill\b|\bvan der waals\b|\bvdw\b/.test(t))return {t:'mstyle',v:'space',strong:true};
+      if(/\bball (and|&|n) stick\b/.test(t))return {t:'mstyle',v:'ball',strong:true};
+      if(/\b(sticks?|skeletal|licorice)\b/.test(t)&&/\b(show|use|switch|make|as|view|style)\b/.test(t))return {t:'mstyle',v:'stick',strong:true};
+      if(/\b(hydrogenate|hydrogenation|saturate)\b|\badd h2\b|\badd hydrogen gas\b/.test(t))return {t:'mhyd',strong:true};
+      if(m=t.match(/\b(double|triple|single) bond\b.*\b(?:to|into|a|as)\s+(?:a\s+)?(single|double|triple)\b/)){if(/\b(make|change|turn|convert|reduce|break|switch|reduced)\b/.test(t))return {t:'mbond',from:m[1],to:m[2],strong:true}}
+      if(m=t.match(/\b(break|reduce|weaken) (?:the |a )?(double|triple) bond\b/))return {t:'mbond',from:m[2],to:m[2]==='triple'?'double':'single',strong:true};
+      if(m=t.match(/\b(replace|swap|substitute|exchange|change)\s+(?:the\s+|all\s+|one\s+|a\s+|\d+\s+)?(?:\w+\s+)?(\w+?)s?\s+(?:atoms?\s+)?(?:with|for|to|by|into)\s+(?:a\s+|an\s+)?(\w+?)s?(?:\s+atoms?)?\s*$/)){
+        const e1=findEl(m[2])||findEl(m[2]+'s'),e2=findEl(m[3])||findEl(m[3]+'s');
+        if(e1&&e2&&m[2].length>2&&m[3].length>2)return {t:'mrep',from:EL[e1].sym,to:EL[e2].sym,all:/\b(all|every)\b|s\s+(?:with|for|to|by)/.test(t),strong:true};
+      }
+      if(/\b(remove|delete|take (away|out)|get rid of|strip|knock out|kick out|eliminate)\b/.test(t)){
+        const em=elemsIn(t);
+        if(em.length&&molOf(C.spec).atoms.some(a=>a.el===em[0].sym)){const k=countOf(t,'\\w+');return {t:'mrem',el:em[0].sym,k:em[0].plural&&k===1?'all':k,strong:true}}
+      }
+      if(/\b(add|attach|put|connect|insert|bond|include)\b/.test(t)){
+        const em=elemsIn(t);
+        if(em.length&&!/\blabels?\b/.test(t)){const n=em[0],tg=em.length>1?em[em.length-1].sym:null,k=countOf(t,n.w+'s?');return {t:'madd',el:n.sym,target:tg,k:k==='all'?1:k,strong:true}}
+      }
+    }
+    /* atom commands */
+    if(isAtom){
+      const gl=has(/\b(excite|promote|jump|leap|absorb)\b/)||has(/\b(fall|relax|de-?excite|return|emit|decay)\b/)||has(/\b(drop|go|come|jump|move) (back )?(down|to (the )?(ground|lower|n\s*=?\s*\d|level|shell))\b/)||has(/\bground state\b/)||has(/\bfrom n\s*=?\s*\d\s+to\s+n\s*=?\s*\d\b/);
+      if(gl&&!(has(/\b(\d+|one|two|three|a|an)\s+(electrons?|protons?|neutrons?)\b/)&&/\b(remove|delete|take|add|insert|put|give|knock|kick|get rid)\b/.test(t))){
+        const fm=t.match(/\bfrom (?:the\s+)?(?:n\s*=?\s*|level\s+|shell\s+)?(\d)\b/),tm=t.match(/\b(?:to|into)\s+(?:the\s+)?(?:n\s*=?\s*|level\s+|shell\s+|orbit\s+)?(\d)\b/)||t.match(/\b(\d)(?:st|nd|rd|th)\s+(?:level|shell|orbit)\b/);
+        const from=fm?+fm[1]:0,to=tm?+tm[1]:0,emit=/\b(fall|relax|de-?excite|return|emit|decay|drop|go back|come back|down|ground state)\b/.test(t);
+        if(from&&to&&from>to)return {t:'a_fall',from,to,strong:true};
+        if(from&&to&&from<to)return {t:'a_exc',from,to,strong:true};
+        if(emit)return {t:'a_fall',to,strong:true};
+        return {t:'a_exc',to,strong:true};
+      }
+      const pm=t.match(/\b(electrons?|protons?|neutrons?)\b/),cm=colorIn(t);
+      if(pm&&cm&&/\b(make|color|colour|paint|turn|change|set)\b/.test(t)){const w=pm[1][0];return {t:'a_color',what:w==='e'?'e':w==='p'?'p':'n',hex:cm.hex,strong:true}}
+      if(m=t.match(/\b(?:with|have|has|exactly|set(?: it)? to|equal to)\s+(\d+)\s+(electrons?|protons?|neutrons?)\b/)){const w=m[2][0];return {t:w==='e'?'a_sete':w==='p'?'a_setp':'a_setn',n:+m[1],strong:true}}
+      if(/\b(deuterium|tritium|protium)\b/.test(t)){const w=t.match(/\b(deuterium|tritium|protium)\b/)[1];return {t:'a_el',z:1,n:w==='deuterium'?1:w==='tritium'?2:0,strong:true}}
+      if(m=raw.match(/\b([A-Za-z]{1,12})\s*-\s*(\d{1,3})\b/)){const z=findEl(m[1].toLowerCase());if(z&&+m[2]>=z&&+m[2]<=z*3+10&&(m[1].length>2||/^[A-Z]/.test(m[1])))return {t:'a_el',z,n:+m[2]-z,strong:true}}
+      if(m=t.match(/\bmass number\s+(\d{1,3})\b/))return {t:'a_mass',A:+m[1],strong:true};
+      const verbRem=/\b(remove|delete|take (away|out|off)|eliminate|knock (out|off)|kick out|strip|get rid of|lose|ionize|ionise|subtract|pull (out|off)|detach|eject|release|decrease|reduce|take)\b/.test(t),verbAdd=/\b(add|insert|put|give|attach|inject|bring|gain|capture|absorb|increase|donate|include|throw in|plus|more)\b/.test(t);
+      if(pm&&(verbRem||verbAdd)){
+        const w=pm[1][0],what=w==='e'?'e':w==='p'?'p':'n',pw=pm[1].replace(/s$/,'')+'s?';
+        return {t:'a_part',what,op:verbRem&&!(verbAdd&&/\badd\b/.test(t))?'rem':'add',k:countOf(t,pw),shell:what==='e'?shellOf(t):0,strong:true};
+      }
+      if(/\b(ionize|ionise)\b/.test(t))return {t:'a_ion',dir:1,all:/\b(fully|completely|all)\b/.test(t),strong:true};
+      if(/\b(neutral|uncharged|no charge|zero charge|neutrali[sz]e)\b/.test(t))return {t:'a_neutral',strong:true};
+      let q=null;
+      if(m=t.match(/\b(?:charge|ion|cation|anion)\b\D{0,14}?(plus|minus|positive|negative|\+|-|\u2212)?\s*(\d)\b/))q=(m[1]&&/minus|negative|-|\u2212/.test(m[1])?-1:/anion/.test(t)&&!m[1]?-1:1)*+m[2];
+      else if(m=t.match(/\b(\d)\s*(\+|plus|positive)(?:\s|$)/))q=+m[1];
+      else if(m=t.match(/\b(\d)\s*(-|minus|negative)(?:\s|$)/))q=-m[1];
+      else if(/\bplus (one|two|three|four)\b/.test(t))q=NUMW[t.match(/\bplus (\w+)/)[1]];
+      else if(/\bminus (one|two|three|four)\b/.test(t))q=-NUMW[t.match(/\bminus (\w+)/)[1]];
+      else if(/\b(dication|doubly charged)\b/.test(t))q=2;else if(/\b(trication)\b/.test(t))q=3;
+      if(q!==null&&isFinite(q)&&q!==0)return {t:'a_charge',q,strong:true};
+      if(/\b(make|turn|convert|change|form|become|create)\b.*\b(cation|positive ion|positively charged)\b/.test(t)||/^ (a )?cation /.test(t))return {t:'a_ion',dir:1,strong:true};
+      if(/\b(make|turn|convert|change|form|become|create)\b.*\b(anion|negative ion|negatively charged)\b/.test(t))return {t:'a_ion',dir:-1,strong:true};
+      if(/\b(make|turn|convert|change|form|become|create)\b.*\b(an? )?ion\b/.test(t))return {t:'a_ion',dir:0,strong:true};
+      const mo=/\b(bohr|planetary|shell model|shells)\b/.test(t)?'bohr':/\b(cloud|probability|fuzzy|quantum model)\b/.test(t)?'cloud':null;
+      if(mo&&!/\b(remove|delete)\b/.test(t))return {t:'a_mode',mode:mo,strong:true};
+      const sm=t.match(/\b([1-7])\s*([spdf])\b/),orb=t.match(/\b(p[xyz]|dxy|dxz|dyz|dz2|dx2-y2|dx2y2)\b/);
+      if(/\borbitals?\b/.test(t)||(sm&&/\b(show|display|see|view)\b/.test(t))||orb)return {t:'a_mode',mode:'orb',sub:sm?sm[1]+sm[2]:(t.match(/\b([spdf])[- ]orbitals?\b/)||[])[1]||null,orb:orb?orb[1].replace('dz2','dz\u00B2').replace(/dx2-?y2/,'dx\u00B2-y\u00B2'):'all',strong:true};
+      if(/\b(change|turn|transform|convert|switch|make|become|morph|swap|show|load|build|try|now|how about|what about|give me|replace)\b/.test(t)||elemsIn(t).length===1&&T.split(' ').length<=3){
+        const z=elemOf(raw,t);if(z&&!/\b(electrons?|protons?|neutrons?)\b/.test(t))return {t:'a_el',z,strong:true};
+      }
+    }
+    /* generic part editing */
+    const spec=C&&C.kind==='spec'?C.spec:null;
+    if(spec){
+      const ex=(re,tg)=>{const phrase=targetOf(t,re);return phrase};
+      const cm=colorIn(t);
+      if(cm&&/\b(color|colour|paint|make|turn|change|set|tint|dye)\b/.test(t)){
+        const ph=targetOf(t),refs=ph?matchRefs(spec,ph):[];
+        if(refs.length)return {t:'p_color',refs:ph,hex:cm.hex,name:cm.name,strong:true};
+        if(!ph)return {t:'p_color',refs:'',hex:cm.hex,name:cm.name,all:true};
+      }
+      if(/\b(remove|delete|get rid of|take (away|out)|erase|eliminate|drop|cut off)\b/.test(t)){
+        const ph=targetOf(t,/\b(remove|delete|get rid of|take away|take out|erase|eliminate|drop|cut off)\b/g);if(ph&&matchRefs(spec,ph).length)return {t:'p_remove',ph,strong:true};
+      }
+      if(/\b(hide|conceal|make invisible)\b/.test(t)){const ph=targetOf(t,/\b(hide|conceal|make invisible|invisible)\b/g);if(ph&&matchRefs(spec,ph).length)return {t:'p_hide',ph,strong:true}}
+      if(/\b(show|reveal|unhide|bring back|restore|display)\b/.test(t)){
+        const ph=targetOf(t,/\b(show|reveal|unhide|bring back|restore|display|everything|all)\b/g);
+        if(/\b(everything|all( the)? parts|all of it)\b/.test(t)&&!ph)return {t:'p_showall',strong:true};
+        if(ph&&matchRefs(spec,ph).length)return {t:'p_show',ph,strong:true};
+      }
+      if(/\b(only|just|isolate|focus on|keep only|alone)\b/.test(t)){const ph=targetOf(t,/\b(only|just|isolate|focus on|keep only|alone|show)\b/g);if(ph&&matchRefs(spec,ph).length)return {t:'p_isolate',ph,strong:true}}
+      if(/\b(transparent|translucent|see[- ]through|invisible|ghost)\b/.test(t)){
+        const ph=targetOf(t,/\b(transparent|translucent|see[- ]through|invisible|ghost)\b/g);
+        if(ph&&matchRefs(spec,ph).length)return {t:'p_opacity',ph,v:/\bhalf\b/.test(t)?.5:.28,strong:true};
+        if(!ph)return {t:'xray',on:true};
+      }
+      if(/\b(opaque|solid|not transparent)\b/.test(t)&&!/\bwire/.test(t)){const ph=targetOf(t,/\b(opaque|solid|not transparent)\b/g);if(ph&&matchRefs(spec,ph).length)return {t:'p_opacity',ph,v:1,strong:true};if(!ph)return {t:'xray',on:false}}
+      const big=/\b(bigger|larger|enlarge|grow|expand|increase|magnify)\b/.test(t),sm2=/\b(smaller|shrink|reduce|decrease|miniature|tiny)\b/.test(t),tw=t.match(/\b(twice|double|half|(\d+(?:\.\d+)?)\s*(?:x|times))\b/);
+      if(big||sm2||tw){
+        const ph=targetOf(t,/\b(bigger|larger|enlarge|grow|expand|increase|magnify|smaller|shrink|reduce|decrease|miniature|tiny|twice|double|half)\b/g);
+        if(ph&&matchRefs(spec,ph).length){let k=big?1.5:sm2?.67:1;if(tw)k=/twice|double/.test(tw[1])?2:/half/.test(tw[1])?.5:+tw[2];if(sm2&&tw&&+tw[2]>1)k=1/+tw[2];return {t:'p_scale',ph,k,strong:true}}
+      }
+      if(/\b(highlight|select|point (to|at)|find|where is|zoom (to|on)|focus on|look at)\b/.test(t)){
+        const ph=targetOf(t,/\b(highlight|select|point to|point at|find|where is|zoom to|zoom on|focus on|look at|me)\b/g);if(ph&&matchRefs(spec,ph).length)return {t:'p_select',ph,strong:true};
+      }
+    }
+    return null;
+  }
+  /* ---------- AI helpers ---------- */
+  async function aiCall(messages,o){
+    o=o||{};const key=store.get('groq');if(!key)throw new Error('Add your Groq API key in Settings first.');
+    const model=store.get('stmodel')||CFG.textModel,body={model,messages,temperature:o.temperature==null?.3:o.temperature,max_tokens:o.max||6000};
+    if(/gpt-oss/i.test(model))body.reasoning_effort=o.effort||'medium';
+    for(let a=0;a<3;a++){
+      const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(body)});
+      const d=await res.json().catch(()=>({}));
+      if(d.error){
+        const msg=d.error.message||'Groq error',w=msg.match(/try again in ([\d.]+)\s*(ms|s|m)\b/i);
+        if(res.status===429&&w&&a<2){const s=+w[1]*(w[2]==='ms'?.001:w[2]==='m'?60:1);if(s<=40){await sleep(s*1000+400);continue}}
+        if(/too large|reduce your message|tokens per minute|TPM/i.test(msg)&&body.max_tokens>2500&&a<2){body.max_tokens=Math.floor(body.max_tokens/2);continue}
+        throw new Error(msg);
+      }
+      const c=d.choices&&d.choices[0],t=((c&&c.message&&c.message.content)||'').replace(/<think>[\s\S]*?<\/think>/g,'').trim();
+      if(!t){if(c&&c.finish_reason==='length')throw new Error('The model ran out of tokens while thinking. Try a simpler request.');throw new Error('The model returned an empty answer.')}
+      return t;
+    }
+    throw new Error('Groq rate limit reached. Wait a minute and try again.');
+  }
+  const parseJSON=raw=>{const m=String(raw).replace(/```(?:json)?/gi,'').match(/\{[\s\S]*\}/);if(!m)throw new Error('no json');return JSON.parse(m[0])};
+  const SYS3D='You are VISION-3D, an expert scientific 3D modeller. Reply with ONLY one JSON object, no markdown.\nPick ONE kind:\nA) {"kind":"molecule","name":"common name","smiles":"SMILES"} for ANY molecule, compound or molecular ion (the app builds accurate 3D geometry itself). Example: ethanol -> CCO.\nB) {"kind":"atom","element":"Carbon"} for an atom, ion, isotope or nucleus.\nC) {"kind":"scene","title":"","summary":"3-5 accurate sentences that sound good read aloud","parts":[{"name":"","desc":"one sentence"}],"objects":[...]} for everything else (anatomy, cells, organelles, organs, planets, machines, vehicles, circuits, apparatus, buildings, animals, plants, crystals, fields, waves, geometry).\nSCENE rules: x right, y UP, z toward the viewer; whole model within about 20 units, centred near the origin. Give every important object a unique short lower-case "name" and list the SAME names in "parts" (6-12 parts, in the order you would explain them). Use "label" only on the ~8 most important objects (max 3 words).\nObject types: sphere {pos,r,color,opacity,glow} | ellipsoid {pos,radii:[a,b,c],rot:[degX,degY,degZ]} | cylinder {from,to,r} | capsule {from,to,r} | cone {from,to,r} | box {pos,size:[w,h,d],rot} | torus {pos,R,r,rot} | plane {pos,size:[w,h],rot} | disc {pos,r,rot} | lathe {profile:[[radius,y],...],pos,segments} (revolves a profile around the y axis: vases, bottles, bones, rockets, bowls, bodies) | extrude {shape:[[x,y],...],depth,pos,rot} (gears, plates, blocks) | tube {points:[[x,y,z],...],r,closed} (smooth curve through 3+ points: vessels, nerves, strands, orbits) | wire {points} | vector {from,to,color,label} | poly {kind:"tetra|cube|octa|dodeca|icosa",pos,r} | points {kind:"sphere|gauss|box",count,r,pos,color} | label {pos,text,size} | molecule {atoms:[{el,pos}],bonds:[[i,j,order]]} (angstrom geometry).\nComposition: group {children:[...],pos,rot,scale} | array {of:{object},count,step:[dx,dy,dz]} | circle {of:{object},count,radius,axis:"x|y|z",start} (copies around a circle: spokes, petals, teeth, bolts).\nCommon optional fields: name, color "#rrggbb", opacity 0.05-1, label, anim:{type:"spin|orbit|pulse|bob|swing",speed,center:[x,y,z],amp}.\nQuality: accurate proportions, counts and relative positions; realistic colours; translucent (opacity 0.25-0.6) outer shells with solid inner parts; use circle/array/group for repeated structures; prefer lathe/extrude/tube for organic or machined shapes; 20-150 objects.\nExample (wheel): {"kind":"scene","title":"Wheel","summary":"...","parts":[{"name":"tyre","desc":"..."},{"name":"spokes","desc":"..."}],"objects":[{"t":"torus","name":"tyre","R":2,"r":0.35,"color":"#222222"},{"t":"circle","name":"spokes","count":12,"radius":0,"axis":"z","of":{"t":"cylinder","from":[0,0,0],"to":[1.9,0,0],"r":0.04,"color":"#cccccc"}}]}';
+  function sanitize(j){
+    const objs=(Array.isArray(j.objects)?j.objects:[]).filter(o=>o&&typeof o==='object'&&o.t).slice(0,400);
+    return {title:String(j.title||'3D model').slice(0,80),kind:'scene',summary:String(j.summary||'').slice(0,900),parts:(Array.isArray(j.parts)?j.parts:[]).filter(p=>p&&p.name).slice(0,16).map(p=>({name:String(p.name).slice(0,50),desc:String(p.desc||'').slice(0,240)})),objects:objs};
+  }
+  async function aiBuild(text,prev,change){
+    let note='';
+    for(let t=0;t<3;t++){
+      const user=prev?'Current scene JSON:\n'+JSON.stringify({title:prev.title,summary:prev.summary,parts:prev.parts,objects:prev.objects}).slice(0,14000)+'\n\nChange request: '+change+'\nReturn the COMPLETE updated scene as {"kind":"scene",...}.':'Request: '+text;
+      const raw=await aiCall([{role:'system',content:SYS3D},{role:'user',content:user+(note?'\n\nNOTE: '+note:'')}],{effort:'medium',max:7500,temperature:t?.2:.4});
+      let j;try{j=parseJSON(raw)}catch(e){note='Reply with ONLY one valid JSON object.';continue}
+      if(!prev&&j.kind==='molecule'&&j.smiles){const s=fromSmiles(String(j.smiles),j.name?cap1(String(j.name)):text);if(s)return s;note='The SMILES "'+j.smiles+'" was invalid. Give a correct SMILES, or use kind "scene".';continue}
+      if(!prev&&j.kind==='atom'&&j.element){const z=findEl(String(j.element));if(z)return {atom:z}}
+      if(Array.isArray(j.objects)&&j.objects.length)return sanitize(j);
+      note='The JSON must contain a non-empty "objects" array.';
+    }
+    throw new Error('Could not produce a valid model. Try rephrasing the request.');
+  }
+
+  /* =====================================================================
+     8) THE MODEL CARD: viewer + voice + typed/spoken editing, history, tour, quiz, gallery, export
+     ===================================================================== */
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  const CARDS=[];let ACTIVE=null,CID=0;
+  const ORBTXT={s:'An s orbital is a sphere: the electron cloud is spherically symmetric, and it has a chance of being found right at the nucleus.',p:'p orbitals are dumbbell shaped with a node at the nucleus. There are three of them, pointing along x, y and z.',d:'d orbitals mostly have a four-lobed cloverleaf shape; the d z squared orbital is a dumbbell with a ring. There are five of them.',f:'f orbitals have complicated multi-lobed shapes. There are seven of them.'};
+  const GROUPQ={1:1,2:2,13:3,15:-3,16:-2,17:-1};
+  const dl=(name,href)=>{const a=document.createElement('a');a.href=href;a.download=name;document.body.appendChild(a);a.click();a.remove()};
+  const dlText=(name,txt,type)=>{const u=URL.createObjectURL(new Blob([txt],{type:type||'text/plain'}));dl(name,u);setTimeout(()=>URL.revokeObjectURL(u),4000)};
+  function toOBJ(S){
+    S.root.updateMatrixWorld(true);let o='# VISION pack 35 model\n',vo=1,k=0;const v=new THREE.Vector3();
+    S.root.traverse(n=>{
+      if(!n.isMesh||n.isInstancedMesh||!n.geometry||!n.visible)return;const g=n.geometry,p=g.attributes.position;if(!p)return;
+      o+='o part'+(++k)+'\n';
+      for(let i=0;i<p.count;i++){v.fromBufferAttribute(p,i).applyMatrix4(n.matrixWorld);o+='v '+v.x.toFixed(4)+' '+v.y.toFixed(4)+' '+v.z.toFixed(4)+'\n'}
+      const ix=g.index,nf=ix?ix.count/3:p.count/3;
+      for(let f=0;f<nf;f++){const a=ix?ix.getX(f*3):f*3,b=ix?ix.getX(f*3+1):f*3+1,c=ix?ix.getX(f*3+2):f*3+2;o+='f '+(vo+a)+' '+(vo+b)+' '+(vo+c)+'\n'}
+      vo+=p.count;
+    });
+    return o;
+  }
+  /* gallery */
+  const gal={
+    all(){try{return JSON.parse(store.get('v35models','[]'))||[]}catch(e){return []}},
+    put(list){try{store.set('v35models',JSON.stringify(list))}catch(e){while(list.length>1){list.shift();try{store.set('v35models',JSON.stringify(list));return}catch(x){}}}},
+    add(item){const l=this.all().filter(x=>x.name.toLowerCase()!==item.name.toLowerCase());l.push(item);while(l.length>14)l.shift();this.put(l)},
+    del(id){this.put(this.all().filter(x=>x.id!==id))}
+  };
+  const snapStr=C=>JSON.stringify(C.kind==='atom'?{st:C.st,view:C.view}:{spec:C.spec,view:C.view});
+  const NO_AI='I could not do that locally and the AI helper is not available. Add your Groq key in Settings to enable it.';
+
+  function makeCard(kind,data,o){
+    o=o||{};
+    const C={id:++CID,kind,view:{labels:true,explode:0},hist:[],fut:[],q:Promise.resolve(),tour:0,S:null,A:null,frozen:false,ready:null,live:true,cost:0};
+    if(kind==='atom')C.st=data;else C.spec=data;
+    C.title=kind==='atom'?(EL[data.p].name+' atom'):data.title;
+    C.orig=snapStr(C);
+    const mol0=kind==='spec'&&molOf(C.spec);
+    const d=addMsg('bot v35msg','<div class="v35"><div class="v35h"><span class="v35t"></span><span class="v35k"></span></div>'
+      +'<div class="v35v"><div class="v35tip"></div></div><div class="v35stat"></div>'
+      +'<div class="v35bar" data-r="chips"></div>'
+      +'<div class="v35bar" data-r="tools"></div>'
+      +'<div class="v35in"><input type="text" placeholder="Type a change, e.g. '+(kind==='atom'?'remove one electron':mol0?'replace oxygen with sulfur':'remove the lid')+'" autocomplete="off"><button class="ghost v35mic" title="Speak a change">Mic</button><button class="chip v35go">Go</button></div>'
+      +'<div class="v35log"></div><div class="v35q"></div>'
+      +'<details class="v35more"><summary>View options</summary><div data-r="opts"></div></details></div>');
+    C.el=d;const Q=s=>d.querySelector(s);C.Q=Q;
+    Q('.v35t').textContent=C.title;Q('.v35k').textContent=kind==='atom'?'atom model':mol0?'molecule':'3D model';
+    const host=Q('.v35v'),tip=Q('.v35tip'),logEl=Q('.v35log'),stat=Q('.v35stat'),input=Q('.v35in input');
+    C.alive=()=>d.isConnected;
+    C.log=(cls,text)=>{const e=document.createElement('div');e.className=cls;e.textContent=text;logEl.appendChild(e);while(logEl.children.length>40)logEl.firstChild.remove();logEl.scrollTop=logEl.scrollHeight;log.scrollTop=log.scrollHeight;return e};
+    C.say=(text,o2)=>{C.log('ev',text);return TTS.say(text,o2||{})};
+    C.heard=(t,fin)=>{input.value=t;if(fin)input.value=''};
+    C.micState=(on,hands)=>{const b=Q('.v35mic');b.classList.toggle('live',!!on);b.textContent=on?(hands?'Listening…':'Listening'):'Mic';const h=d.querySelector('[data-a=hands]');if(h)h.classList.toggle('on',!!(on&&hands))};
+    /* ---- history ---- */
+    C.push=()=>{C.hist.push(snapStr(C));if(C.hist.length>40)C.hist.shift();C.fut.length=0};
+    C.restore=s=>{const j=JSON.parse(s);if(C.kind==='atom')C.st=j.st;else C.spec=j.spec;C.view=j.view;syncOpts()};
+    /* ---- stats ---- */
+    C.stats=()=>{
+      let h=[];
+      if(C.kind==='atom'){const f=facts(C.st);h=[f.p+' protons',f.n+' neutrons',f.e+' electrons','charge '+fmtQ(f.q).replace(' (neutral)',''),f.ion,'mass number '+f.A]}
+      else{const m=molOf(C.spec);if(m)h=[molFormula(m.atoms),molMass(m.atoms).toFixed(2)+' g/mol',m.atoms.length+' atoms',m.bonds.length+' bonds'];else{let n=0;walk(C.spec.objects,()=>{n++});h=[n+' objects',(C.spec.parts||[]).length+' named parts']}}
+      stat.innerHTML=h.map(x=>'<span>'+esc(x)+'</span>').join('');
+    };
+    /* ---- viewer ---- */
+    C.init=async()=>{
+      await ensureThree();
+      if(C.S&&!C.S.dead)return;
+      const S=makeViewer(host,{auto:kind==='atom'?false:true});C.S=S;S.auto=!!C.view.auto;S.speed=C.view.speed==null?1:C.view.speed;
+      if(kind==='atom'){C.A=AtomView(S)}
+      S.onClick=e=>pick(e);
+      C.render(true);
+    };
+    C.render=first=>{
+      const S=C.S;if(!S||S.dead)return;
+      const keep=first?null:{dist:S.dist,gd:S.goal.dist,tg:S.tg.clone(),gt:S.goal.tg.clone(),th:S.th,ph:S.ph};
+      if(kind==='atom'){C.st.labels=true;C.A.build(C.st);applyView(S,C.view);if(first){C.A.fit(true)}else C.A.fit(false)}
+      else{renderSpec(S,C.spec,C.view);if(keep){S.dist=keep.dist;S.goal.dist=keep.gd;S.tg.copy(keep.tg);S.goal.tg.copy(keep.gt);S.th=keep.th;S.ph=keep.ph}}
+      C.stats();Q('.v35t').textContent=C.title=kind==='atom'?(EL[C.st.p].name+' atom'):C.spec.title;
+    };
+    function pick(e){
+      const S=C.S;if(!S)return;let objs=[];
+      S.root.traverse(n=>{if((n.isMesh||n.isInstancedMesh)&&n.visible)objs.push(n)});
+      const h=S.pick(e,objs);if(!h){tip.style.display='none';S.highlight(null);return}
+      const ob=h.object;let msg='',spk='';
+      if(kind==='atom'){
+        const q=ob.userData.qn;
+        if(q&&q.exc){msg='Excited electron: promoted from n='+q.from+' to n='+q.n+'. It will fall back and emit a photon.';spk=msg}
+        else if(q&&q.l!==undefined){msg='Electron in the '+q.sub+' subshell: n='+q.n+', l='+q.l+' ('+SUBL[q.l]+'), ml='+(q.ml>0?'+':'')+q.ml+', spin '+(q.ms>0?'up (+½)':'down (−½)')+'.';spk='This electron is in the '+q.sub+' subshell. n equals '+q.n+', l equals '+q.l+', m l equals '+q.ml+', and its spin is '+(q.ms>0?'up':'down')+'.'}
+        else if(q){msg='Electron in shell n='+q.n+'.';spk=msg}
+        else if(ob.userData.nuc){const f=facts(C.st);msg='Nucleus of '+f.iso.name+': '+f.p+' protons (red) and '+f.n+' neutrons (blue). '+f.iso.st;spk=msg}
+        else return;
+        S.highlight(ob);
+      }else{
+        let top=ob;while(top.parent&&top.parent!==S.root)top=top.parent;const idx=top.userData.top,o=C.spec.objects[idx];
+        if(ob.userData.atom!==undefined){
+          const m=molOf(C.spec),a=m&&m.atoms[ob.userData.atom];
+          if(a){const nb=m.bonds.filter(b=>b[0]===ob.userData.atom||b[1]===ob.userData.atom).map(b=>m.atoms[b[0]===ob.userData.atom?b[1]:b[0]].el+(b[2]>1?' ('+(b[2]===2?'double':'triple')+')':''));
+            const el=EL[findEl(a.el)];msg=(el?el.name:a.el)+' atom, bonded to '+(nb.join(', ')||'nothing')+'.';spk=msg;S.highlight(ob)}
+        }else if(o){
+          const nm=o.name||o.label||o.t,p=(C.spec.parts||[]).find(p=>p.name.toLowerCase()===String(nm).toLowerCase()||String(nm).toLowerCase().indexOf(p.name.toLowerCase())>=0);
+          msg=nm+(p&&p.desc?': '+p.desc:'');spk=msg;S.highlight(top);
+        }
+      }
+      if(!msg)return;tip.textContent=msg;tip.style.display='block';C.log('ev',msg);TTS.say(spk);
+    }
+    /* ---- freeze / thaw to limit WebGL contexts ---- */
+    C.freeze=()=>{
+      if(C.frozen||!C.S||C.S.dead)return;
+      let img='';try{img=C.S.snapshot()}catch(e){}C.S.dispose();C.S=null;C.A=null;C.frozen=true;
+      const fz=document.createElement('div');fz.className='v35fz';fz.innerHTML=(img?'<img alt="">':'')+'<button class="chip">Tap to bring this model back</button>';if(img)fz.querySelector('img').src=img;
+      fz.querySelector('button').onclick=async()=>{fz.remove();C.frozen=false;try{await C.init();liveCap(C)}catch(e){C.log('err',e.message)}};
+      host.appendChild(fz);
+    };
+    /* ---- buttons ---- */
+    const bar=Q('[data-r=tools]'),chips=Q('[data-r=chips]'),opts=Q('[data-r=opts]');
+    const mkB=(parent,label,fn,attr,cls)=>{const b=document.createElement('button');b.className=cls||'chip';b.textContent=label;if(attr)b.dataset.a=attr;b.onclick=fn;parent.appendChild(b);return b};
+    const cmdB=(label,text)=>mkB(chips,label,()=>C.command(text,'chip'));
+    if(kind==='atom'){cmdB('− electron','remove one electron');cmdB('+ electron','add one electron');cmdB('+ neutron','add one neutron');cmdB('− proton','remove one proton');cmdB('Ionize','ionize');cmdB('Neutral','make it neutral');cmdB('Excite','excite the electron');cmdB('Fall back','let it fall back');cmdB('Orbitals','show the orbitals');cmdB('Cloud','cloud model');cmdB('Bohr','bohr model')}
+    else if(mol0){cmdB('Remove H','remove one hydrogen');cmdB('Space-filling','space filling');cmdB('Sticks','sticks');cmdB('Ball & stick','ball and stick');cmdB('Bond lengths','show bond lengths');cmdB('Angles','show angles');cmdB('Hydrogenate','hydrogenate')}
+    else{(C.spec.parts||[]).slice(0,9).forEach(p=>mkB(chips,p.name,()=>C.command('highlight '+p.name,'chip')));}
+    mkB(bar,'Explain',()=>C.command('explain this','chip'));
+    mkB(bar,'Tour',()=>C.command('give me a tour','chip'),'tour');
+    mkB(bar,'Undo',()=>C.command('undo','chip'));mkB(bar,'Redo',()=>C.command('redo','chip'));mkB(bar,'Reset',()=>C.command('reset','chip'));
+    mkB(bar,'Hands-free',()=>{if(Mic.on&&Mic.hands)Mic.stop();else Mic.start(C,true)},'hands');
+    mkB(bar,'Quiz',()=>C.command('quiz me','chip'));
+    mkB(bar,'Stop voice',()=>{TTS.stop();C.stopTour()});
+    mkB(bar,'PNG',()=>C.command('export png','chip'));mkB(bar,'OBJ',()=>C.command('export obj','chip'));mkB(bar,'JSON',()=>C.command('export json','chip'));
+    mkB(bar,'Save',()=>C.command('save','chip'));mkB(bar,'Fullscreen',()=>C.command('fullscreen','chip'));
+    Q('.v35mic').onclick=()=>{if(Mic.on&&Mic.card===C)Mic.stop();else Mic.start(C,false)};
+    const go=()=>{const v=input.value.trim();if(v){input.value='';C.command(v,'type')}};
+    Q('.v35go').onclick=go;input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();go()}});
+    /* view options */
+    const rngRow=(txt,min,max,step,get,set)=>{const l=document.createElement('label');l.textContent=txt+' ';const r=document.createElement('input');r.type='range';r.min=min;r.max=max;r.step=step;r.value=get();r.oninput=()=>set(+r.value);l.appendChild(r);opts.appendChild(l);return r};
+    const chkRow=(txt,get,set)=>{const l=document.createElement('label');const c=document.createElement('input');c.type='checkbox';c.checked=!!get();c.onchange=()=>set(c.checked);l.appendChild(c);l.appendChild(document.createTextNode(txt));opts.appendChild(l);return c};
+    const ctl={};
+    ctl.speed=rngRow('Speed',0,3,.05,()=>C.view.speed==null?1:C.view.speed,v=>{C.view.speed=v;if(C.S)C.S.speed=v});
+    if(!(kind==='atom')){ctl.explode=rngRow('Explode',0,3,.05,()=>C.view.explode||0,v=>{C.view.explode=v});ctl.clip=rngRow('Slice',5,100,1,()=>C.view.clip?C.view.clip.frac*100:100,v=>{C.view.clip=v>=99?null:{axis:(C.view.clip&&C.view.clip.axis)||'y',frac:v/100};applyV()})}
+    ctl.wire=chkRow('Wireframe',()=>C.view.wire,v=>{C.view.wire=v;applyV()});
+    ctl.xray=chkRow('X-ray (see through)',()=>C.view.xray,v=>{C.view.xray=v;applyV()});
+    ctl.labels=chkRow('Labels',()=>C.view.labels!==false,v=>{C.view.labels=v;applyV()});
+    ctl.grid=chkRow('Grid',()=>C.view.grid,v=>{C.view.grid=v;applyV()});
+    ctl.auto=chkRow('Auto-rotate',()=>C.view.auto,v=>{C.view.auto=v;if(C.S)C.S.auto=v});
+    ctl.voice=chkRow('Speak automatically',()=>TTS.on,v=>TTS.setOn(v));
+    rngRow('Voice speed',.6,1.5,.02,()=>TTS.rate,v=>{TTS.rate=v;store.set('v35rate',String(v))});
+    const sel=document.createElement('select');sel.innerHTML='<option value="">Background…</option><option value="#07030c">Dark</option><option value="#101c33">Blue night</option><option value="#f3f1ec">Light</option><option value="#000000">Black</option>';sel.onchange=()=>{if(sel.value&&C.S)C.S.setBg(sel.value)};opts.appendChild(sel);
+    function applyV(){if(C.S&&!C.S.dead)applyView(C.S,C.view)}
+    function syncOpts(){
+      if(ctl.speed)ctl.speed.value=C.view.speed==null?1:C.view.speed;if(ctl.explode)ctl.explode.value=C.view.explode||0;if(ctl.clip)ctl.clip.value=C.view.clip?C.view.clip.frac*100:100;
+      ctl.wire.checked=!!C.view.wire;ctl.xray.checked=!!C.view.xray;ctl.labels.checked=C.view.labels!==false;ctl.grid.checked=!!C.view.grid;ctl.auto.checked=!!C.view.auto;
+      if(C.S){C.S.speed=C.view.speed==null?1:C.view.speed;C.S.auto=!!C.view.auto}
+    }
+    /* ---- tour ---- */
+    C.stopTour=()=>{if(C.tour){C.tour++;C.tourOn=false;const b=d.querySelector('[data-a=tour]');if(b)b.classList.remove('on');if(C.S)C.S.highlight(null)}};
+    C.runTour=async()=>{
+      const id=++C.tour;C.tourOn=true;const b=d.querySelector('[data-a=tour]');if(b)b.classList.add('on');
+      const steps=[];
+      if(kind==='atom'){
+        const f=facts(C.st);
+        steps.push({t:'Let us look at '+f.name.toLowerCase()+(f.q?' as '+f.ion:'')+'. The nucleus at the centre holds '+f.p+' protons, in red, and '+f.n+' neutrons, in blue. '+f.iso.name+' is '+f.iso.st.replace(/^./,c=>c.toLowerCase()),n:0});
+        f.sh.forEach((c,i)=>{if(c>0)steps.push({t:'Shell n equals '+(i+1)+' holds '+pl(c,'electron')+(c===2*(i+1)*(i+1)?'. That is the maximum for this shell, so it is full.':', and it can hold up to '+2*(i+1)*(i+1)+'.'),n:i+1})});
+        steps.push({t:'In total the configuration is '+cfgSay(C.st.occ)+'. '+(f.unp?pl(f.unp,'electron')+' are unpaired, so it is paramagnetic.':'All electrons are paired, so it is diamagnetic.')+' The net charge is '+fmtQ(f.q)+'.',n:0});
+      }else if(mol0){steps.push({t:C.spec.summary||'',n:0})}
+      else{
+        if(C.spec.summary)steps.push({t:C.spec.summary,n:0});
+        (C.spec.parts||[]).forEach(p=>steps.push({t:p.name+'. '+p.desc,part:p.name}));
+      }
+      for(const s of steps){
+        if(C.tour!==id)return;
+        const S=C.S;
+        if(S){
+          if(kind==='atom'){if(s.n&&C.A&&C.A.grps[s.n]){S.highlight(C.A.grps[s.n]);S.focus(C.A.grps[s.n],1.3)}else{S.highlight(null);C.A.fit(false)}}
+          else if(s.part){const refs=matchRefs(C.spec,s.part);if(refs.length){const nd=S.root.children.find(n=>n.userData.top===refs[0].top);if(nd){S.highlight(nd);S.focus(nd,1.4)}}}
+        }
+        C.log('ev',s.t);
+        if(TTS.on&&'speechSynthesis' in window)await TTS.say(s.t,{max:700});else await sleep(Math.min(9000,1500+s.t.length*45));
+        await sleep(350);
+      }
+      if(C.tour===id){C.stopTour();if(C.S){C.S.highlight(null);if(kind==='atom')C.A.fit(false);else C.S.fit(false)}C.log('ev','Tour finished.')}
+    };
+    /* ---- quiz ---- */
+    C.quiz=()=>{
+      let Qs=[];
+      if(kind==='atom')Qs=atomQuiz(C.st);
+      else if(mol0){
+        const m=mol0,f=molFormula(m.atoms),opt=(r,w)=>{const a=[...new Set([String(r)].concat(w.map(String)))].slice(0,4);a.sort(()=>Math.random()-.5);return a};
+        let o=opt(m.atoms.length,[m.atoms.length+1,m.atoms.length-1,m.atoms.length+2]);Qs.push({q:'How many atoms does this molecule have?',options:o,answer:o.indexOf(String(m.atoms.length)),why:'It has '+m.atoms.length+' atoms ('+f+').'});
+        o=opt(m.bonds.length,[m.bonds.length+1,m.bonds.length-1,m.bonds.length+2]);Qs.push({q:'How many bonds are drawn?',options:o,answer:o.indexOf(String(m.bonds.length)),why:'There are '+m.bonds.length+' bonds (a double bond counts once here).'});
+        const ms=Math.round(molMass(m.atoms));o=opt(ms,[ms+2,ms-2,ms+14]);Qs.push({q:'Roughly what is the molar mass in g/mol?',options:o,answer:o.indexOf(String(ms)),why:'Adding atomic masses gives about '+molMass(m.atoms).toFixed(1)+' g/mol.'});
+      }else{
+        const ps=(C.spec.parts||[]).filter(p=>p.desc);
+        ps.slice(0,5).forEach(p=>{const w=ps.filter(x=>x!==p).sort(()=>Math.random()-.5).slice(0,3).map(x=>x.name),o=[p.name].concat(w).sort(()=>Math.random()-.5);Qs.push({q:'Which part is this? "'+p.desc+'"',options:o,answer:o.indexOf(p.name),why:p.name+': '+p.desc})});
+      }
+      Qs=Qs.slice(0,4);const qd=Q('.v35q');
+      if(!Qs.length){C.log('err','This model has no described parts to quiz on yet.');return}
+      let i=0,score=0;
+      const show=()=>{
+        if(i>=Qs.length){qd.innerHTML='<div class="v35info">Quiz finished: you scored '+score+' out of '+Qs.length+'.</div>';C.say('Quiz finished. You scored '+score+' out of '+Qs.length+'.');return}
+        const q=Qs[i];qd.innerHTML='<div class="v35info"><b>'+esc(q.q)+'</b></div><div class="v35opt"></div><div class="v35info"></div>';
+        const box=qd.querySelector('.v35opt'),fb=qd.lastElementChild;TTS.say(q.q);
+        q.options.forEach((t,k)=>{const b=document.createElement('button');b.className='chip';b.textContent=t;b.onclick=()=>{
+          [...box.children].forEach((x,j)=>{x.disabled=true;if(j===q.answer)x.classList.add('ok')});
+          if(k===q.answer){score++;fb.textContent='Correct. '+q.why}else{b.classList.add('no');fb.textContent='Not quite. '+q.why}
+          TTS.say(fb.textContent);const nx=document.createElement('button');nx.className='chip';nx.textContent=i+1<Qs.length?'Next question':'Finish';nx.onclick=()=>{i++;show()};fb.appendChild(document.createElement('br'));fb.appendChild(nx);
+        };box.appendChild(b)});
+      };
+      show();
+    };
+    /* ---- the command executor ---- */
+    const mol=()=>kind==='spec'?molOf(C.spec):null;
+    const apply=async(msg,o2)=>{C.render();C.stats();o2=o2||{};if(msg)C.say(msg);if(o2.fx)try{await Promise.race([o2.fx(),sleep(3000)])}catch(e){}};
+    C.command=(text,src)=>{const p=C.q.then(()=>run(text,src)).catch(e=>{C.log('err',String(e&&e.message||e))});C.q=p;return p};
+    async function run(text,src){
+      ACTIVE=C;C.last=Date.now();
+      if(C.frozen){C.log('err','This model is paused to save graphics memory. Tap it to bring it back.');return}
+      if(!C.S){await C.init()}
+      C.log('you',(src==='voice'?'🎤 ':'')+text);
+      const cmd=parseCmd(text,C);
+      if(cmd&&cmd.t!=='stopvoice'&&cmd.t!=='voice'&&cmd.t!=='rate'&&cmd.t!=='tour')TTS.stop();
+      if(cmd&&cmd.t!=='tour'&&C.tourOn)C.stopTour();
+      if(!cmd)return fallback(text);
+      return exec(cmd,text);
+    }
+    function ph2part(ph){const p=(C.spec.parts||[]).find(p=>{const a=p.name.toLowerCase(),b=String(ph).toLowerCase();return a===b||a.indexOf(b)>=0||b.indexOf(a)>=0});return p}
+    async function exec(cmd,text){
+      const S=C.S,V=C.view;
+      switch(cmd.t){
+        case 'undo':{if(!C.hist.length)return C.log('ev','Nothing to undo.');C.fut.push(snapStr(C));C.restore(C.hist.pop());return apply('Undone. Back to the previous state.')}
+        case 'redo':{if(!C.fut.length)return C.log('ev','Nothing to redo.');C.hist.push(snapStr(C));C.restore(C.fut.pop());return apply('Redone.')}
+        case 'reset':{C.push();C.restore(C.orig);C.view.explode=0;syncOpts();await apply('Reset to the original model.');S.fit(false);return}
+        case 'stopvoice':TTS.stop();return;
+        case 'voice':TTS.setOn(cmd.on);ctl.voice.checked=cmd.on;return C.say(cmd.on?'Voice is on. I will speak about every change.':'Voice muted. I will keep writing what happens.',{force:cmd.on});
+        case 'rate':TTS.rate=clamp(TTS.rate+cmd.v,.6,1.5);store.set('v35rate',String(TTS.rate));return C.say('Speaking '+(cmd.v>0?'faster':'slower')+' now.',{force:true});
+        case 'what':{const last=[...logEl.querySelectorAll('.ev')].pop();return C.say(last?last.textContent:'Nothing has changed yet. Try: remove an electron.',{force:true})}
+        case 'tour':return C.runTour();
+        case 'quiz':return C.quiz();
+        case 'info':{
+          let t;if(kind==='atom')t=describeAtom(C.st);else if(mol()){const m=mol();t=molNarr(m,C.spec.title)}else t=(C.spec.summary||'')+(C.spec.parts&&C.spec.parts.length?' The main parts are: '+C.spec.parts.map(p=>p.name).join(', ')+'. Tap any part to hear about it.':'');
+          return C.say(t,{force:true,max:2200});
+        }
+        case 'save':{
+          const nm=cmd.name||C.title;gal.add({id:Date.now().toString(36),name:nm,kind:C.kind,ts:Date.now(),data:C.kind==='atom'?{st:C.st}:{spec:C.spec}});
+          return C.say('Saved as '+nm+'. Say "my models" to open it later.');
+        }
+        case 'export':{
+          const fn=(C.title||'model').replace(/[^\w]+/g,'_').slice(0,40);
+          if(cmd.fmt==='png'){dl(fn+'.png',S.snapshot());return C.say('Picture saved.')}
+          if(cmd.fmt==='obj'){if(kind==='atom')return C.say('OBJ export is for solid scenes and molecules. Use PNG or JSON for atoms.');dlText(fn+'.obj',toOBJ(S));return C.say('OBJ file downloaded. Open it in Blender or any 3D viewer.')}
+          dlText(fn+'.json',JSON.stringify(C.kind==='atom'?{type:'vision-atom',st:C.st}:{type:'vision-scene',spec:C.spec},null,1),'application/json');return C.say('JSON data downloaded.');
+        }
+        case 'fullscreen':{try{if(document.fullscreenElement)await document.exitFullscreen();else await d.querySelector('.v35').requestFullscreen()}catch(e){C.log('err','Fullscreen is not available here.')}return}
+        case 'labels':{V.labels=cmd.on;ctl.labels.checked=cmd.on;if(cmd.on&&cmd.atoms&&mol()){C.push();mol().atomLabels=true;C.render()}else applyV();return C.log('ev',cmd.on?'Labels shown.':'Labels hidden.')}
+        case 'zoom':{S.goal.dist=clamp(S.goal.dist*cmd.f,S.min,S.max);return}
+        case 'resetview':{S.fit(false);S.highlight(null);S.th=S.th;return}
+        case 'angle':{const m={top:[.7,.05],above:[.7,.05],bottom:[.7,Math.PI-.05],below:[.7,Math.PI-.05],front:[0,Math.PI/2],side:[Math.PI/2,Math.PI/2],back:[Math.PI,Math.PI/2]}[cmd.w];S.auto=false;V.auto=false;ctl.auto.checked=false;S.th=m[0];S.ph=m[1];return C.log('ev','Viewing from the '+cmd.w+'.')}
+        case 'auto':{V.auto=cmd.on;S.auto=cmd.on;ctl.auto.checked=cmd.on;return C.log('ev','Auto-rotate '+(cmd.on?'on.':'off.'))}
+        case 'speed':{V.speed=cmd.v!==undefined?cmd.v:clamp((V.speed==null?1:V.speed)*cmd.mul,.05,4);S.speed=V.speed;ctl.speed.value=V.speed;return C.log('ev','Animation speed '+V.speed.toFixed(2)+'.')}
+        case 'wire':V.wire=cmd.on;ctl.wire.checked=cmd.on;applyV();return C.log('ev','Wireframe '+(cmd.on?'on.':'off.'));
+        case 'xray':V.xray=cmd.on;ctl.xray.checked=cmd.on;applyV();return C.log('ev','X-ray '+(cmd.on?'on: everything is see-through.':'off.'));
+        case 'grid':V.grid=cmd.on;ctl.grid.checked=cmd.on;applyV();return C.log('ev','Grid '+(cmd.on?'on.':'off.'));
+        case 'bg':S.setBg(cmd.hex);return C.log('ev','Background changed.');
+        case 'explode':{if(kind==='atom')return C.say('Exploded view works on scenes and molecules. For an atom, try "show the orbitals".');V.explode=cmd.v;if(ctl.explode)ctl.explode.value=cmd.v;return C.say(cmd.v?'Exploded view: the parts move apart so you can see each one.':'Parts back together.')}
+        case 'clip':{V.clip=cmd.frac>=.995?null:{axis:cmd.axis||(V.clip&&V.clip.axis)||'y',frac:cmd.frac};if(ctl.clip)ctl.clip.value=V.clip?V.clip.frac*100:100;applyV();return C.say(V.clip?'Cut along the '+V.clip.axis+' axis, keeping '+Math.round(V.clip.frac*100)+' percent, so you can see the inside.':'Whole model restored.')}
+        case 'measure':{const m=mol();if(!m)return;C.push();m.measure=cmd.v;C.render();return C.say(cmd.v?'Showing '+(cmd.v==='both'?'bond lengths in angstroms and bond angles in degrees.':cmd.v==='bonds'?'bond lengths in angstroms.':'bond angles in degrees.'):'Measurements hidden.')}
+        case 'mstyle':{const m=mol();if(!m)return;C.push();m.style=cmd.v;C.render();return C.say(({space:'Space-filling view: each atom is drawn at its van der Waals size, so you see the real volume the molecule takes up.',ball:'Ball and stick view: balls are atoms and sticks are bonds.',stick:'Stick view: only bonds are drawn, which makes the skeleton easy to see.'})[cmd.v])}
+      }
+      if(cmd.t[0]==='a'&&cmd.t[1]==='_'&&kind==='atom')return atomOp(cmd);
+      if(cmd.t[0]==='m'&&kind==='spec'&&mol())return molOp(cmd);
+      if(cmd.t[0]==='p'&&cmd.t[1]==='_'&&kind==='spec')return partOp(cmd);
+      return fallback(text);
+    }
+    /* ---- atom operations ---- */
+    async function atomOp(cmd){
+      const st=C.st,b=clone(st),A=C.A;let msg='',fx=null;
+      const fin=()=>{if(st.sub&&!st.occ[st.sub])st.sub=null};
+      C.push();
+      switch(cmd.t){
+        case 'a_part':{
+          const f0=facts(st),k0=cmd.k==='all'?(cmd.what==='e'?f0.e:cmd.what==='p'?Math.max(0,f0.p-1):f0.n):cmd.k;
+          const k=Math.min(k0,cmd.what==='e'?(cmd.op==='rem'?f0.e:118-f0.e):cmd.what==='p'?(cmd.op==='rem'?f0.p-1:118-f0.p):(cmd.op==='rem'?f0.n:200));
+          if(k<=0){C.hist.pop();return C.say(cmd.op==='rem'?(cmd.what==='p'?'A '+f0.name.toLowerCase()+' nucleus cannot lose its last proton and stay an atom. Try removing electrons or neutrons.':'There are none left to remove.'):'That is the limit for this model.')}
+          if(cmd.what==='e'){
+            st.exc=null;
+            if(cmd.op==='rem'){
+              const ns=[];let shellMissed=false;
+              for(let i=0;i<k;i++){
+                let key=removeDefault(st.occ,cmd.shell);
+                if(!key&&cmd.shell){shellMissed=true;key=removeDefault(st.occ)}
+                if(!key)break;ns.push(+key[0]);
+              }
+              const pos=ns.slice(0,4).map(n=>A.shellPos(n));fin();
+              msg=(shellMissed?'There was no electron in that shell, so I took one from the outermost shell. ':'')+explainElectrons(b,st,cmd.shell||0);
+              fx=async()=>{const ps=[];pos.forEach((p,i)=>ps.push(sleep(i*220).then(()=>A.fxOut(p))));A.fxFlash('#7be8ff');await Promise.all(ps)};
+            }else{
+              const ns=[];
+              for(let i=0;i<k;i++){
+                let key=null;
+                if(cmd.shell){for(let l=0;l<cmd.shell&&l<4;l++){const kk=cmd.shell+SUBL[l];if((st.occ[kk]||0)<capOf(kk)){st.occ[kk]=(st.occ[kk]||0)+1;key=kk;break}}}
+                if(!key)key=addDefault(st.occ);
+                if(!key)break;ns.push(+key[0]);
+              }
+              msg=explainElectrons(b,st,0);
+              fx=async()=>{const arr=[];ns.slice(0,4).forEach((n,i)=>{const l=A.elecs[n];if(l&&l.length)arr.push(sleep(i*250).then(()=>A.fxIn(l[l.length-1-i<0?0:l.length-1-i])))});await Promise.all(arr)};
+            }
+          }else if(cmd.what==='p'){st.p=clamp(st.p+(cmd.op==='rem'?-k:k),1,118);msg=explainProton(b,st);fx=()=>A.fxFlash('#ff4d5a')}
+          else{st.n=clamp(st.n+(cmd.op==='rem'?-k:k),0,200);msg=explainNeutron(b,st);fx=()=>A.fxFlash('#7fb0ff')}
+          break;
+        }
+        case 'a_sete':case 'a_setp':case 'a_setn':{
+          if(cmd.t==='a_sete'){st.occ=ionOcc(st.p,clamp(cmd.n,0,118));st.exc=null;msg=explainElectrons(b,st,0)}
+          else if(cmd.t==='a_setp'){st.p=clamp(cmd.n,1,118);msg=explainProton(b,st)}
+          else{st.n=clamp(cmd.n,0,200);msg=explainNeutron(b,st)}
+          fx=()=>A.fxFlash('#ffd54a');break;
+        }
+        case 'a_charge':{const e=clamp(st.p-cmd.q,0,118);st.occ=ionOcc(st.p,e);st.exc=null;fin();msg=explainElectrons(b,st,0);fx=()=>A.fxFlash(cmd.q>0?'#ff9a9a':'#9ab8ff');break}
+        case 'a_ion':{
+          const f=facts(st);let q;
+          if(cmd.all)q=f.p;else if(cmd.dir===1)q=f.q+1;else if(cmd.dir===-1)q=f.q-1;else q=f.q!==0?f.q+(f.q>0?1:-1):(GROUPQ[f.el.g]||1);
+          st.occ=ionOcc(st.p,clamp(st.p-q,0,118));st.exc=null;fin();msg=explainElectrons(b,st,0);fx=()=>A.fxFlash(q>0?'#ff9a9a':'#9ab8ff');break;
+        }
+        case 'a_neutral':{st.occ=ionOcc(st.p,st.p);st.exc=null;fin();msg=explainElectrons(b,st,0);break}
+        case 'a_el':{
+          const n0=cmd.n;const ns=newAtom(cmd.z,{mode:st.mode,labels:true,colors:st.colors});if(n0!==undefined)ns.n=n0;
+          C.st=ns;msg=explainElement(ns);if(n0!==undefined){const f=facts(ns);msg+=' This is '+f.iso.name+'. '+f.iso.st}
+          fx=()=>C.A.fxFlash('#ffd54a');break;
+        }
+        case 'a_mass':{st.n=Math.max(0,cmd.A-st.p);msg=explainNeutron(b,st);fx=()=>A.fxFlash('#7fb0ff');break}
+        case 'a_mode':{
+          st.mode=cmd.mode;if(cmd.mode==='orb'){st.sub=cmd.sub&&st.occ[cmd.sub]?cmd.sub:(cmd.sub&&cmd.sub.length===2?cmd.sub:null);st.orb=cmd.orb||'all'}
+          const sub=A.subOf(st);
+          msg=cmd.mode==='bohr'?'Bohr model: electrons orbit the nucleus in circular shells. It is simple and good for counting, though real electrons are not tiny planets.'
+            :cmd.mode==='cloud'?'Quantum cloud model: each dot cloud shows where electrons of that shell are likely to be found. Real electrons have no fixed path.'
+            :'Showing the '+sub+' orbitals. '+ORBTXT[sub[1]]+' Each orbital holds at most two electrons with opposite spin. Bright lobes are occupied; faint ones are empty.';
+          break;
+        }
+        case 'a_exc':case 'a_fall':{
+          const sc=shellCounts(st.occ);
+          if(cmd.t==='a_exc'){
+            const from=cmd.from||(st.exc?st.exc.from:sc.length),to=cmd.to||from+1;
+            if(!sc[from-1]||to<=from||to>7){C.hist.pop();return C.say(!sc[from-1]?'Shell '+from+' has no electron to excite.':to>7?'That level is beyond what this model draws.':'An electron absorbs energy to jump UP, so the target level must be higher than n='+from+'.')}
+            st.exc={from,to};st.mode=st.mode==='orb'?'bohr':st.mode;const ph=photon(st.p,from,to);
+            msg=explainExc(st,from,to,false);
+            fx=async()=>{A.fxFlash(wlHex(ph.nm));await A.fxPhoton(wlHex(ph.nm),A.shellPos(to),new THREE.Vector3(1,.3,0),true)};
+          }else{
+            let from,to;
+            if(st.exc){from=st.exc.to;to=cmd.to&&cmd.to<from?cmd.to:st.exc.from}
+            else if(cmd.from&&cmd.to){from=cmd.from;to=cmd.to}
+            else{C.hist.pop();return C.say('The electrons are already in their ground state, so nothing can fall. Say "excite the electron" first, then "let it fall back".')}
+            const ph=photon(st.p,from,to);msg=explainExc(st,from,to,true);st.exc=null;
+            fx=async()=>{A.fxFlash(wlHex(ph.nm));await A.fxPhoton(wlHex(ph.nm),A.shellPos(to),new THREE.Vector3(1,.3,0),false)};
+          }
+          break;
+        }
+        case 'a_color':{st.colors[cmd.what]=cmd.hex;msg='Coloured the '+({e:'electrons',p:'protons',n:'neutrons'})[cmd.what]+'.';break}
+      }
+      fin();C.title=EL[C.st.p].name+' atom';
+      await apply(msg,{fx});
+    }
+    /* ---- molecule operations ---- */
+    async function molOp(cmd){
+      const m=mol(),before=molFormula(m.atoms);let msg='';C.push();
+      const finish=async(extra)=>{
+        C.spec.summary=molNarr(m,C.spec.title);
+        const f=molFormula(m.atoms);if(f!==before&&!/\(modified\)/.test(C.spec.title))C.spec.title=C.spec.title+' (modified)';
+        await apply((extra||msg)+' '+molSummary(C.spec,m));
+      };
+      if(cmd.t==='mrem'){
+        const idx=molPick(m,cmd.el,cmd.k);if(!idx.length){C.hist.pop();return C.say('There is no '+cmd.el+' atom in this molecule.')}
+        if(idx.length>=m.atoms.length){C.hist.pop();return C.say('That would remove every atom.')}
+        const nbs=new Set();m.bonds.forEach(b=>{if(idx.indexOf(b[0])>=0&&idx.indexOf(b[1])<0)nbs.add(m.atoms[b[1]].el);if(idx.indexOf(b[1])>=0&&idx.indexOf(b[0])<0)nbs.add(m.atoms[b[0]].el)});
+        molRemoveAtoms(m,idx);
+        return finish('Removed '+pl(idx.length,cmd.el+' atom')+(nbs.size?', which '+(idx.length>1?'were':'was')+' bonded to '+[...nbs].join(', '):'')+'. The atoms they were attached to now have unfilled bonds, so this is a radical or fragment that would normally react straight away.');
+      }
+      if(cmd.t==='mrep'){
+        const idx=m.atoms.map((a,i)=>a.el===cmd.from?i:-1).filter(i=>i>=0);
+        if(!idx.length){C.hist.pop();return C.say('There is no '+cmd.from+' atom in this molecule.')}
+        (cmd.all?idx:[idx[0]]).forEach(i=>{m.atoms[i].el=cmd.to;delete m.atoms[i].color});molRelax(m);
+        const dEN=(EL[findEl(cmd.to)]||{}).p;
+        return finish('Replaced '+(cmd.all?'every ':'one ')+EL[findEl(cmd.from)].name.toLowerCase()+' atom with '+EL[findEl(cmd.to)].name.toLowerCase()+'. The new atom has a different size and electronegativity, so bond lengths, bond angles and polarity change; the geometry has been re-calculated.');
+      }
+      if(cmd.t==='madd'){
+        const n=molAdd(m,cmd.el,cmd.target,cmd.k);if(!n){C.hist.pop();return C.say('I could not find a place to attach that atom.')}
+        return finish('Added '+pl(n,EL[findEl(cmd.el)].name.toLowerCase()+' atom')+(cmd.target?' to '+cmd.target:' at the most open site')+'.');
+      }
+      if(cmd.t==='mhyd'){
+        const n=molHydrogenate(m);if(!n){C.hist.pop();return C.say('There are no carbon double or triple bonds to hydrogenate.')}
+        return finish('Hydrogenation: '+pl(n,'multiple bond')+' lowered by one order, and two hydrogen atoms added across each. The carbons are now more saturated, with more sp3 geometry.');
+      }
+      if(cmd.t==='mbond'){
+        const want={single:1,double:2,triple:3},from=want[cmd.from],to=want[cmd.to];
+        const bd=m.bonds.find(b=>b[2]===from);if(!bd){C.hist.pop();return C.say('There is no '+cmd.from+' bond in this molecule.')}
+        bd[2]=to;
+        if(to<from){[bd[0],bd[1]].forEach(t=>{for(let k=0;k<from-to&&m.atoms.length<200;k++){const P=m.atoms[t].pos;m.atoms.push({el:'H',pos:[P[0]+Math.random()-.5,P[1]+Math.random()-.5,P[2]+Math.random()-.5]});m.bonds.push([t,m.atoms.length-1,1])}})}
+        molRelax(m);
+        return finish('Changed a '+cmd.from+' bond to a '+cmd.to+' bond'+(to<from?' and added hydrogens to keep every atom at a normal valence':'')+'. '+(to>from?'Shorter, stronger and stiffer.':'Longer, weaker and freer to rotate.'));
+      }
+      C.hist.pop();
+    }
+    /* ---- generic part operations ---- */
+    const T=n=>/^[A-Z]/.test(n)?n:'the '+n;
+  async function partOp(cmd){
+      const spec=C.spec,ph=cmd.ph||cmd.refs,refs=ph?matchRefs(spec,ph):[];
+      if(cmd.t==='p_showall'){C.push();walk(spec.objects,o=>{delete o.hidden});await apply('Everything is visible again.');return}
+      if(cmd.t==='p_color'&&cmd.all){C.push();walk(spec.objects,o=>{if(o.t!=='axes')o.color=cmd.hex});await apply('Coloured the whole model '+cmd.name+'.');return}
+      if(!refs.length){return C.say('I could not find a part called "'+ph+'" in this model. The parts are: '+((spec.parts||[]).map(p=>p.name).join(', ')||'not named')+'.')}
+      const names=namesOf(refs),part=ph2part(names)||ph2part(ph),dsc=part&&part.desc?' '+part.desc:'';
+      if(cmd.t==='p_select'){
+        const S=C.S,nd=S.root.children.find(n=>n.userData.top===refs[0].top);if(nd){S.highlight(nd);S.focus(nd,1.4);setTimeout(()=>{if(C.S)C.S.highlight(null)},6000)}
+        return C.say(names+'.'+(dsc||' This is one of the parts of the model.'));
+      }
+      C.push();
+      if(cmd.t==='p_remove'){
+        if(spec.objects.length-refs.length<1){C.hist.pop();return C.say('That would remove everything.')}
+        specPart(spec,'remove',refs);
+        await apply('Removed '+T(names)+'.'+dsc);
+        const hint=await consequence(names);if(hint)C.say(hint);return;
+      }
+      if(cmd.t==='p_hide'){specPart(spec,'hide',refs);return apply('Hid '+T(names)+'. Say "show '+T(names).split(',')[0]+'" to bring it back.')}
+      if(cmd.t==='p_show'){specPart(spec,'show',refs);return apply('Showing '+T(names)+' again.')}
+      if(cmd.t==='p_isolate'){specPart(spec,'isolate',refs);await apply('Showing only '+T(names)+'.'+dsc);const S=C.S,nd=S.root.children.find(n=>n.userData.top===refs[0].top);if(nd)S.focus(nd,1.5);return}
+      if(cmd.t==='p_color'){specPart(spec,'color',refs,cmd.hex);return apply('Coloured '+T(names)+' '+cmd.name+'.')}
+      if(cmd.t==='p_opacity'){specPart(spec,'opacity',refs,cmd.v);return apply(cmd.v<1?cap1(T(names))+' is now see-through.':cap1(T(names))+' is solid again.')}
+      if(cmd.t==='p_scale'){specPart(spec,'scale',refs,cmd.k);return apply('Made '+T(names)+' '+(cmd.k>1?'bigger.':'smaller.'))}
+    }
+    async function consequence(names){
+      if(!store.get('groq'))return '';
+      try{const r=await aiCall([{role:'system',content:'You are a science tutor speaking aloud. Reply in 2 or 3 plain sentences, no markdown, no lists.'},{role:'user',content:'A 3D model of "'+C.spec.title+'" had this part removed: '+names+'. Explain what would happen to the real thing if that part were missing.'}],{max:350,effort:'low',temperature:.3});return r.replace(/[*#_`]/g,'').trim()}catch(e){return ''}
+    }
+    /* ---- fallbacks: AI question answering / AI scene refinement ---- */
+    function ctxText(){
+      if(kind==='atom')return describeAtom(C.st);
+      const m=mol();if(m)return C.spec.title+'. '+molNarr(m,C.spec.title);
+      return C.spec.title+'. '+(C.spec.summary||'')+' Parts: '+(C.spec.parts||[]).map(p=>p.name+' ('+p.desc+')').join('; ');
+    }
+    async function fallback(text){
+      if(!store.get('groq'))return C.say(NO_AI);
+      const isQ=/\?\s*$/.test(text)||/^\s*(what|why|how|when|where|which|who|is|are|does|do|can|could|would|will|tell me|explain|describe|compare|difference)\b/i.test(text);
+      if(isQ||kind==='atom'||mol()){
+        C.log('ev','Thinking…');
+        const r=await aiCall([{role:'system',content:'You are a science tutor talking to a student who is looking at a 3D model. Current model: '+ctxText().slice(0,1800)+'\nAnswer in at most 110 words, plain spoken sentences, no markdown, no lists. If the student asks for a change the app cannot make, say what to type or say instead (for atoms: remove or add an electron, proton or neutron; make an ion; excite the electron; show orbitals; for molecules: remove or replace atoms, show bond lengths).'},{role:'user',content:text}],{max:500,effort:'low',temperature:.3});
+        return C.say(r.replace(/[*#_`]/g,'').trim());
+      }
+      C.log('ev','Updating the model with AI…');C.push();
+      const ns=await aiBuild(null,C.spec,text);
+      if(!ns||!ns.objects)throw new Error('The AI did not return a valid update.');
+      ns.title=ns.title||C.spec.title;C.spec=ns;await apply('Done. I updated the model: '+text+'. If it is not what you meant, say undo.');
+    }
+    /* ---- start ---- */
+    syncOpts();
+    CARDS.push(C);ACTIVE=C;
+    C.ready=(async()=>{try{await C.init();liveCap(C)}catch(e){host.innerHTML='<div class="v35fz"><div class="v35info" style="padding:14px;text-align:center">'+esc(e.message)+'</div></div>'}})();
+    C.intro=async()=>{
+      await C.ready;
+      let t;
+      if(kind==='atom')t=describeAtom(C.st);
+      else if(mol0)t=C.spec.summary;
+      else t=(C.spec.summary||'Here is the model.')+(C.spec.parts&&C.spec.parts.length?' It has these parts: '+C.spec.parts.map(p=>p.name).join(', ')+'. Tap a part to hear about it, or tell me to change it by typing or speaking.':' Tell me what to change by typing or speaking.');
+      C.log('ev',t);TTS.say(brief(t,kind==='atom'?560:900),{max:1400});
+    };
+    log.scrollTop=log.scrollHeight;
+    return C;
+  }
+  function liveCap(C){
+    const live=CARDS.filter(c=>c.S&&!c.S.dead&&!c.frozen);
+    while(live.length>3){const o=live.shift();if(o!==C)o.freeze()}
+  }
+  const openAtom=(z,extra)=>{const C=makeCard('atom',newAtom(z,extra),{});C.intro();return C};
+  const openSpec=spec=>{const C=makeCard('spec',spec,{});C.intro();return C};
+  function openSaved(item){
+    if(item.kind==='atom'){const C=makeCard('atom',item.data.st,{});C.intro();return C}
+    const C=makeCard('spec',item.data.spec,{});C.intro();return C;
+  }
+
+  /* =====================================================================
+     9) CHAT HOOK: create models from chat, edit the active model, saved models
+     ===================================================================== */
+  const CRE=/\b(make|build|create|generate|show|draw|display|render|construct|design|give me|let me see|i want to see|visuali[sz]e|simulate|illustrate|model|demonstrate|open)\b/i;
+  function wants3D(t){
+    const l=String(t).toLowerCase();
+    if(l.length>260||!CRE.test(l))return false;
+    if(/\bperiodic table\b/.test(l))return false;
+    if(/\b(ai|language|llm|gpt|groq|voice|speech) models?\b|\bwhich model\b|\bmodels? (name|id|list)\b|\bmy models\b|\bsaved models\b/.test(l))return false;
+    const three=/\b(3\s?-?d|three[- ]?d(?:imensional)?)\b/.test(l);
+    if(/\b(images?|pictures?|photos?|videos?|songs?|music|logo|poster|wallpaper|games?|websites?|webpage|app|code|script|essay|story|poem|email|slides?|ppt|presentation|spreadsheet|chart|stickman|shooter|racer)\b/.test(l)&&!three)return false;
+    if(/\b(games?|stickman|shooter|racer)\b/.test(l))return false;
+    if(three)return true;
+    if(/\b(model|diagram|structure|visuali[sz]ation|simulation|animation|molecule|atom|isotope|orbitals?)\b/.test(l)&&/\b(of|for)\b|\b(atom|molecule)\b/.test(l))return true;
+    return false;
+  }
+  async function createFromChat(t){
+    $$('#log .typing').forEach(x=>x.remove());
+    const z=atomRequest(t);
+    if(z){openAtom(z);return true}
+    const lib=libLookup(t);
+    if(lib){openSpec(lib);return true}
+    if(!store.get('groq')){botSay('I can build common atoms, molecules, shapes and maths surfaces without AI. For anything else, add your Groq key in Settings and ask again.',{silent:true});return true}
+    const ph=addMsg('bot','<span class="dots"><i></i><i></i><i></i></span> Building a 3D model of "'+esc(subjectOf(t)||t)+'"… this can take 20 to 60 seconds.');
+    try{
+      const r=await aiBuild(t);
+      ph.remove();
+      if(r.atom)openAtom(r.atom);else openSpec(r);
+    }catch(e){ph.remove();botSay('I could not build that model: '+(e.message||e),{silent:true})}
+    return true;
+  }
+  const rank=C=>{const kids=[...log.children],i=kids.indexOf(C.el);return i<0?999:kids.length-1-i};
+  function galleryMsg(){
+    const l=gal.all().slice().reverse();
+    if(!l.length){botSay('You have no saved models yet. Make one, then say "save it".');return}
+    const d=addMsg('bot','<b>Your saved 3D models</b><div class="v35bar">'+l.map(x=>'<button class="chip" data-id="'+esc(x.id)+'">'+esc(x.name)+'</button>').join('')+'</div><div class="v35k">Tap one to open it. Say "delete model NAME" to remove one.</div>');
+    d.addEventListener('click',e=>{const b=e.target.closest('button[data-id]');if(!b)return;const it=gal.all().find(x=>x.id===b.dataset.id);if(it)openSaved(it)});
+  }
+  const _route35=route;
+  route=async function(t){
+    const s=String(t).trim();let m;
+    try{
+      if(/^(?:please\s+)?(?:show |open |list )?(?:my |the )?(?:saved|my) (?:3d )?models?$/i.test(s)||/^my models$/i.test(s)){galleryMsg();return true}
+      if(m=s.match(/^(?:delete|remove|forget) (?:the )?(?:saved )?model\s+(.+)$/i)){const it=gal.all().find(x=>x.name.toLowerCase()===m[1].trim().toLowerCase());if(it){gal.del(it.id);botSay('Deleted the saved model '+it.name+'.',{silent:true})}else botSay('I could not find a saved model called '+m[1]+'.',{silent:true});return true}
+      if(m=s.match(/^(?:open|load|show|bring back) (?:my |the )?(?:saved )?(?:3d )?(?:model )?(.+)$/i)){const it=gal.all().find(x=>x.name.toLowerCase()===m[1].trim().toLowerCase());if(it){$$('#log .typing').forEach(x=>x.remove());openSaved(it);return true}}
+      if(/^(?:stop|quiet|silence|shut up|be quiet)(?: talking| speaking| now)?$/i.test(s)&&(TTS.busy||CARDS.length)){TTS.stop();if(ACTIVE)ACTIVE.stopTour();try{speechSynthesis.cancel()}catch(e){}$$('#log .typing').forEach(x=>x.remove());return true}
+      const C=ACTIVE&&ACTIVE.alive()?ACTIVE:null;
+      if(C&&s.length<170&&!/^(?:please\s+)?(?:make|build|create|generate|draw|show|display)\b.*\b(3d|model|diagram)\b.*\b(of|for)\b/i.test(s)){
+        const r=rank(C),cmd=parseCmd(s,C);
+        if(cmd&&((cmd.strong&&r<=18)||r<=5)){$$('#log .typing').forEach(x=>x.remove());C.command(s,'chat');return true}
+      }
+      if(wants3D(s))return await createFromChat(s);
+    }catch(e){$$('#log .typing').forEach(x=>x.remove());botSay('⚠ '+(e.message||e),{silent:true});return true}
+    return _route35(t);
+  };
+  window.V35={makeCard,openAtom,openSpec,parseCmd,fromSmiles,ionOcc,embed,parseSmiles,wants3D,matchRefs,libLookup,atomRequest,ensureThree,cards:CARDS,TTS,Mic,gal};
+})()}catch(e){console.error('PACK 35 (3D models, voice, maths display) failed:',e)}
 </script>
 </body>
 </html>
