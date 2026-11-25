@@ -10924,6 +10924,270 @@ try{(function(){
   LIB.forEach(e=>{const er=balanceError(libToRx(e));if(er)console.warn('PACK 36 library problem in "'+e.t+'": '+er)});
 })()}catch(e){console.error('PACK 36 (Groq voice, Lab, Reactions) failed:',e)}
 /* ================= END PACK 36 ================= */
+/* ================= PACK 37: just say "Vision" and it listens (hands-free wake word, free, no server needed) ================= */
+/* Paste this AFTER PACK 36, inside the same script block, before the closing script tag.                                       */
+/*  - A small round "V" button appears on every tab. Tap it once to turn on always-listening. Tap the gear for settings.        */
+/*  - Say "Vision" and wait for the chime, then speak. Or say it all at once: "Vision, remove one electron".                     */
+/*  - After an answer it keeps listening for a few seconds, so you can follow up without saying "Vision" again.                  */
+/*  - Say "Vision stop" while it talks to interrupt it. Say "cancel" or "never mind" after the chime to go back to waiting.     */
+/*  - Link ?listen=1 opens Vision already listening: use it for a Siri Shortcut, a Google Assistant routine or a home-screen icon. */
+/*  Limits: Chrome/Edge only, and the page must be open with the screen on. A web page cannot listen while the phone is locked.   */
+try{(function(){
+  if(window.__pack37)return;
+  window.__pack37=1;
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const TT=(window.V35&&V35.TTS)||null;
+  const cfg={cmdMs:9000,followMs:7000,earlyMs:650,quietPolls:3};
+  const opt={
+    conv:()=>store.get('v37conv','1')==='1',
+    lock:()=>store.get('v37lock','1')==='1',
+    chime:()=>store.get('v37chime','1')==='1',
+    word:()=>((store.get('v37word','')||'vision').toLowerCase().trim()||'vision')
+  };
+  const VARS=['vision','visions','vishan','vishun','vizhan','vishon','fision','wision','vission','bhishan','bision','vijan'];
+  const esc37=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const wakeRe=()=>{const w=opt.word(),list=w==='vision'?VARS:[esc37(w)];return new RegExp('\\b('+list.join('|')+')\\b[\\s,.:;!?-]*','i')};
+  const CANCEL=/^(cancel|never ?mind|stop listening|forget it|no|nothing)\W*$/i;
+  const STOPW=/\b(stop|quiet|cancel|enough|shut up|silence)\b/i;
+
+  /* ---------- sounds ---------- */
+  let ac=null;
+  function tone(f1,f2,dur){
+    if(!opt.chime())return;
+    try{
+      ac=ac||new (window.AudioContext||window.webkitAudioContext)();if(ac.state==='suspended')ac.resume();
+      const o=ac.createOscillator(),g=ac.createGain(),t=ac.currentTime;
+      o.type='sine';o.frequency.setValueAtTime(f1,t);o.frequency.linearRampToValueAtTime(f2,t+dur);
+      g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.16,t+.02);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+      o.connect(g);g.connect(ac.destination);o.start(t);o.stop(t+dur+.03);
+    }catch(e){}
+  }
+  const speaking=()=>{
+    try{
+      if(TT&&TT.busy)return true;
+      if(window.speechSynthesis&&speechSynthesis.speaking)return true;
+      const a=window._va;if(a&&!a.paused&&!a.ended)return true;
+    }catch(e){}
+    return false;
+  };
+  function stopSpeech(){
+    try{if(TT)TT.stop()}catch(e){}
+    try{speechSynthesis.cancel()}catch(e){}
+    try{if(window._va)window._va.pause()}catch(e){}
+  }
+
+  /* ---------- the button ---------- */
+  const css=document.createElement('style');
+  css.textContent='#v37{position:fixed;right:14px;bottom:calc(92px + env(safe-area-inset-bottom,0px));z-index:60;display:flex;flex-direction:column;align-items:flex-end;gap:6px;font-size:14px}'
+   +'#v37 .v37cap{max-width:min(70vw,300px);background:rgba(10,4,12,.92);border:1px solid var(--line);border-radius:12px;padding:6px 10px;color:var(--text);display:none;word-break:break-word}'
+   +'#v37 .v37row{display:flex;gap:6px;align-items:center}'
+   +'#v37 .v37fab{width:54px;height:54px;border-radius:50%;border:2px solid var(--line);background:radial-gradient(circle at 35% 30%,#3a1420,#14060b);color:var(--gold);font:900 20px Orbitron,sans-serif;cursor:pointer;box-shadow:0 2px 14px rgba(0,0,0,.6);padding:0}'
+   +'#v37 .v37gear{width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:rgba(10,4,12,.8);color:var(--muted);cursor:pointer;padding:0;font-size:15px}'
+   +'#v37[data-s=off] .v37fab{opacity:.7;color:var(--muted)}'
+   +'#v37[data-s=wake] .v37fab{border-color:var(--gold);animation:v37slow 2.6s infinite}'
+   +'#v37[data-s=heard] .v37fab{border-color:var(--green);box-shadow:0 0 18px var(--green)}'
+   +'#v37[data-s=cmd] .v37fab{border-color:var(--red);color:#fff;background:radial-gradient(circle at 35% 30%,#e0313f,#6b0f18);animation:v37fast .9s infinite}'
+   +'#v37[data-s=busy] .v37fab{border-color:var(--gold);border-style:dashed;animation:v37spin 3s linear infinite}'
+   +'@keyframes v37slow{0%,100%{box-shadow:0 0 4px rgba(245,197,24,.2)}50%{box-shadow:0 0 16px rgba(245,197,24,.6)}}'
+   +'@keyframes v37fast{0%,100%{box-shadow:0 0 6px rgba(224,49,63,.4)}50%{box-shadow:0 0 22px rgba(224,49,63,.95)}}'
+   +'@keyframes v37spin{to{transform:rotate(360deg)}}'
+   +'#v37 .v37p{display:none;background:rgba(20,6,12,.97);border:1px solid var(--line);border-radius:14px;padding:12px;width:min(86vw,300px);color:var(--text)}'
+   +'#v37 .v37p label{display:flex;gap:8px;align-items:center;margin:6px 0;font-size:14px}#v37 .v37p input[type=checkbox]{width:auto;margin:0}'
+   +'#v37 .v37p input[type=text]{margin:4px 0;padding:6px 8px;font-size:14px}#v37 .v37p small{display:block;color:var(--muted);line-height:1.4;margin-top:6px}'
+   +'#v37 .v37p button{font:inherit;color:var(--gold);background:transparent;border:1px solid var(--line);border-radius:999px;padding:4px 12px;cursor:pointer;margin:2px 4px 2px 0}';
+  document.head.appendChild(css);
+  const root=document.createElement('div');root.id='v37';root.dataset.s='off';
+  root.innerHTML='<div class="v37p"></div><div class="v37cap"></div><div class="v37row"><button class="v37gear" title="Voice settings" aria-label="Voice settings">⚙</button><button class="v37fab" title="Vision voice" aria-label="Vision voice">V</button></div>';
+  document.body.appendChild(root);
+  const fab=root.querySelector('.v37fab'),gear=root.querySelector('.v37gear'),cap=root.querySelector('.v37cap'),pan=root.querySelector('.v37p');
+  let capT=0;
+  function caption(t,keep){
+    clearTimeout(capT);
+    if(!t){cap.style.display='none';return}
+    cap.textContent=t;cap.style.display='block';
+    if(!keep)capT=setTimeout(()=>{cap.style.display='none'},4200);
+  }
+
+  /* ---------- state machine ---------- */
+  let state='off',want=false,r=null,running=false,yielded=false,quick=0,t0=0,minIdx=0,lastLen=0,rs={},cmdT=0,wl=null;
+  function ui(s,txt,keep){state=s;root.dataset.s=s;if(txt!==undefined)caption(txt,keep)}
+  function startCmdTimer(ms){
+    clearTimeout(cmdT);
+    cmdT=setTimeout(()=>{if(state==='cmd'){tone(440,320,.14);toWake()}},ms);
+  }
+  function toWake(){clearTimeout(cmdT);if(want)ui('wake',''); else ui('off','')}
+  function enterCmd(chime,ms){
+    if(!want)return;
+    if(chime)tone(660,990,.16);
+    ui('cmd',chime?'Listening…':'Go ahead, I am still listening…',true);
+    startCmdTimer(ms||cfg.cmdMs);
+  }
+  async function submit(text){
+    clearTimeout(cmdT);text=String(text||'').trim();
+    if(!text){toWake();return}
+    if(CANCEL.test(text)){tone(440,320,.14);toWake();return}
+    ui('busy',text);
+    try{if(typeof busy!=='undefined'&&busy){toast('Vision is still busy with the last request.');waitDone();return}}catch(e){}
+    try{forceSpeak=true;$('#msg').value=text;send()}catch(e){console.error('PACK 37 send failed',e)}
+    waitDone();
+  }
+  function waitDone(){
+    const started=Date.now();let quiet=0;
+    const iv=setInterval(()=>{
+      if(state!=='busy'){clearInterval(iv);return}
+      let b=false;try{b=(typeof busy!=='undefined'&&busy)||speaking()}catch(e){}
+      quiet=b?0:quiet+1;
+      if(quiet>=cfg.quietPolls||Date.now()-started>150000){
+        clearInterval(iv);minIdx=lastLen;
+        if(want&&opt.conv())enterCmd(false,cfg.followMs);else toWake();
+      }
+    },300);
+  }
+  function handle(i,txt,fin){
+    if(i<minIdx)return;
+    const R=rs[i]||(rs[i]={done:false,early:false,t:0});
+    if(R.done||!txt)return;
+    if(state==='off')return;
+    const m=wakeRe().exec(txt),has=!!m&&m.index<=10,rest=has?txt.slice(m.index+m[0].length).trim():'';
+    if(state==='busy'){
+      if(has&&STOPW.test(rest)){stopSpeech();caption('Stopped.');R.done=true}
+      else if(fin)R.done=true;
+      return;
+    }
+    if(state==='wake'||state==='heard'){
+      if(!has){if(fin)R.done=true;return}
+      root.dataset.s='heard';caption(txt,true);clearTimeout(R.t);
+      if(fin){R.done=true;if(rest)submit(rest);else enterCmd(true);return}
+      if(rest){return}
+      R.t=setTimeout(()=>{if(!R.done&&(state==='wake'||state==='heard')){R.early=true;enterCmd(true)}},cfg.earlyMs);
+      return;
+    }
+    if(state==='cmd'){
+      if(R.early){
+        if(has&&rest){caption(rest,true);if(fin){R.done=true;submit(rest)}}
+        else if(fin)R.done=true;
+        return;
+      }
+      const text=has?rest:txt;
+      caption(text,true);
+      if(fin){R.done=true;if(text.length>1)submit(text);else startCmdTimer(cfg.cmdMs)}
+    }
+  }
+  function onResult(e){
+    quick=0;
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const res=e.results[i];
+      try{handle(i,((res[0]&&res[0].transcript)||'').trim(),!!res.isFinal)}catch(x){console.error('PACK 37',x)}
+    }
+    lastLen=e.results.length;
+  }
+
+  /* ---------- the recognizer ---------- */
+  function startRec(){
+    if(!SR||!want||running||yielded||document.hidden)return;
+    try{if(window.V35&&V35.Mic&&V35.Mic.on)return}catch(e){}
+    try{if(typeof listening!=='undefined'&&listening&&typeof rec!=='undefined'&&rec)rec.stop()}catch(e){}
+    r=new SR();r.lang=store.get('v35lang','en-IN');r.continuous=true;r.interimResults=true;r.maxAlternatives=1;
+    r.onstart=()=>{t0=Date.now();minIdx=0;lastLen=0;rs={}};
+    r.onresult=onResult;
+    r.onerror=e=>{
+      if(/not-allowed|service-not-allowed/.test(e.error)){
+        want=false;running=false;store.set('v37wake','0');ui('off','');sync();
+        toast('Microphone is blocked. Allow it in the browser or site settings, then tap the V button.');
+      }else if(e.error==='audio-capture')toast('No microphone was found.');
+    };
+    r.onend=()=>{
+      running=false;
+      if(!want||yielded)return;
+      const dur=Date.now()-t0;quick=dur<2500?Math.min(quick+1,6):0;
+      setTimeout(startRec,quick?Math.min(5000,400*Math.pow(2,quick)):250);
+    };
+    try{r.start();running=true}catch(e){running=false;setTimeout(startRec,900)}
+  }
+  function abortRec(){try{if(r){r.onend=null;r.abort()}}catch(e){}running=false}
+  async function lock(on){
+    try{
+      if(on&&opt.lock()&&navigator.wakeLock&&!wl){wl=await navigator.wakeLock.request('screen');wl.addEventListener('release',()=>{wl=null})}
+      else if(!on&&wl){await wl.release();wl=null}
+    }catch(e){}
+  }
+  function sync(){const c=$('#chkWake');if(c)c.checked=want;const g=pan.querySelector('[data-k=on]');if(g)g.checked=want}
+  function start(){
+    if(!SR){toast('Voice listening needs Chrome or Edge. iPhone Safari does not allow it.');return false}
+    if(want){yielded=false;if(!running)startRec();return true}
+    want=true;yielded=false;store.set('v37wake','1');ui('wake','Listening for “'+opt.word()+'”.');sync();lock(true);startRec();return true;
+  }
+  function stop(){
+    want=false;store.set('v37wake','0');clearTimeout(cmdT);abortRec();ui('off','');lock(false);sync();
+  }
+  function listenNow(){
+    if(!want&&!start())return;
+    if(state==='busy'){stopSpeech();minIdx=lastLen}
+    enterCmd(true);
+  }
+  window.V37={start,stop,listenNow,get state(){return state},cfg,_on:()=>want};
+
+  /* ---------- hooks into the rest of Vision ---------- */
+  fab.onclick=()=>{
+    try{if(ac&&ac.state==='suspended')ac.resume()}catch(e){}
+    if(!want){start();return}
+    if(state==='busy'){stopSpeech();return}
+    if(state==='cmd'){toWake();return}
+    listenNow();
+  };
+  const chk=$('#chkWake');
+  if(chk)chk.onchange=e=>{if(e.target.checked)start();else stop()};
+  const mic=$('#mic');
+  if(mic){const o=mic.onclick;mic.onclick=function(ev){if(want){listenNow();return}return o&&o.call(this,ev)}}
+  if(window.V35&&V35.Mic){
+    const ms=V35.Mic.start;
+    V35.Mic.start=function(){if(want){yielded=true;abortRec()}return ms.apply(this,arguments)};
+  }
+  setInterval(()=>{
+    if(!want)return;
+    const cardMic=!!(window.V35&&V35.Mic&&V35.Mic.on);
+    if(yielded&&!cardMic){yielded=false}
+    if(!running&&!yielded&&!document.hidden)startRec();
+  },1500);
+  document.addEventListener('visibilitychange',()=>{
+    if(!want)return;
+    if(document.hidden){abortRec()}else{lock(true);setTimeout(startRec,300)}
+  });
+
+  /* ---------- settings panel ---------- */
+  const link=(location.origin+location.pathname).replace(/index\.html$/,'')+'?listen=1';
+  pan.innerHTML='<b>Voice wake-up</b>'
+   +'<label><input type="checkbox" data-k="on"> Always listening</label>'
+   +'<label>Wake word <input type="text" data-k="word" placeholder="vision" maxlength="20"></label>'
+   +'<label><input type="checkbox" data-k="conv"> Keep listening after an answer</label>'
+   +'<label><input type="checkbox" data-k="lock"> Keep the screen awake while listening</label>'
+   +'<label><input type="checkbox" data-k="chime"> Chime when I hear you</label>'
+   +'<div><button data-k="test">Listen now</button><button data-k="copy">Copy shortcut link</button></div>'
+   +'<small>Works while Vision is open and the screen is on (Chrome or Edge). Use the shortcut link in a Siri Shortcut or a Google Assistant routine so “Hey Siri / Hey Google, Vision” opens Vision already listening.</small>';
+  const q=k=>pan.querySelector('[data-k='+k+']');
+  q('on').checked=want;q('conv').checked=opt.conv();q('lock').checked=opt.lock();q('chime').checked=opt.chime();q('word').value=store.get('v37word','');
+  q('on').onchange=e=>{e.target.checked?start():stop()};
+  q('conv').onchange=e=>store.set('v37conv',e.target.checked?'1':'0');
+  q('lock').onchange=e=>{store.set('v37lock',e.target.checked?'1':'0');if(want)lock(e.target.checked)};
+  q('chime').onchange=e=>store.set('v37chime',e.target.checked?'1':'0');
+  q('word').onchange=e=>{store.set('v37word',e.target.value.trim().toLowerCase());if(want)ui(state,'Listening for “'+opt.word()+'”.')};
+  q('test').onclick=()=>{pan.style.display='none';listenNow()};
+  q('copy').onclick=()=>{try{navigator.clipboard.writeText(link);toast('Link copied: '+link)}catch(e){toast(link)}};
+  gear.onclick=()=>{pan.style.display=pan.style.display==='block'?'none':'block'};
+
+  /* ---------- start-up: remembered setting, and the ?listen=1 link ---------- */
+  const deep=/[?&]listen=1\b/.test(location.search)||location.hash==='#listen';
+  if(deep){try{history.replaceState(null,'',location.pathname)}catch(e){}}
+  setTimeout(()=>{
+    if(deep){
+      if(start()){
+        enterCmd(true);
+        setTimeout(()=>{if(want&&!running){toast('Tap the V button once to start listening.');ui('wake','Tap V to start listening.',true)}},2600);
+      }
+    }else if(store.get('v37wake')==='1'&&!document.hidden)start();
+  },1000);
+})()}catch(e){console.error('PACK 37 (wake word) failed:',e)}
+/* ================= END PACK 37 ================= */
 </script>
 </body>
 </html>
