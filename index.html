@@ -10121,6 +10121,809 @@ try{(function(){
   };
   window.V35={makeCard,openAtom,openSpec,parseCmd,fromSmiles,ionOcc,embed,parseSmiles,wants3D,matchRefs,libLookup,atomRequest,ensureThree,cards:CARDS,TTS,Mic,gal};
 })()}catch(e){console.error('PACK 35 (3D models, voice, maths display) failed:',e)}
+ /* ================= PACK 36: Groq AI voice + smart models inside the 3D Lab + chemical reactions in 3D ================= */
+/* Paste this AFTER PACK 35 (it needs Pack 34 and Pack 35), inside the same script block, before the closing script tag. */
+/*  1. Everything the model cards say (info, tour, quiz, tapped parts) is spoken in the Groq AI voice (browser voice = fallback).   */
+/*  2. 3D Lab tab gets two new sections:  Smart models  (build, edit by typing or speaking, tour, quiz, save, export)             */
+/*     and  Reactions  (see a chemical reaction as atoms breaking and forming bonds, with energy graph and narration).             */
+/*  3. Chat: "show the reaction of methane burning", "CH4 + 2O2 -> CO2 + 2H2O", "what happens when sodium reacts with water".     */
+try{(function(){
+  if(window.__pack36)return;
+  if(!window.V35||!V35.TTS||!V35.embed||!window.V34||!V34.EL){console.error('PACK 36 needs PACK 34 and PACK 35 pasted above it.');return}
+  window.__pack36=1;
+  const THREE_URL='https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const T=V35.TTS;
+
+  /* =====================================================================
+     A. GROQ AI VOICE for every spoken explanation
+     ===================================================================== */
+  const origSay=T.say.bind(T),origStop=T.stop.bind(T);
+  let gen=0,audio=null,curRes=null,offUntil=0,warned=false;
+  const wavCache=new Map();
+  const gvoice=()=>store.get('gvoice')||'troy';
+  const useGroq=()=>store.get('v36engine','groq')==='groq'&&!!store.get('groq')&&Date.now()>offUntil;
+  T.stop=function(){
+    gen++;this.busy=0;
+    if(audio){try{audio.pause();audio.src=''}catch(e){}audio=null}
+    if(curRes){const r=curRes;curRes=null;r()}
+    origStop();
+  };
+  function chunkText(txt){
+    const parts=txt.match(/[^.!?;:]+[.!?;:]*\s*/g)||[txt],out=[];let cur='';
+    parts.forEach(p=>{
+      p=p.trim();if(!p)return;
+      while(p.length>190){let cut=p.lastIndexOf(' ',190);if(cut<60)cut=190;if(cur){out.push(cur);cur=''}out.push(p.slice(0,cut));p=p.slice(cut).trim()}
+      if(!p)return;
+      if((cur+' '+p).trim().length>190&&cur){out.push(cur);cur=p}else cur=(cur+' '+p).trim();
+    });
+    if(cur)out.push(cur);return out.slice(0,10);
+  }
+  async function fetchWav(txt){
+    const key=gvoice()+'|'+txt;if(wavCache.has(key))return wavCache.get(key);
+    const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),25000);
+    try{
+      const r=await fetch('https://api.groq.com/openai/v1/audio/speech',{method:'POST',headers:{Authorization:'Bearer '+store.get('groq'),'Content-Type':'application/json'},body:JSON.stringify({model:'canopylabs/orpheus-v1-english',input:txt,voice:gvoice(),response_format:'wav'}),signal:ctl.signal});
+      if(!r.ok){const b=await r.text().catch(()=>'');const e=new Error(r.status+' '+b.slice(0,200));e.status=r.status;e.body=b;throw e}
+      const blob=await r.blob();if(wavCache.size>60)wavCache.delete(wavCache.keys().next().value);wavCache.set(key,blob);return blob;
+    }finally{clearTimeout(to)}
+  }
+  function playBlob(blob){
+    return new Promise(res=>{
+      const u=URL.createObjectURL(blob),a=new Audio(u);audio=a;
+      const done=()=>{try{URL.revokeObjectURL(u)}catch(e){}if(curRes){const r=curRes;curRes=null;r()}};
+      curRes=()=>{try{URL.revokeObjectURL(u)}catch(e){}res()};
+      try{a.preservesPitch=true}catch(e){}a.playbackRate=T.rate||1;
+      a.onended=done;a.onerror=done;a.play().catch(done);
+    });
+  }
+  T.say=function(text,o){
+    o=o||{};
+    if(!o.force&&!T.on)return Promise.resolve();
+    if(!useGroq())return origSay(text,o);
+    T.stop();const my=gen;
+    const txt=T.clean(text).slice(0,o.max||1800);if(!txt)return Promise.resolve();
+    const parts=chunkText(txt);if(!parts.length)return Promise.resolve();
+    T.busy=1;
+    return (async()=>{
+      let i=0,pending=fetchWav(parts[0]);pending.catch(()=>{});
+      try{
+        for(;i<parts.length;i++){
+          const blob=await pending;if(my!==gen)return;
+          pending=i+1<parts.length?fetchWav(parts[i+1]):null;if(pending)pending.catch(()=>{});
+          await playBlob(blob);if(my!==gen)return;
+        }
+      }catch(e){
+        if(my!==gen)return;
+        let why='the Groq voice is not available';
+        if(e.status===429){offUntil=Date.now()+70000;why='the Groq voice limit was reached (it comes back in about a minute)'}
+        else if(e.status===400&&/term/i.test(e.body||'')){offUntil=Date.now()+864e5;why='you must accept the voice model terms once at console.groq.com/playground (model canopylabs/orpheus-v1-english)'}
+        else if(e.status===401||e.status===403||e.status===404){offUntil=Date.now()+864e5;why='your key cannot use Groq voice ('+e.status+')'}
+        else offUntil=Date.now()+30000;
+        if(!warned||e.status===429){warned=true;toast('Using the browser voice because '+why+'.')}
+        try{await origSay(parts.slice(i).join(' '),{force:true,max:1800})}catch(x){}
+      }finally{if(my===gen)T.busy=0}
+    })();
+  };
+
+  /* =====================================================================
+     B. PURE CHEMISTRY CODE (structures, balancing, atom mapping, reaction library)
+     ===================================================================== */
+  /*PURE-START*/
+  const SUBD='\u2080\u2081\u2082\u2083\u2084\u2085\u2086\u2087\u2088\u2089';
+  const disp=f=>String(f).replace(/\d+/g,(m,off)=>off===0?m:m.split('').map(d=>SUBD[+d]).join(''));
+  const SYMS=new Set('H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce W Pt Au Hg Tl Pb Bi U'.split(' '));
+  const VAL={B:[3],C:[4],N:[3,5],O:[2],P:[3,5],S:[2,4,6],F:[1],Cl:[1],Br:[1],I:[1],Si:[4],Se:[2,4,6]};
+  function parseSmiles(s){
+    s=String(s||'').replace(/\s+/g,'');if(!s||s.length>400)return null;
+    const A=[],B=[],stack=[],ring={};let prev=-1,bo=0;
+    const add=a=>{A.push(a);const i=A.length-1;if(prev>=0)B.push([prev,i,bo||(A[prev].ar&&a.ar?1.5:1)]);prev=i;bo=0};
+    for(let i=0;i<s.length;){
+      const c=s[i];
+      if(c==='('){stack.push(prev);i++}
+      else if(c===')'){if(!stack.length)return null;prev=stack.pop();i++}
+      else if(c==='-'){bo=1;i++}else if(c==='='){bo=2;i++}else if(c==='#'){bo=3;i++}else if(c===':'){bo=1.5;i++}
+      else if(c==='/'||c==='\\')i++;
+      else if(c==='.'){prev=-1;bo=0;i++}
+      else if(c==='['){
+        const j=s.indexOf(']',i);if(j<0)return null;
+        const m=/^(\d*)([A-Za-z][a-z]?)(@{0,2})(?:(H)(\d*))?([+-]+\d*)?(?::\d+)?$/.exec(s.slice(i+1,j));if(!m)return null;
+        let el=m[2],ar=false;if(/^[a-z]/.test(el)){ar=true;el=el[0].toUpperCase()+el.slice(1)}
+        if(!SYMS.has(el))return null;
+        let q=0;if(m[6]){q=/\d/.test(m[6])?parseInt(m[6].slice(1),10)*(m[6][0]==='-'?-1:1):(m[6][0]==='-'?-1:1)*m[6].length}
+        add({el,ar,q,h:m[4]?(m[5]===''?1:+m[5]):0,br:true});i=j+1;
+      }
+      else if(/[A-Za-z]/.test(c)){
+        let el=c;const ar=c===c.toLowerCase();
+        if(c==='C'&&s[i+1]==='l'){el='Cl';i++}else if(c==='B'&&s[i+1]==='r'){el='Br';i++}else el=c.toUpperCase();
+        if(!VAL[el])return null;i++;add({el,ar,q:0,h:-1,br:false});
+      }
+      else if(/[0-9%]/.test(c)){
+        let d=c;if(c==='%'){d=s.substr(i+1,2);i+=3}else i++;
+        if(prev<0)return null;
+        if(ring[d]){const r=ring[d];delete ring[d];B.push([r.a,prev,bo||r.bo||(A[prev].ar&&A[r.a].ar?1.5:1)]);bo=0}else{ring[d]={a:prev,bo};bo=0}
+      }else return null;
+    }
+    if(stack.length||Object.keys(ring).length||!A.length)return null;
+    return {A,B};
+  }
+  function expandH(g){
+    const atoms=g.A.map(a=>({el:a.el,q:a.q||0,ar:!!a.ar})),bonds=g.B.map(b=>b.slice());
+    g.A.forEach((a,i)=>{
+      let h=a.h;
+      if(h<0){
+        let sum=0;g.B.forEach(b=>{if(b[0]===i||b[1]===i)sum+=b[2]});
+        const vals=VAL[a.el]||[4];
+        if(a.ar)h=Math.max(0,vals[0]-Math.ceil(sum-1e-9));
+        else{const v=vals.find(x=>x>=sum-1e-9);h=v===undefined?0:Math.round(v-sum)}
+      }
+      for(let k=0;k<h;k++){atoms.push({el:'H',q:0,ar:false});bonds.push([i,atoms.length-1,1])}
+    });
+    return {atoms,bonds};
+  }
+  function components(n,bonds){
+    const p=[];for(let i=0;i<n;i++)p.push(i);
+    const f=x=>{while(p[x]!==x){p[x]=p[p[x]];x=p[x]}return x};
+    bonds.forEach(b=>{p[f(b[0])]=f(b[1])});
+    const m={},keys=[];for(let i=0;i<n;i++){const r=f(i);if(!m[r]){m[r]=[];keys.push(r)}m[r].push(i)}
+    return keys.map(k=>m[k]);
+  }
+  const gcd=(a,b)=>b?gcd(b,a%b):a;
+  function countSide(list){
+    const c={};let q=0;
+    list.forEach(s=>{
+      const g=parseSmiles(s.smiles);if(!g)throw new Error('Could not read the structure of '+(s.name||s.f)+' ('+s.smiles+').');
+      const ex=expandH(g);ex.atoms.forEach(a=>{c[a.el]=(c[a.el]||0)+s.coef;q+=(a.q||0)*s.coef});
+    });
+    return {c,q};
+  }
+  function balanceError(rx){
+    try{
+      if(!Array.isArray(rx.reactants)||!Array.isArray(rx.products)||!rx.reactants.length||!rx.products.length)return 'The reaction needs reactants and products.';
+      const all=rx.reactants.concat(rx.products);
+      for(const s of all){if(!(s.coef>=1&&s.coef<=24&&Math.floor(s.coef)===s.coef))return 'Every coefficient must be a whole number from 1 to 24 ('+(s.name||s.f)+').'}
+      const R=countSide(rx.reactants),P=countSide(rx.products),els=new Set(Object.keys(R.c).concat(Object.keys(P.c))),bad=[];
+      els.forEach(e=>{if((R.c[e]||0)!==(P.c[e]||0))bad.push(e+': '+(R.c[e]||0)+' on the left, '+(P.c[e]||0)+' on the right')});
+      if(bad.length)return 'Not balanced in atoms ('+bad.join('; ')+').';
+      if(R.q!==P.q)return 'Not balanced in charge ('+R.q+' on the left, '+P.q+' on the right).';
+      return '';
+    }catch(e){return e.message}
+  }
+  function totalAtoms(list,div){let n=0;list.forEach(s=>{const g=parseSmiles(s.smiles);if(g)n+=expandH(g).atoms.length*(s.coef/(div||1))});return n}
+  function mapAtoms(R,P,Rpos,Ppos){
+    const nbr=S=>{const a=S.atoms.map(()=>[]);S.bonds.forEach(b=>{a[b[0]].push([b[1],b[2]]);a[b[1]].push([b[0],b[2]])});return a};
+    const rN=nbr(R),pN=nbr(P),n=R.atoms.length,map=new Array(P.atoms.length).fill(-1),used=new Array(n).fill(false);
+    const d2=(a,b)=>{const x=a[0]-b[0],y=a[1]-b[1],z=a[2]-b[2];return x*x+y*y+z*z};
+    const sig=(S,N,i)=>S.atoms[i].el+'|'+N[i].filter(q=>S.atoms[q[0]].el!=='H').map(q=>S.atoms[q[0]].el+q[1]).sort().join(',');
+    const pick=(j,c)=>{let best=-1,bd=1e18;c.forEach(i=>{const d=d2(Rpos[i],Ppos[j]);if(d<bd){bd=d;best=i}});return best};
+    const take=(j,i)=>{map[j]=i;used[i]=true};
+    const heavyR=[],heavyP=[];
+    R.atoms.forEach((a,i)=>{if(a.el!=='H')heavyR.push(i)});P.atoms.forEach((a,j)=>{if(a.el!=='H')heavyP.push(j)});
+    heavyP.forEach(j=>{const s=sig(P,pN,j),c=heavyR.filter(i=>!used[i]&&sig(R,rN,i)===s);if(c.length)take(j,pick(j,c))});
+    heavyP.forEach(j=>{if(map[j]>=0)return;const c=heavyR.filter(i=>!used[i]&&R.atoms[i].el===P.atoms[j].el);if(c.length)take(j,pick(j,c))});
+    P.atoms.forEach((a,j)=>{
+      if(a.el!=='H'||map[j]>=0)return;
+      const par=pN[j].find(q=>P.atoms[q[0]].el!=='H');
+      if(par&&map[par[0]]>=0){const r=map[par[0]],c=rN[r].map(q=>q[0]).filter(i=>R.atoms[i].el==='H'&&!used[i]);if(c.length)take(j,pick(j,c))}
+    });
+    P.atoms.forEach((a,j)=>{
+      if(a.el!=='H'||map[j]>=0)return;
+      const c=[];R.atoms.forEach((x,i)=>{if(x.el==='H'&&!used[i])c.push(i)});if(c.length)take(j,pick(j,c));
+    });
+    if(map.some(v=>v<0))throw new Error('The atoms of this reaction could not be matched up.');
+    return map;
+  }
+  function ringCenters(r,scale,rot){
+    const n=r.length;if(n===1)return [[0,0,0]];
+    const c=Math.cos(rot),s=Math.sin(rot);
+    if(n===2){const D=(r[0]+r[1])*scale;return [[-(r[1]/(r[0]+r[1]))*D*c,0,-(r[1]/(r[0]+r[1]))*D*s],[(r[0]/(r[0]+r[1]))*D*c,0,(r[0]/(r[0]+r[1]))*D*s]]}
+    let R=0,avg=0;r.forEach((v,i)=>{avg+=v;R=Math.max(R,(v+r[(i+1)%n])*scale/(2*Math.sin(Math.PI/n)))});avg/=n;
+    const out=[];for(let i=0;i<n;i++){const a=i/n*Math.PI*2+rot;out.push([Math.cos(a)*R,(n>5?(i%2?.4:-.4)*avg:0),Math.sin(a)*R])}
+    return out;
+  }
+  const S=(f,name,smiles,coef,state)=>({f,name,smiles,coef,state});
+  const LIB=[
+   {id:'ch4',t:'Combustion of methane',ty:'Combustion (redox)',m:[/methane|natural gas|\bch4\b/,/burn|combust|oxygen|\bo2\b|fire|flame|ignit/],cond:'a spark or flame',dH:-890,
+    obs:'A blue flame, plenty of heat, and carbon dioxide and water vapour (both invisible).',
+    exp:'Methane reacts with oxygen. The old bonds break and stronger C=O and O\u2013H bonds form. Because the new bonds are stronger than the old ones, the surplus energy is released as heat and light.',
+    R:[S('CH4','methane','C',1,'g'),S('O2','oxygen','O=O',2,'g')],P:[S('CO2','carbon dioxide','O=C=O',1,'g'),S('H2O','water','O',2,'g')]},
+   {id:'ethanol_ferm',t:'Fermentation of glucose',ty:'Fermentation (anaerobic)',m:[/ferment|yeast|brewing|alcoholic/],cond:'yeast enzymes, no oxygen',dH:-69,
+    obs:'Bubbles of carbon dioxide; the liquid slowly turns into alcohol.',
+    exp:'Yeast enzymes split one glucose molecule into two ethanol and two carbon dioxide molecules. A little energy is released, which the yeast uses to live.',
+    R:[S('C6H12O6','glucose','OCC1OC(O)C(O)C(O)C1O',1,'aq')],P:[S('C2H5OH','ethanol','CCO',2,'aq'),S('CO2','carbon dioxide','O=C=O',2,'g')]},
+   {id:'ester',t:'Esterification',ty:'Condensation (esterification)',m:[/ester|esterif|ethyl acetate|acetic acid.*ethanol|vinegar.*alcohol/],cond:'warm, with a little strong acid as catalyst',dH:null,
+    obs:'A fruity, nail-polish-like smell (ethyl acetate). The reaction is reversible, so it never fully finishes.',
+    exp:'The OH of the acid and the H of the alcohol leave together as water, and the remaining pieces join to make an ester. The energy change is close to zero, so an acid catalyst and removing water are used to push it forward.',
+    R:[S('CH3COOH','acetic acid','CC(=O)O',1,'l'),S('C2H5OH','ethanol','CCO',1,'l')],P:[S('CH3COOC2H5','ethyl acetate','CCOC(C)=O',1,'l'),S('H2O','water','O',1,'l')]},
+   {id:'ethanol',t:'Combustion of ethanol',ty:'Combustion (redox)',m:[/ethanol|alcohol|c2h5oh/,/burn|combust|oxygen|fire|flame/],cond:'a flame',dH:-1367,
+    obs:'A pale blue, almost invisible flame; carbon dioxide and water vapour form.',
+    exp:'Ethanol burns completely in plenty of oxygen. Every C\u2013H, C\u2013C, C\u2013O and O\u2013H bond is broken and rebuilt as C=O and O\u2013H bonds in carbon dioxide and water, releasing energy.',
+    R:[S('C2H5OH','ethanol','CCO',1,'l'),S('O2','oxygen','O=O',3,'g')],P:[S('CO2','carbon dioxide','O=C=O',2,'g'),S('H2O','water','O',3,'g')]},
+   {id:'propane',t:'Combustion of propane',ty:'Combustion (redox)',m:[/propane|\bc3h8\b|\blpg\b/,/burn|combust|oxygen|fire|flame/],cond:'a flame',dH:-2220,
+    obs:'A blue flame that gives out a lot of heat (the fuel in gas cylinders).',
+    exp:'Propane burns with oxygen to give carbon dioxide and water. It releases more energy per molecule than methane because it contains more carbon and hydrogen to oxidise.',
+    R:[S('C3H8','propane','CCC',1,'g'),S('O2','oxygen','O=O',5,'g')],P:[S('CO2','carbon dioxide','O=C=O',3,'g'),S('H2O','water','O',4,'g')]},
+   {id:'octane',t:'Combustion of octane (petrol)',ty:'Combustion (redox)',m:[/octane|petrol|gasoline|\bc8h18\b/,/burn|combust|oxygen|engine|fire/],cond:'a spark inside an engine',dH:-10942,
+    obs:'Hot expanding gases push the pistons. The equation is shown for two octane molecules so that all coefficients are whole numbers.',
+    exp:'Octane is a typical petrol molecule. Burning it with oxygen gives carbon dioxide and water and releases a large amount of energy.',
+    R:[S('C8H18','octane','CCCCCCCC',2,'l'),S('O2','oxygen','O=O',25,'g')],P:[S('CO2','carbon dioxide','O=C=O',16,'g'),S('H2O','water','O',18,'g')]},
+   {id:'photo',t:'Photosynthesis',ty:'Photosynthesis (endothermic redox)',m:[/photosynth/],cond:'light and chlorophyll',dH:2803,
+    obs:'Plants take in carbon dioxide and water and make glucose and oxygen, using light energy.',
+    exp:'Light energy is stored in the chemical bonds of glucose. The products have more energy than the reactants, so the reaction only runs when light supplies the energy.',
+    R:[S('CO2','carbon dioxide','O=C=O',6,'g'),S('H2O','water','O',6,'l')],P:[S('C6H12O6','glucose','OCC1OC(O)C(O)C(O)C1O',1,'aq'),S('O2','oxygen','O=O',6,'g')]},
+   {id:'resp',t:'Cellular respiration (glucose + oxygen)',ty:'Respiration (exothermic redox)',m:[/respiration|burning glucose|glucose.*oxygen/],cond:'enzymes in cells',dH:-2803,
+    obs:'Cells release energy from glucose, producing carbon dioxide and water.',
+    exp:'This is photosynthesis run backwards. Glucose is oxidised step by step, and the released energy is captured as ATP.',
+    R:[S('C6H12O6','glucose','OCC1OC(O)C(O)C(O)C1O',1,'aq'),S('O2','oxygen','O=O',6,'g')],P:[S('CO2','carbon dioxide','O=C=O',6,'g'),S('H2O','water','O',6,'l')]},
+   {id:'h2o',t:'Hydrogen burning in oxygen',ty:'Combustion / synthesis',m:[/hydrogen|\bh2\b/,/oxygen|\bo2\b|burn|combust|explo|water form|make water|forms? water/],cond:'a spark',dH:-572,
+    obs:'A pale blue flame; the only product is water. Mixtures of hydrogen and air are explosive, so this is for trained demonstrators only.',
+    exp:'Two hydrogen molecules and one oxygen molecule rearrange into two water molecules. The strong O\u2013H bonds that form release much more energy than it costs to break the H\u2013H and O=O bonds.',
+    R:[S('H2','hydrogen','[H][H]',2,'g'),S('O2','oxygen','O=O',1,'g')],P:[S('H2O','water','O',2,'g')]},
+   {id:'electro',t:'Electrolysis of water',ty:'Decomposition (electrolysis)',m:[/electrolysis|split(ting)? (of )?water|water splitting/],cond:'an electric current',dH:572,
+    obs:'Bubbles of hydrogen form at the negative electrode and oxygen at the positive one, with twice as much hydrogen as oxygen by volume.',
+    exp:'Electrical energy forces water molecules apart into hydrogen and oxygen. The products hold more energy than water, so the reaction is endothermic and only runs while current flows.',
+    R:[S('H2O','water','O',2,'l')],P:[S('H2','hydrogen','[H][H]',2,'g'),S('O2','oxygen','O=O',1,'g')]},
+   {id:'nh4cl',t:'Ammonia + hydrogen chloride',ty:'Acid\u2013base (gas phase)',m:[/ammonia|\bnh3\b/,/hydrochloric|\bhcl\b|hydrogen chloride/],cond:'room temperature',dH:-176,
+    obs:'Dense white smoke of tiny ammonium chloride crystals appears where the two gases meet.',
+    exp:'Ammonia accepts a hydrogen ion from hydrogen chloride. The result is the ionic solid ammonium chloride.',
+    R:[S('NH3','ammonia','N',1,'g'),S('HCl','hydrogen chloride','Cl',1,'g')],P:[S('NH4Cl','ammonium chloride','[NH4+].[Cl-]',1,'s')]},
+   {id:'haber',t:'Haber process (making ammonia)',ty:'Synthesis (reversible)',m:[/haber|nitrogen.*hydrogen|ammonia (synthesis|production|manufactur)|(make|making|produce|synthes\w+)\s+ammonia/],cond:'iron catalyst, about 450 \u00B0C, about 200 atm',dH:-92,
+    obs:'The reaction is reversible, so only part of the gas turns into ammonia each pass.',
+    exp:'The very strong N\u2261N triple bond has to break, which is why a catalyst and high temperature are needed. Four gas molecules become two, so high pressure favours ammonia.',
+    R:[S('N2','nitrogen','N#N',1,'g'),S('H2','hydrogen','[H][H]',3,'g')],P:[S('NH3','ammonia','N',2,'g')]},
+   {id:'co',t:'Burning carbon monoxide',ty:'Combustion (redox)',m:[/carbon monoxide|\bco\b/,/burn|oxygen|combust|oxidi/],cond:'a flame',dH:-566,
+    obs:'A blue flame. Carbon monoxide is a poisonous gas, which is why faulty heaters are dangerous.',
+    exp:'Carbon monoxide takes up one more oxygen atom and becomes carbon dioxide.',
+    R:[S('CO','carbon monoxide','[C-]#[O+]',2,'g'),S('O2','oxygen','O=O',1,'g')],P:[S('CO2','carbon dioxide','O=C=O',2,'g')]},
+   {id:'h2cl2',t:'Hydrogen + chlorine',ty:'Synthesis (radical chain)',m:[/hydrogen|\bh2\b/,/chlorine|\bcl2\b/],cond:'light or a spark',dH:-185,
+    obs:'Colourless hydrogen chloride gas forms and the green colour of chlorine fades.',
+    exp:'The H\u2013H and Cl\u2013Cl bonds break and two H\u2013Cl bonds form. In real life it runs as a fast chain reaction started by light.',
+    R:[S('H2','hydrogen','[H][H]',1,'g'),S('Cl2','chlorine','ClCl',1,'g')],P:[S('HCl','hydrogen chloride','Cl',2,'g')]},
+   {id:'nacl2',t:'Sodium + chlorine',ty:'Synthesis (redox)',m:[/sodium|\bna\b/,/chlorine|\bcl2\b/],cond:'warm sodium in chlorine gas',dH:-822,
+    obs:'Sodium burns with a bright yellow flame and white salt forms.',
+    exp:'Each sodium atom gives one electron to a chlorine atom. The resulting Na\u207A and Cl\u207B ions attract each other and form the salt crystal.',
+    R:[S('Na','sodium','[Na]',2,'s'),S('Cl2','chlorine','ClCl',1,'g')],P:[S('NaCl','sodium chloride','[Na+].[Cl-]',2,'s')]},
+   {id:'nawater',t:'Sodium + water',ty:'Redox (displacement)',m:[/sodium|\bna\b/,/water|h2o/],cond:'room temperature',dH:-368,
+    obs:'Sodium skates on the water, fizzes and may catch fire. Hydrogen gas is released and the solution becomes strongly alkaline. This must only be done by trained people.',
+    exp:'Sodium gives an electron to water, which releases hydrogen gas and leaves sodium and hydroxide ions in solution. The reaction is very exothermic.',
+    R:[S('Na','sodium','[Na]',2,'s'),S('H2O','water','O',2,'l')],P:[S('NaOH','sodium hydroxide','[Na+].[OH-]',2,'aq'),S('H2','hydrogen','[H][H]',1,'g')]},
+   {id:'mghcl',t:'Magnesium + hydrochloric acid',ty:'Redox (metal + acid)',m:[/magnesium|\bmg\b/,/hcl|hydrochloric|acid/],cond:'room temperature',dH:-467,
+    obs:'Fizzing as hydrogen gas bubbles off; the magnesium dissolves and the test tube warms up.',
+    exp:'Magnesium atoms give two electrons each to hydrogen ions. The hydrogen leaves as gas and magnesium ions stay in solution with chloride ions.',
+    R:[S('Mg','magnesium','[Mg]',1,'s'),S('HCl','hydrochloric acid','Cl',2,'aq')],P:[S('MgCl2','magnesium chloride','[Mg+2].[Cl-].[Cl-]',1,'aq'),S('H2','hydrogen','[H][H]',1,'g')]},
+   {id:'mgo',t:'Burning magnesium',ty:'Combustion (redox)',m:[/magnesium|\bmg\b/,/burn|oxygen|flame|ribbon|combust/],cond:'a flame to start it',dH:-1204,
+    obs:'A dazzling white light and a white powder, magnesium oxide. Never look straight at it.',
+    exp:'Each magnesium atom gives two electrons to an oxygen atom, forming magnesium oxide, a very stable ionic solid.',
+    R:[S('Mg','magnesium','[Mg]',2,'s'),S('O2','oxygen','O=O',1,'g')],P:[S('MgO','magnesium oxide','[Mg]=O',2,'s')]},
+   {id:'caco3hcl',t:'Limestone + hydrochloric acid',ty:'Acid + carbonate',m:[/hcl|hydrochloric/,/carbonate|limestone|chalk|marble|caco3/],cond:'room temperature',dH:-14,
+    obs:'Vigorous fizzing as carbon dioxide gas escapes; the solid slowly dissolves.',
+    exp:'The acid gives hydrogen ions to the carbonate, forming unstable carbonic acid that breaks down into water and carbon dioxide gas.',
+    R:[S('CaCO3','calcium carbonate','[Ca+2].[O-]C(=O)[O-]',1,'s'),S('HCl','hydrochloric acid','Cl',2,'aq')],P:[S('CaCl2','calcium chloride','[Ca+2].[Cl-].[Cl-]',1,'aq'),S('H2O','water','O',1,'l'),S('CO2','carbon dioxide','O=C=O',1,'g')]},
+   {id:'bakingsoda',t:'Baking soda + vinegar',ty:'Acid + hydrogencarbonate',m:[/baking soda|bicarbonate|nahco3/,/vinegar|acetic|acid/],cond:'room temperature',dH:null,
+    obs:'Foaming and fizzing as carbon dioxide forms; the mixture feels slightly cooler.',
+    exp:'The acid gives a hydrogen ion to the hydrogencarbonate ion, which turns into water and carbon dioxide gas.',
+    R:[S('NaHCO3','sodium hydrogencarbonate','[Na+].OC(=O)[O-]',1,'s'),S('CH3COOH','acetic acid','CC(=O)O',1,'aq')],P:[S('CH3COONa','sodium acetate','[Na+].CC(=O)[O-]',1,'aq'),S('H2O','water','O',1,'l'),S('CO2','carbon dioxide','O=C=O',1,'g')]},
+   {id:'neut',t:'Neutralisation: hydrochloric acid + sodium hydroxide',ty:'Acid\u2013base neutralisation',m:[/neutrali[sz]|hcl.*naoh|naoh.*hcl|hydrochloric.*(sodium hydroxide|naoh)|(sodium hydroxide|naoh).*hydrochloric|acid.*(base|alkali)/],cond:'room temperature',dH:-57,
+    obs:'The solution warms up. The net change is H\u207A + OH\u207B \u2192 H\u2082O; the sodium and chloride ions just watch.',
+    exp:'The hydrogen ion from the acid joins the hydroxide ion from the base to make water. The spectator ions Na\u207A and Cl\u207B stay dissolved as salt.',
+    R:[S('HCl','hydrochloric acid','Cl',1,'aq'),S('NaOH','sodium hydroxide','[Na+].[OH-]',1,'aq')],P:[S('NaCl','sodium chloride','[Na+].[Cl-]',1,'aq'),S('H2O','water','O',1,'l')]},
+   {id:'agcl',t:'Precipitation of silver chloride',ty:'Precipitation (double displacement)',m:[/silver nitrate|agno3|precipitat/],cond:'two solutions mixed at room temperature',dH:-65,
+    obs:'A white solid (silver chloride) appears suddenly in the clear mixture.',
+    exp:'Silver ions and chloride ions attract each other so strongly that they leave the solution as an insoluble solid. Sodium and nitrate ions stay dissolved.',
+    R:[S('AgNO3','silver nitrate','[Ag+].[O-][N+](=O)[O-]',1,'aq'),S('NaCl','sodium chloride','[Na+].[Cl-]',1,'aq')],P:[S('AgCl','silver chloride','[Ag]Cl',1,'s'),S('NaNO3','sodium nitrate','[Na+].[O-][N+](=O)[O-]',1,'aq')]},
+   {id:'zncu',t:'Zinc displacing copper',ty:'Displacement (redox)',m:[/zinc|\bzn\b|displacement|reactivity series/,/copper|cuso4|displac|reactivity/],cond:'room temperature',dH:-217,
+    obs:'The blue colour of copper sulfate fades and reddish-brown copper metal coats the zinc.',
+    exp:'Zinc is more reactive than copper, so zinc atoms give two electrons to copper ions. Copper ions become copper metal and zinc dissolves as zinc ions.',
+    R:[S('Zn','zinc','[Zn]',1,'s'),S('CuSO4','copper(II) sulfate','[Cu+2].[O-]S(=O)(=O)[O-]',1,'aq')],P:[S('ZnSO4','zinc sulfate','[Zn+2].[O-]S(=O)(=O)[O-]',1,'aq'),S('Cu','copper','[Cu]',1,'s')]},
+   {id:'rust',t:'Rusting of iron',ty:'Oxidation (corrosion)',m:[/rust|corrosion|\bfe\b.*oxygen|iron.*(oxygen|oxidi)/],cond:'oxygen and water, slowly',dH:-1648,
+    obs:'Very slowly, a flaky reddish-brown layer of iron(III) oxide forms. Water and salt speed it up.',
+    exp:'Iron atoms give electrons to oxygen and form iron(III) oxide. The reaction is exothermic but so slow that you cannot feel the heat.',
+    R:[S('Fe','iron','[Fe]',4,'s'),S('O2','oxygen','O=O',3,'g')],P:[S('Fe2O3','iron(III) oxide','O=[Fe]O[Fe]=O',2,'s')]},
+   {id:'thermite',t:'Thermite reaction',ty:'Displacement (very exothermic redox)',m:[/thermite/],cond:'strong ignition',dH:-852,
+    obs:'It burns at extreme temperature and leaves molten iron. It is a dangerous reaction done only in specialist demonstrations.',
+    exp:'Aluminium is more reactive than iron and has a stronger bond to oxygen, so it takes the oxygen from iron(III) oxide. The released energy melts the iron that forms.',
+    R:[S('Al','aluminium','[Al]',2,'s'),S('Fe2O3','iron(III) oxide','O=[Fe]O[Fe]=O',1,'s')],P:[S('Al2O3','aluminium oxide','O=[Al]O[Al]=O',1,'s'),S('Fe','iron','[Fe]',2,'l')]},
+   {id:'fes',t:'Iron + sulfur',ty:'Synthesis',m:[/iron.*(sulfur|sulphur)|(sulfur|sulphur).*iron|iron sulfide|\bfes\b/],cond:'heating to start it',dH:-100,
+    obs:'Once started, the mixture glows red-hot without more heating and leaves a black solid, iron sulfide.',
+    exp:'Iron and sulfur atoms combine directly. The energy released keeps the reaction going once it has started.',
+    R:[S('Fe','iron','[Fe]',1,'s'),S('S','sulfur','[S]',1,'s')],P:[S('FeS','iron(II) sulfide','[Fe][S]',1,'s')]},
+   {id:'h2o2',t:'Decomposition of hydrogen peroxide',ty:'Decomposition (catalysed)',m:[/peroxide|\bh2o2\b/],cond:'manganese dioxide or catalase enzyme as catalyst',dH:-196,
+    obs:'Rapid foaming as oxygen gas bubbles out; the mixture warms up.',
+    exp:'The weak O\u2013O bond in hydrogen peroxide breaks easily. A catalyst only speeds up the reaction, it is not used up.',
+    R:[S('H2O2','hydrogen peroxide','OO',2,'aq')],P:[S('H2O','water','O',2,'l'),S('O2','oxygen','O=O',1,'g')]},
+   {id:'caco3',t:'Thermal decomposition of calcium carbonate',ty:'Decomposition (endothermic)',m:[/calcium carbonate|limestone|caco3|lime kiln|quicklime/,/decompos|heat|thermal|calcin|kiln/],cond:'strong heating, about 900 \u00B0C',dH:178,
+    obs:'The solid slowly loses carbon dioxide gas and leaves white quicklime (calcium oxide).',
+    exp:'Heat supplies the energy to drive carbon dioxide out of the carbonate. The products have more energy than the reactant, so the reaction needs continuous heating.',
+    R:[S('CaCO3','calcium carbonate','[Ca+2].[O-]C(=O)[O-]',1,'s')],P:[S('CaO','calcium oxide','[Ca]=O',1,'s'),S('CO2','carbon dioxide','O=C=O',1,'g')]},
+   {id:'ozone',t:'Ozone breaking down',ty:'Decomposition',m:[/ozone|\bo3\b/],cond:'ultraviolet light or a catalyst',dH:-285,
+    obs:'Ozone slowly turns into ordinary oxygen.',
+    exp:'Ozone is less stable than oxygen. When it breaks down, two ozone molecules rearrange into three oxygen molecules and release energy.',
+    R:[S('O3','ozone','[O-][O+]=O',2,'g')],P:[S('O2','oxygen','O=O',3,'g')]},
+   {id:'hydrog',t:'Hydrogenation of ethene',ty:'Addition',m:[/ethene|ethylene|\bc2h4\b/,/hydrogen|hydrogenat|\bh2\b|nickel/],cond:'nickel catalyst, warm',dH:-137,
+    obs:'The unsaturated gas ethene becomes saturated ethane. This is how liquid oils are turned into margarine.',
+    exp:'The C=C double bond opens up. Each carbon takes one hydrogen atom, leaving a C\u2013C single bond. The catalyst surface helps break the H\u2013H bond.',
+    R:[S('C2H4','ethene','C=C',1,'g'),S('H2','hydrogen','[H][H]',1,'g')],P:[S('C2H6','ethane','CC',1,'g')]},
+   {id:'br2',t:'Ethene + bromine',ty:'Electrophilic addition',m:[/ethene|ethylene|alkene/,/bromine|br2/],cond:'room temperature',dH:null,
+    obs:'The orange-brown colour of bromine disappears immediately. This is the classic test for a C=C double bond.',
+    exp:'The electron-rich double bond attacks a bromine molecule. A bromine atom ends up on each carbon and the double bond becomes a single bond.',
+    R:[S('C2H4','ethene','C=C',1,'g'),S('Br2','bromine','BrBr',1,'l')],P:[S('C2H4Br2','1,2-dibromoethane','BrCCBr',1,'l')]},
+   {id:'sn2',t:'SN2: hydroxide + bromomethane',ty:'Nucleophilic substitution (SN2)',m:[/sn2|nucleophilic substitution|bromomethane|methyl bromide|ch3br/],cond:'in solution',dH:null,
+    obs:'Methanol forms and bromide ions go into solution.',
+    exp:'The hydroxide ion attacks the carbon from the side opposite the bromine. In one smooth step the C\u2013O bond forms while the C\u2013Br bond breaks, and the other three groups flip like an umbrella in the wind, which is called inversion.',
+    R:[S('CH3Br','bromomethane','CBr',1,'l'),S('OH-','hydroxide ion','[OH-]',1,'aq')],P:[S('CH3OH','methanol','CO',1,'aq'),S('Br-','bromide ion','[Br-]',1,'aq')]}
+  ];
+  const sup2asc=s=>String(s).replace(/[\u2080-\u2089]/g,c=>String(c.charCodeAt(0)-0x2080));
+  function parseEquation(text){
+    const t=sup2asc(text).replace(/\u2192|\u27F6|->|=>|\u21CC|<->/g,'>').replace(/(\s)=(\s)/g,'$1>$2');
+    if(t.indexOf('>')<0||t.indexOf('+')<0)return null;
+    const sides=t.split('>');if(sides.length!==2)return null;
+    const terms=s=>s.split(/\s\+\s|\+(?=\s*\d*[A-Z\[])/).map(x=>x.replace(/\((?:g|l|s|aq)\)/gi,'').replace(/^\s*\d+\s*/,'').replace(/\s+/g,'')).filter(Boolean);
+    const L=terms(sides[0]),R=terms(sides[1]);
+    if(!L.length||!R.length||[...L,...R].some(x=>!/^[A-Za-z0-9()\[\]+\-^]+$/.test(x)))return null;
+    return {L,R};
+  }
+  function findLibEquation(text){
+    const eq=parseEquation(text);if(!eq)return null;
+    const norm=a=>a.slice().sort().join('|');
+    for(const e of LIB){if(norm(eq.L)===norm(e.R.map(s=>s.f))&&norm(eq.R)===norm(e.P.map(s=>s.f)))return e}
+    return null;
+  }
+  function findLibText(text){
+    const t=sup2asc(text).toLowerCase();
+    for(const e of LIB){if(e.m.every(r=>r.test(t)))return e}
+    return null;
+  }
+  const BONDSYM={1:'\u2013',1.5:'~',2:'=',3:'\u2261'};
+  function bondName(a,b,o){const p=[a,b].sort();return p[0]+(BONDSYM[o]||'\u2013')+p[1]}
+  function tally(list){const c={};list.forEach(x=>{c[x]=(c[x]||0)+1});return Object.keys(c).map(k=>(c[k]>1?c[k]+' \u00D7 ':'')+k).join(', ')}
+  /*PURE-END*/
+
+  /* =====================================================================
+     C. 3D reaction animation
+     ===================================================================== */
+  const EL=V34.EL;
+  const CPK={H:'#ffffff',B:'#ffb5b5',C:'#666666',N:'#3050f8',O:'#ff0d0d',F:'#90e050',Na:'#ab5cf2',Mg:'#8aff00',Al:'#bfa6a6',Si:'#f0c8a0',P:'#ff8000',S:'#ffff30',Cl:'#1ff01f',K:'#8f40d4',Ca:'#3dff00',Fe:'#e06633',Cu:'#c88033',Zn:'#7d80b0',Br:'#a62929',I:'#940094',Ag:'#c0c0c0',Au:'#ffd123',Se:'#ffa100'};
+  const RADI={H:.31,C:.7,N:.65,O:.6,F:.5,Cl:.99,S:1,P:1,Br:1.14,I:1.33,Na:1.3,K:1.6,Ca:1.4,Mg:1.2,Fe:1.2,Si:1.1,B:.85,Al:1.2,Cu:1.2,Zn:1.2,Ag:1.3,Se:1.1};
+  const ease=u=>{u=clamp(u,0,1);return u*u*(3-2*u)};
+  const lerp3=(a,b,u)=>[a[0]+(b[0]-a[0])*u,a[1]+(b[1]-a[1])*u,a[2]+(b[2]-a[2])*u];
+  const PH_A=.28,PH_B=.62;
+  function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+  function randRot(rnd){
+    const ax=[rnd()*2-1,rnd()*2-1,rnd()*2-1],l=Math.hypot(...ax)||1,a=ax.map(v=>v/l),th=rnd()*Math.PI*2,c=Math.cos(th),s=Math.sin(th);
+    return v=>{const cr=[a[1]*v[2]-a[2]*v[1],a[2]*v[0]-a[0]*v[2],a[0]*v[1]-a[1]*v[0]],dt=a[0]*v[0]+a[1]*v[1]+a[2]*v[2];return [v[0]*c+cr[0]*s+a[0]*dt*(1-c),v[1]*c+cr[1]*s+a[1]*dt*(1-c),v[2]*c+cr[2]*s+a[2]*dt*(1-c)]};
+  }
+  function buildSide(species,seed){
+    const atoms=[],bonds=[],insts=[],rnd=mulberry(seed);
+    species.forEach((sp,si)=>{
+      const g=parseSmiles(sp.smiles);if(!g)throw new Error('Could not read the structure of '+sp.name+'.');
+      const ex=expandH(g),comps=components(ex.atoms.length,ex.bonds),protos=comps.map((comp,ci)=>{
+        const idx={};comp.forEach((a,k)=>{idx[a]=k});
+        const ca=comp.map(a=>ex.atoms[a]),cb=ex.bonds.filter(b=>idx[b[0]]!==undefined).map(b=>[idx[b[0]],idx[b[1]],b[2]]);
+        let P=V35.embed(ca,cb,null,seed+si*31+ci*7);
+        if(!P||P.length!==ca.length)P=ca.map((a,k)=>[k*1.2,0,0]);
+        const cx=P.reduce((s,p)=>s+p[0],0)/P.length,cy=P.reduce((s,p)=>s+p[1],0)/P.length,cz=P.reduce((s,p)=>s+p[2],0)/P.length;
+        P=P.map(p=>[p[0]-cx,p[1]-cy,p[2]-cz]);
+        return {ca,cb,P};
+      });
+      for(let c=0;c<sp.coef;c++)protos.forEach(pr=>{
+        const rot=randRot(rnd),off=atoms.length,idxs=[],loc=[];
+        pr.ca.forEach((a,k)=>{atoms.push({el:a.el,q:a.q||0,sp:si});idxs.push(off+k);loc.push(rot(pr.P[k]))});
+        pr.cb.forEach(b=>bonds.push([off+b[0],off+b[1],b[2]]));
+        let r=.8;loc.forEach((p,k)=>{r=Math.max(r,Math.hypot(...p)+(RADI[pr.ca[k].el]||.8)*.55+.2)});
+        insts.push({idx:idxs,loc,r});
+      });
+    });
+    return {atoms,bonds,insts};
+  }
+  function layoutSide(side,scale,rot){
+    const C=ringCenters(side.insts.map(i=>i.r),scale,rot),pos=new Array(side.atoms.length);
+    side.insts.forEach((ins,k)=>ins.idx.forEach((ai,q)=>{pos[ai]=[C[k][0]+ins.loc[q][0],C[k][1]+ins.loc[q][1],C[k][2]+ins.loc[q][2]]}));
+    return pos;
+  }
+  function prepareAnim(rx){
+    const err=balanceError(rx);if(err)throw new Error(err);
+    const all=rx.reactants.concat(rx.products),g=all.map(s=>s.coef).reduce(gcd);
+    const red=l=>l.map(s=>Object.assign({},s,{coef:s.coef/g}));
+    const RS=red(rx.reactants),PS=red(rx.products),n=totalAtoms(rx.reactants,g);
+    if(n>130)throw new Error('This reaction has too many atoms ('+n+') to animate. Try a smaller example.');
+    const R=buildSide(RS,11),P=buildSide(PS,53);
+    const S0=layoutSide(R,2.7,0),S1=layoutSide(R,.95,0),P2=layoutSide(P,.95,Math.PI/2),P3=layoutSide(P,2.7,Math.PI/2);
+    const map=mapAtoms(R,P,S1,P2),N=R.atoms.length,S2=new Array(N),S3=new Array(N);
+    for(let j=0;j<map.length;j++){S2[map[j]]=P2[j];S3[map[j]]=P3[j]}
+    const key=(a,b)=>a<b?a+'_'+b:b+'_'+a,B={};
+    R.bonds.forEach(b=>{const k=key(b[0],b[1]);B[k]={a:Math.min(b[0],b[1]),b:Math.max(b[0],b[1]),oR:b[2],oP:0}});
+    P.bonds.forEach(b=>{const a=map[b[0]],c=map[b[1]],k=key(a,c);if(!B[k])B[k]={a:Math.min(a,c),b:Math.max(a,c),oR:0,oP:b[2]};else B[k].oP=b[2]});
+    const bonds=Object.keys(B).map(k=>B[k]),broken=[],formed=[],el=i=>R.atoms[i].el;
+    bonds.forEach(b=>{
+      if(b.oR>0&&b.oP===0)broken.push(bondName(el(b.a),el(b.b),b.oR));
+      else if(b.oR===0&&b.oP>0)formed.push(bondName(el(b.a),el(b.b),b.oP));
+      else if(b.oR!==b.oP){broken.push(bondName(el(b.a),el(b.b),b.oR));formed.push(bondName(el(b.a),el(b.b),b.oP))}
+    });
+    const rnd=mulberry(99),arc=[];for(let i=0;i<N;i++)arc.push([(rnd()-.5)*1.6,(rnd()-.2)*1.6,(rnd()-.5)*1.6]);
+    let rad=3;[S0,S3].forEach(arr=>arr.forEach(p=>{rad=Math.max(rad,Math.hypot(...p)+1)}));
+    return {R,P,N,S0,S1,S2,S3,bonds,broken,formed,arc,rad,g,scaleNote:g>1};
+  }
+  function atomPos(an,i,p){
+    let q;
+    if(p<PH_A)q=lerp3(an.S0[i],an.S1[i],ease(p/PH_A));
+    else if(p<PH_B){const u=ease((p-PH_A)/(PH_B-PH_A));q=lerp3(an.S1[i],an.S2[i],u);const a=Math.sin(Math.PI*u),r=an.arc[i];q=[q[0]+r[0]*a*.55,q[1]+r[1]*a*.55,q[2]+r[2]*a*.55]}
+    else q=lerp3(an.S2[i],an.S3[i],ease((p-PH_B)/(1-PH_B)));
+    if(p>PH_A-.04&&p<PH_B+.04){const j=.045*Math.sin(p*160+i*1.7);q=[q[0]+j,q[1]+j*.7,q[2]-j]}
+    return q;
+  }
+  function bondOrder(b,p){
+    const u=clamp((p-PH_A)/(PH_B-PH_A),0,1),wb=ease(u/.6),wf=ease((u-.35)/.65),wm=ease(u);
+    let e;
+    if(b.oR>0&&b.oP>0)e=b.oR+(b.oP-b.oR)*wm;else if(b.oR>0)e=b.oR*(1-wb);else e=b.oP*wf;
+    return {e,tint:b.oR>0&&b.oP===0?[1,.25,.2,wb*(1-wb)*4]:b.oR===0?[.2,1,.35,(1-wf)*wf*4]:[1,1,1,0]};
+  }
+  const gl=()=>window.THREE;
+  function miniViewer(host){
+    const THREE=gl();
+    const sc=new THREE.Scene();sc.background=new THREE.Color(0x07030c);
+    const cam=new THREE.PerspectiveCamera(50,1,.05,2000);
+    let rd;try{rd=new THREE.WebGLRenderer({antialias:true})}catch(e){throw new Error('WebGL 3D graphics are not available on this device.')}
+    rd.setPixelRatio(Math.min(devicePixelRatio||1,2));host.appendChild(rd.domElement);
+    const el=rd.domElement;el.style.cssText='display:block;width:100%;height:100%;touch-action:none';
+    sc.add(new THREE.HemisphereLight(0xffffff,0x445566,.95));
+    const sun=new THREE.DirectionalLight(0xffffff,.9);sun.position.set(5,10,7);sc.add(sun);
+    const back=new THREE.DirectionalLight(0x88aaff,.35);back.position.set(-6,-4,-8);sc.add(back);
+    const V={sc,cam,rd,host,th:.6,ph:1.2,dist:14,tg:new THREE.Vector3(),tick:[],auto:false,vis:true,dead:false,min:2,max:200,w:0,h:0};
+    const ptrs=new Map();let pd=0;
+    const d2=()=>{const a=[...ptrs.values()];return Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1])||1};
+    el.addEventListener('pointerdown',e=>{try{el.setPointerCapture(e.pointerId)}catch(x){}ptrs.set(e.pointerId,[e.clientX,e.clientY]);if(ptrs.size===2)pd=d2()});
+    el.addEventListener('pointermove',e=>{
+      const p=ptrs.get(e.pointerId);if(!p)return;const dx=e.clientX-p[0],dy=e.clientY-p[1];p[0]=e.clientX;p[1]=e.clientY;
+      if(ptrs.size===1){V.th-=dx*.008;V.ph=clamp(V.ph-dy*.008,.05,Math.PI-.05);V.auto=false}
+      else if(ptrs.size===2){const d=d2();V.dist=clamp(V.dist*pd/d,V.min,V.max);pd=d;V.auto=false}
+    });
+    const up=e=>{ptrs.delete(e.pointerId)};el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);
+    el.addEventListener('wheel',e=>{e.preventDefault();V.dist=clamp(V.dist*Math.exp(e.deltaY*.0012),V.min,V.max)},{passive:false});
+    let io=null;try{io=new IntersectionObserver(es=>{V.vis=es[es.length-1].isIntersecting});io.observe(host)}catch(e){}
+    let last=performance.now();
+    function fr(now){
+      if(V.dead)return;requestAnimationFrame(fr);
+      if(!host.isConnected){V.dispose();return}
+      if(!V.vis||!host.getClientRects().length){last=now;return}
+      const w=host.clientWidth,h=host.clientHeight;
+      if(w&&h&&(w!==V.w||h!==V.h)){V.w=w;V.h=h;rd.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix()}
+      const dt=Math.min(.05,(now-last)/1000);last=now;
+      if(V.auto)V.th+=dt*.2;
+      const sp=Math.sin(V.ph);cam.position.set(V.tg.x+V.dist*sp*Math.sin(V.th),V.tg.y+V.dist*Math.cos(V.ph),V.tg.z+V.dist*sp*Math.cos(V.th));cam.lookAt(V.tg);
+      for(let i=0;i<V.tick.length;i++)V.tick[i](dt);
+      rd.render(sc,cam);
+    }
+    requestAnimationFrame(fr);
+    V.snapshot=()=>{rd.render(sc,cam);return el.toDataURL('image/png')};
+    V.dispose=()=>{if(V.dead)return;V.dead=true;try{io&&io.disconnect()}catch(e){}V.tick.length=0;sc.traverse(x=>{if(x.geometry)x.geometry.dispose();const ms=x.material?(Array.isArray(x.material)?x.material:[x.material]):[];ms.forEach(m=>{if(m.map)m.map.dispose();m.dispose()})});rd.dispose();if(el.parentNode)el.parentNode.removeChild(el)};
+    return V;
+  }
+  function label(text,size,color){
+    const THREE=gl(),c=document.createElement('canvas'),x=c.getContext('2d'),fs=44;
+    x.font='700 '+fs+'px Segoe UI,Arial,sans-serif';const w=Math.ceil(x.measureText(text).width)+24;c.width=w;c.height=fs+20;
+    x.font='700 '+fs+'px Segoe UI,Arial,sans-serif';x.textBaseline='middle';x.textAlign='center';x.lineWidth=7;x.strokeStyle='rgba(0,0,0,.9)';x.strokeText(text,w/2,c.height/2+2);x.fillStyle=color||'#fff';x.fillText(text,w/2,c.height/2+2);
+    const tx=new THREE.CanvasTexture(c),sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tx,transparent:true,depthTest:false}));
+    sp.scale.set(size*c.width/c.height,size,1);sp.renderOrder=10;return sp;
+  }
+  function eqHTML(rx){
+    const side=l=>l.map(s=>(s.coef>1?s.coef+' ':'')+esc(disp(s.f))+(s.state?'<sub>('+s.state+')</sub>':'')).join(' + ');
+    return '<div style="font-size:19px;line-height:1.5;font-weight:700">'+side(rx.reactants)+' <span style="color:var(--gold)">\u2192</span> '+side(rx.products)+'</div>'+(rx.conditions?'<div class="v35k">Conditions: '+esc(rx.conditions)+'</div>':'');
+  }
+  function stagesOf(rx,an){
+    const names=l=>l.map(s=>(s.coef>1?s.coef+' ':'')+s.name).join(' and ');
+    const dH=rx.dH,exo=dH!=null&&dH<0;
+    const brk=an.broken.length?'Energy from the collision breaks bonds: '+tally(an.broken)+'. ':'No covalent bonds break here; the ions simply rearrange. ';
+    const frm=an.formed.length?'At the same time new bonds form: '+tally(an.formed)+'. ':'';
+    const en=dH==null?'':(exo?'Overall the products hold less energy than the reactants, so about '+Math.abs(dH)+' kilojoules are released as heat for the equation as written: the reaction is exothermic.':'Overall the products hold more energy than the reactants, so about '+dH+' kilojoules must be supplied for the equation as written: the reaction is endothermic.');
+    return [
+      {a:0,b:PH_A,text:'The reactants, '+names(rx.reactants)+', move towards each other and collide.'},
+      {a:PH_A,b:PH_B,text:brk+frm+'Not a single atom is created or destroyed; they only rearrange.'},
+      {a:PH_B,b:1,text:'The products, '+names(rx.products)+', move apart. '+en+(rx.observations?' What you would see: '+rx.observations:'')}
+    ];
+  }
+  function drawChart(cv,p,dH){
+    const W=cv.width,H=cv.height,x=cv.getContext('2d');x.clearRect(0,0,W,H);
+    x.fillStyle='rgba(0,0,0,.25)';x.fillRect(0,0,W,H);
+    x.font=Math.round(H*.11)+'px sans-serif';
+    if(dH==null){x.fillStyle='#b98f5e';x.fillText('Energy change not given for this reaction.',10,H/2);return}
+    const bar=Math.max(40,Math.abs(dH)*.45+30),lo=Math.min(0,dH)-12,hi=Math.max(0,dH)+bar+12,pad=H*.14,y=e=>H-pad-(e-lo)/(hi-lo)*(H-2*pad);
+    const E=t=>{if(t<PH_A)return 0;if(t>PH_B)return dH;const u=(t-PH_A)/(PH_B-PH_A);return dH*ease(u)+bar*Math.pow(Math.sin(Math.PI*u),2)};
+    const mx=t=>12+t*(W-24);
+    x.strokeStyle='#f5c518';x.lineWidth=3;x.beginPath();for(let k=0;k<=120;k++){const t=k/120;k?x.lineTo(mx(t),y(E(t))):x.moveTo(mx(t),y(E(t)))}x.stroke();
+    x.strokeStyle='rgba(255,255,255,.25)';x.lineWidth=1;x.setLineDash([4,4]);x.beginPath();x.moveTo(12,y(0));x.lineTo(W-12,y(0));x.stroke();x.setLineDash([]);
+    x.fillStyle='#ffe9b8';x.fillText('Reactants',14,y(0)+(dH<0?-6:H*.13));x.textAlign='right';x.fillText('Products '+(dH>0?'+':'')+dH+' kJ',W-14,y(dH)+(dH<0?H*.13:-6));x.textAlign='left';
+    x.fillStyle='#b98f5e';x.fillText('energy (barrier shape is schematic)',14,H*.1);
+    x.fillStyle=dH<0?'#ff8a3d':'#4aa3ff';x.beginPath();x.arc(mx(p),y(E(p)),H*.045,0,7);x.fill();
+  }
+  const liveRx=[];
+  function mountRx(host,rx){
+    let an;
+    try{an=prepareAnim(rx)}catch(e){host.innerHTML='<div class="v35info">\u26A0 '+esc(e.message)+'</div>';return null}
+    const stages=stagesOf(rx,an);
+    host.innerHTML='<div class="v35 v36rx"><div class="v35h"><span class="v35t">'+esc(rx.title)+'</span><span class="v35k">'+esc(rx.type||'chemical reaction')+'</span></div>'
+      +'<div class="rxEq">'+eqHTML(rx)+'</div>'
+      +'<div class="v35v rxV"></div><div class="v35info rxCap" style="min-height:44px;margin-top:6px"></div>'
+      +'<canvas class="rxE" style="width:100%;height:110px;border-radius:8px;margin-top:6px"></canvas>'
+      +'<div class="v35bar" style="align-items:center"><button class="chip" data-a="play">Play</button><button class="chip" data-a="replay">Replay</button><button class="chip" data-a="narr">Narrate</button><button class="chip" data-a="stopv">Stop voice</button><button class="chip" data-a="png">PNG</button></div>'
+      +'<div class="v35more" style="margin-top:0"><label>Time <input type="range" class="rxT" min="0" max="1000" value="0" style="flex:1"></label>'
+      +'<label>Speed <input type="range" class="rxS" min="0.2" max="2.5" step="0.05" value="1"></label>'
+      +'<label><input type="checkbox" class="rxL"> Loop</label><label><input type="checkbox" class="rxA" checked> Auto-rotate</label><label><input type="checkbox" class="rxLab"> Atom labels</label></div>'
+      +'<div class="v35stat"></div><div class="v35info rxInfo"></div></div>';
+    const Q=s=>host.querySelector(s);
+    const stat=Q('.v35stat');
+    stat.innerHTML=[an.N+' atoms',rx.dH==null?'energy change n/a':(rx.dH<0?'exothermic '+rx.dH+' kJ':'endothermic +'+rx.dH+' kJ')].concat(an.scaleNote?['simplest ratio shown']:[]).map(x=>'<span>'+esc(x)+'</span>').join('');
+    Q('.rxInfo').innerHTML=(rx.explanation?'<p>'+esc(rx.explanation)+'</p>':'')+(rx.observations?'<p><b>What you would see:</b> '+esc(rx.observations)+'</p>':'')
+      +'<p><b>Bonds broken:</b> '+esc(an.broken.length?tally(an.broken):'none (ions rearrange)')+'<br><b>Bonds formed:</b> '+esc(an.formed.length?tally(an.formed):'none')+'</p>'
+      +(an.scaleNote?'<p class="v35k">The animation shows the smallest whole-number ratio of this equation (all coefficients divided by '+an.g+').</p>':'')
+      +'<div class="v35k">Atoms are not to scale and the paths are illustrative; the bond changes and the atom counts are exact.</div>';
+    const st={t:0,playing:false,speed:1,loop:false,labels:false,range:null,narr:0};
+    const chart=Q('.rxE');chart.width=Math.max(300,Math.round((host.clientWidth||600)*(devicePixelRatio>1?1.5:1)));chart.height=Math.round(chart.width*.2);
+    let V=null,objs=null;
+    const cap=Q('.rxCap'),slider=Q('.rxT');
+    const stageIdx=p=>p<PH_A?0:p<PH_B?1:2;
+    function build(){
+      const THREE=gl();V=miniViewer(Q('.rxV'));
+      V.tg.set(0,0,0);V.dist=an.rad*2.1;V.min=an.rad*.5;V.max=an.rad*6;V.auto=Q('.rxA').checked;
+      const g=new THREE.Group();V.sc.add(g);
+      const sg=new THREE.SphereGeometry(1,18,14),mats={},atoms=[];
+      for(let i=0;i<an.N;i++){
+        const e=an.R.atoms[i].el;if(!mats[e])mats[e]=new THREE.MeshStandardMaterial({color:new THREE.Color(CPK[e]||'#cc99cc'),roughness:.35,metalness:.1});
+        const m=new THREE.Mesh(sg,mats[e]);m.scale.setScalar(Math.max(.2,(RADI[e]||.8)*.6));g.add(m);
+        const lb=label(e,.5);lb.visible=false;g.add(lb);atoms.push({m,lb});
+      }
+      const cg=new THREE.CylinderGeometry(.075,.075,1,10),bonds=an.bonds.map(b=>{
+        const slots=Math.max(b.oR,b.oP)>2.5?3:Math.max(b.oR,b.oP)>1.2?2:1,rods=[];
+        for(let k=0;k<slots;k++){const mt=new THREE.MeshStandardMaterial({color:0xcfd4dc,roughness:.4,metalness:.2,transparent:true});const m=new THREE.Mesh(cg,mt);g.add(m);rods.push(m)}
+        return {b,rods,slots};
+      });
+      const rg=new THREE.RingGeometry(.25,.34,32),fx=[];
+      const addFx=(b,u,col)=>{const m=new THREE.Mesh(rg,new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false,blending:THREE.AdditiveBlending}));g.add(m);fx.push({b,m,p:PH_A+(PH_B-PH_A)*u})};
+      if(an.bonds.length<=60)an.bonds.forEach(b=>{if(b.oR>0&&b.oP===0)addFx(b,.3,0xff5a4a);if(b.oR===0&&b.oP>0)addFx(b,.7,0x4aff8a)});
+      let glow=null;
+      if(rx.dH!=null){const gc=rx.dH<0?0xff8a1f:0x4aa3ff;glow=new THREE.Mesh(new THREE.SphereGeometry(1,24,16),new THREE.MeshBasicMaterial({color:gc,transparent:true,opacity:0,depthWrite:false,blending:THREE.AdditiveBlending}));g.add(glow)}
+      objs={atoms,bonds,fx,glow,g};
+      const q=new THREE.Quaternion(),yv=new THREE.Vector3(0,1,0),dv=new THREE.Vector3(),pv=new THREE.Vector3(),ref=new THREE.Vector3(0,1,0),A3=new THREE.Vector3(),B3=new THREE.Vector3(),pos=[];
+      V.update=()=>{
+        const p=st.t;for(let i=0;i<an.N;i++){pos[i]=atomPos(an,i,p);objs.atoms[i].m.position.set(pos[i][0],pos[i][1],pos[i][2]);objs.atoms[i].lb.position.set(pos[i][0],pos[i][1]+.75,pos[i][2]);objs.atoms[i].lb.visible=st.labels}
+        objs.bonds.forEach(bd=>{
+          const o=bondOrder(bd.b,p);A3.set(...pos[bd.b.a]);B3.set(...pos[bd.b.b]);dv.subVectors(B3,A3);const len=dv.length();
+          if(len<1e-4){bd.rods.forEach(r=>r.visible=false);return}
+          dv.normalize();q.setFromUnitVectors(yv,dv);pv.crossVectors(dv,ref);if(pv.lengthSq()<.01)pv.crossVectors(dv,new THREE.Vector3(1,0,0));pv.normalize();
+          const gap=.2,offs=bd.slots===3?[-gap,0,gap]:bd.slots===2?[-gap/2,gap/2]:[0];
+          bd.rods.forEach((r,k)=>{
+            const op=clamp(o.e-k,0,1);r.visible=op>.03;if(!r.visible)return;
+            r.position.copy(A3).add(B3).multiplyScalar(.5).addScaledVector(pv,offs[k]);r.quaternion.copy(q);r.scale.set(.6+.4*op,len,.6+.4*op);
+            r.material.opacity=.25+.75*op;r.material.color.setRGB(.81+(o.tint[0]-.81)*o.tint[3],.83+(o.tint[1]-.83)*o.tint[3],.86+(o.tint[2]-.86)*o.tint[3]);
+          });
+        });
+        objs.fx.forEach(f=>{const d=(p-f.p)/.07,op=Math.exp(-d*d*2);f.m.visible=op>.02;if(!f.m.visible)return;f.m.material.opacity=op*.9;f.m.position.set((pos[f.b.a][0]+pos[f.b.b][0])/2,(pos[f.b.a][1]+pos[f.b.b][1])/2,(pos[f.b.a][2]+pos[f.b.b][2])/2);f.m.quaternion.copy(V.cam.quaternion);f.m.scale.setScalar(1+Math.max(0,d+1)*.8)});
+        if(objs.glow){const d=(p-(PH_B+.02))/.14,op=Math.exp(-d*d)*.32;objs.glow.visible=op>.01;objs.glow.material.opacity=op;objs.glow.scale.setScalar(an.rad*.55*(.6+.5*Math.exp(-d*d)))}
+        cap.textContent=stages[stageIdx(p)].text;slider.value=Math.round(p*1000);drawChart(chart,p,rx.dH);
+      };
+      V.tick.push(dt=>{
+        if(st.playing){
+          st.t+=dt*st.speed/14;const lim=st.range?st.range.to:1;
+          if(st.t>=lim){st.t=lim;if(st.range){st.playing=false;const r=st.range.res;st.range=null;r()}else if(st.loop){st.t=0}else st.playing=false;syncPlay()}
+        }
+        V.update();
+      });
+      V.update();
+    }
+    function syncPlay(){Q('[data-a=play]').textContent=st.playing?'Pause':'Play'}
+    function release(){if(V){V.dispose();V=null}}
+    const card={el:host,alive:()=>host.isConnected,release,st};
+    function play(){if(!V)return;if(st.t>=.999)st.t=0;st.playing=!st.playing;syncPlay()}
+    function playRange(a,b){return new Promise(res=>{st.t=a;st.range={to:b,res};st.playing=true;syncPlay()})}
+    async function narrate(){
+      if(!V)return;const id=++st.narr;T.stop();st.playing=false;st.range=null;
+      for(let i=0;i<stages.length;i++){
+        if(st.narr!==id)return;
+        const sp=T.say(stages[i].text,{force:true,max:900});
+        await playRange(stages[i].a,stages[i].b);
+        if(st.narr!==id)return;
+        await sp;
+      }
+    }
+    Q('[data-a=play]').onclick=play;
+    Q('[data-a=replay]').onclick=()=>{st.narr++;st.range=null;st.t=0;st.playing=true;syncPlay()};
+    Q('[data-a=narr]').onclick=narrate;
+    Q('[data-a=stopv]').onclick=()=>{st.narr++;T.stop();st.range=null};
+    Q('[data-a=png]').onclick=()=>{if(!V)return;const a=document.createElement('a');a.href=V.snapshot();a.download=(rx.title||'reaction').replace(/[^\w]+/g,'_')+'.png';a.click()};
+    slider.oninput=()=>{st.playing=false;st.range=null;st.t=slider.value/1000;syncPlay();if(V)V.update()};
+    Q('.rxS').oninput=e=>{st.speed=+e.target.value};
+    Q('.rxL').onchange=e=>{st.loop=e.target.checked};
+    Q('.rxA').onchange=e=>{if(V)V.auto=e.target.checked};
+    Q('.rxLab').onchange=e=>{st.labels=e.target.checked;if(V)V.update()};
+    (async()=>{
+      try{await V35.ensureThree();build();st.playing=true;syncPlay();
+        if(T.on&&rx.explanation)T.say(rx.title+'. '+rx.explanation,{max:900})
+      }catch(e){Q('.rxV').innerHTML='<div class="v35fz"><div class="v35info" style="padding:14px;text-align:center">'+esc(e.message)+'</div></div>'}
+    })();
+    liveRx.push(card);
+    while(liveRx.filter(c=>c.alive()&&c.st.viewer!==false&&c.hasV).length>3)break;
+    return card;
+  }
+
+  /* ---------- finding / making a reaction from the user's words ---------- */
+  const REFUSE=/\b(nitroglycerin|trinitrotoluene|\btnt\b|\bc-?4\b|\brdx\b|\btatp\b|\banfo\b|detonat\w*|explosive|bomb|sarin|\bvx\b|mustard gas|nerve agent|methamphetamine|\bmeth\b|fentanyl|cocaine|heroin|\bmdma\b|\blsd\b|napalm|molotov|\bricin\b|anthrax|chemical weapon|poison gas|phosgene)\b/i;
+  function libToRx(e){return {title:e.t,type:e.ty,conditions:e.cond,dH:e.dH,observations:e.obs,explanation:e.exp,reactants:e.R.map(s=>Object.assign({},s)),products:e.P.map(s=>Object.assign({},s))}}
+  const SYSRX='You are a chemistry teacher preparing data for a 3D atom-level reaction animation. Reply with ONLY one JSON object, no markdown: {"title":"","type":"reaction type","conditions":"short","dH_kJ":number or null,"observations":"what you would see, 1-2 sentences","explanation":"3-4 sentences, good to read aloud, explain bonds breaking and forming","reactants":[{"f":"formula","name":"","smiles":"","coef":1,"state":"g|l|s|aq"}],"products":[...]}. RULES: Every SMILES must be valid. Plain organic atoms are written normally (C, N, O, Cl, Br). Every metal, ion or atom with a charge goes in brackets: [Na] [Fe] [Na+] [Cl-] [Cu+2] [OH-] [NH4+] [H][H]. Ionic compounds are written as separate ions joined by a dot in ONE string, e.g. NaCl = "[Na+].[Cl-]"; covalent solids/precipitates may be bonded like "[Ag]Cl". Use the smallest whole-number coefficients. The equation MUST balance in atoms AND in charge. Total atoms after multiplying by coefficients must be at most 110, so choose a small representative example if needed. dH_kJ is for the equation as written (negative = exothermic); use null if you are not sure, never invent numbers. This is for school-level education: give no procedures, quantities or instructions for hazardous experiments. If the request asks for weapons, explosives, drugs or toxic agents, reply {"refuse":true}.';
+  async function aiReaction(text){
+    if(!store.get('groq'))throw new Error('This reaction is not in my built-in library. Add your Groq key in Settings and I can build it with AI.');
+    const key=store.get('groq'),model=store.get('stmodel')||CFG.textModel;let note='';
+    for(let a=0;a<3;a++){
+      const body={model,messages:[{role:'system',content:SYSRX},{role:'user',content:'Reaction request: '+text+(note?'\n\nNOTE: '+note:'')}],temperature:a?.1:.2,max_tokens:3500};
+      if(/gpt-oss/i.test(model))body.reasoning_effort='medium';
+      const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(body)});
+      const d=await res.json().catch(()=>({}));if(d.error)throw new Error(d.error.message||'Groq error');
+      const raw=((d.choices&&d.choices[0]&&d.choices[0].message&&d.choices[0].message.content)||'').replace(/<think>[\s\S]*?<\/think>/g,'');
+      let j;try{j=JSON.parse(raw.replace(/```(?:json)?/gi,'').match(/\{[\s\S]*\}/)[0])}catch(e){note='Reply with ONLY one valid JSON object.';continue}
+      if(j.refuse)throw new Error('I can only animate school-level educational reactions, not that one.');
+      const fix=l=>(Array.isArray(l)?l:[]).map(s=>({f:String(s.f||s.name||'X'),name:String(s.name||s.f||'species'),smiles:String(s.smiles||''),coef:Math.round(+s.coef)||1,state:/^(g|l|s|aq)$/.test(s.state)?s.state:''}));
+      const rx={title:String(j.title||text).slice(0,90),type:String(j.type||''),conditions:String(j.conditions||''),dH:(typeof j.dH_kJ==='number'&&isFinite(j.dH_kJ))?Math.round(j.dH_kJ):null,observations:String(j.observations||''),explanation:String(j.explanation||''),reactants:fix(j.reactants),products:fix(j.products)};
+      let err=balanceError(rx);
+      if(!err){const g=rx.reactants.concat(rx.products).map(s=>s.coef).reduce(gcd);if(totalAtoms(rx.reactants,g)>130)err='Too many atoms: choose a smaller representative example.'}
+      if(!err)return rx;
+      note='Your previous answer was rejected: '+err+' Fix the coefficients and structures and return the complete JSON again.';
+    }
+    throw new Error('I could not get a correctly balanced equation for that. Try typing the balanced equation, e.g. CH4 + 2O2 -> CO2 + 2H2O.');
+  }
+  async function findReaction(text){
+    if(REFUSE.test(text))throw new Error('I only animate school-level educational reactions, so I will skip that one.');
+    const e=findLibEquation(text)||findLibText(text);
+    if(e)return libToRx(e);
+    return await aiReaction(text);
+  }
+  const RXW=/\b(reactions?|react|reacts|reacting|burn|burns|burning|combustion|combust|electrolysis|neutrali[sz]ation|precipitat\w*|displacement|rusting|rust|photosynthesis|respiration|fermentation|esterification|haber|thermite|decompos\w*|mix|mixing|combine|combining|explode|explosion)\b/i;
+  const RXV=/\b(show|animate|animation|visuali[sz]e|simulate|what happens|how does|how do|explain|make|watch|see|demonstrate|display|draw|3d|play)\b/i;
+  function isReactionRequest(t){
+    const l=String(t);if(l.length>300)return false;
+    if(/\b(game|song|video|image|picture|photo|poem|story|essay|email)\b/i.test(l))return false;
+    if(parseEquation(l))return true;
+    return RXW.test(l)&&RXV.test(l);
+  }
+
+  /* =====================================================================
+     D. 3D LAB TAB: Smart models + Reactions panels
+     ===================================================================== */
+  const css=document.createElement('style');
+  css.textContent='.v36rx .v35v{height:min(50vh,420px)}.rxEq sub{font-size:11px;color:var(--muted)}.v36tip{font-size:14px;line-height:1.6}.v36row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}.v36row select,.v36row input{margin:0;flex:1 1 150px}.v36mic.live{background:rgba(224,49,63,.7);animation:pulse 1.2s infinite}#v36Cards .msg,#v36Rx .msg{margin-bottom:12px}';
+  document.head.appendChild(css);
+  let redirect=null;
+  const _am=addMsg;
+  addMsg=function(cls,html){const d=_am(cls,html);if(redirect&&d&&d.parentNode===log)redirect.appendChild(d);return d};
+  async function withTarget(el,fn){redirect=el;try{return await fn()}finally{redirect=null}}
+  function dictate(btn,input,done){
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return toast('Voice input needs Chrome.');
+    T.stop();const r=new SR();r.lang=store.get('v35lang','en-IN');r.interimResults=true;r.continuous=false;btn.classList.add('live');
+    r.onresult=e=>{let s='',fin=false;for(let i=e.resultIndex;i<e.results.length;i++){s+=e.results[i][0].transcript;if(e.results[i].isFinal)fin=true}input.value=s;if(fin){input.value='';done(s)}};
+    r.onend=()=>btn.classList.remove('live');r.onerror=e=>{btn.classList.remove('live');if(/not-allowed/.test(e.error))toast('Microphone permission denied.')};
+    try{r.start()}catch(e){btn.classList.remove('live')}
+  }
+  const lab=document.getElementById('p-lab'),seg=lab&&lab.querySelector('.seg');
+  if(!lab||!seg){console.error('PACK 36 needs the 3D Lab tab from PACK 34.');return}
+  function labSelect(k){
+    if(!lab.classList.contains('on'))go('lab');
+    $$('#p-lab .seg button').forEach(b=>b.classList.toggle('on',b.dataset.lab===k));
+    $$('#p-lab .labp').forEach(p=>p.classList.toggle('on',p.id==='lab-'+k));
+  }
+  [['build','Smart models'],['react','Reactions']].forEach(a=>{
+    if(seg.querySelector('[data-lab="'+a[0]+'"]'))return;
+    const b=document.createElement('button');b.dataset.lab=a[0];b.textContent=a[1];b.onclick=()=>labSelect(a[0]);seg.appendChild(b);
+  });
+  const EXAMPLES=['Carbon atom','Oxygen atom','Caffeine','Water molecule','Animal cell','Human heart','DNA double helix','Solar system','z = sin(x)*cos(y)','M\u00F6bius strip'];
+  lab.insertAdjacentHTML('beforeend',
+    '<div class="card labp" id="lab-build"><h3>\u2728 Smart 3D models: build, then change them by typing or speaking</h3>'
+   +'<div class="hint">These are the same interactive models you get in the chat. Build one, then use the box under the model (or its Mic / Hands-free buttons): the model changes and VISION explains every change out loud in the Groq AI voice. Tap any part of a model to hear about it.</div>'
+   +'<div class="v36row"><select id="v36Eng"><option value="groq">Voice: Groq AI voice</option><option value="browser">Voice: browser voice</option></select><select id="v36Voice"><option value="hannah">hannah</option><option value="diana">diana</option><option value="autumn">autumn</option><option value="austin">austin</option><option value="daniel">daniel</option><option value="troy">troy</option></select><button class="ghost" id="v36Test">Test voice</button><button class="ghost" id="v36Stop">Stop voice</button></div>'
+   +'<div class="v36row"><input id="v36In" placeholder="Make a 3D model of\u2026 e.g. carbon atom, caffeine, human heart, solar system, z = sin(x)*y" autocomplete="off"><button class="ghost v36mic" id="v36Mic">Mic</button><button class="btn sm" id="v36Go">Build</button></div>'
+   +'<div class="chips" id="v36Chips"></div>'
+   +'<div class="row"><button class="ghost" id="v36Saved">My saved models</button><button class="ghost" id="v36Old">Classic model maker</button></div>'
+   +'<details class="v35more"><summary>What can I say to a model?</summary><div class="v36tip">'
+   +'<b>Atoms:</b> remove one electron \u00B7 add a neutron \u00B7 make it a 2+ ion \u00B7 excite the electron \u00B7 let it fall back \u00B7 show the orbitals \u00B7 cloud model \u00B7 change it to iron \u00B7 make the electrons green<br>'
+   +'<b>Molecules:</b> remove a hydrogen \u00B7 replace oxygen with sulfur \u00B7 show bond lengths \u00B7 show angles \u00B7 space filling \u00B7 hydrogenate<br>'
+   +'<b>Any model:</b> remove the lid \u00B7 colour the heart red \u00B7 highlight the aorta \u00B7 make it transparent \u00B7 explode \u00B7 cut in half \u00B7 zoom in \u00B7 top view<br>'
+   +'<b>Learning:</b> explain this \u00B7 give me a tour \u00B7 quiz me \u00B7 undo \u00B7 reset \u00B7 save it \u00B7 export png / obj / json \u00B7 stop talking</div></details>'
+   +'<div id="v36Cards"></div></div>'
+   +'<div class="card labp" id="lab-react"><h3>\u2697 Chemical reactions in 3D</h3>'
+   +'<div class="hint">Watch atoms collide, bonds break and new bonds form. The animation has narration in the Groq AI voice, an energy graph and a time slider. Pick one below or type any reaction in words or as an equation.</div>'
+   +'<div class="v36row"><input id="rxIn" placeholder="methane burning \u00B7 sodium + water \u00B7 CH4 + 2O2 -> CO2 + 2H2O \u00B7 rusting \u00B7 photosynthesis" autocomplete="off"><button class="ghost v36mic" id="rxMic">Mic</button><button class="btn sm" id="rxGo">Animate</button></div>'
+   +'<div class="chips" id="rxChips"></div><div class="hint" id="rxSt"></div><div id="v36Rx"></div></div>');
+  const $e=id=>document.getElementById(id);
+  $e('v36Eng').value=store.get('v36engine','groq');$e('v36Voice').value=gvoice();
+  $e('v36Eng').onchange=e=>{store.set('v36engine',e.target.value);offUntil=0};
+  $e('v36Voice').onchange=e=>{store.set('gvoice',e.target.value);toast('Voice changed.')};
+  $e('v36Test').onclick=()=>T.say('Hello! This is the voice I will use to explain your models and reactions.',{force:true});
+  $e('v36Stop').onclick=()=>T.stop();
+  EXAMPLES.forEach(s=>{const b=document.createElement('button');b.className='chip';b.textContent=s;b.onclick=()=>buildLab(/ atom$/.test(s)?'3D model of '+s:s);$e('v36Chips').appendChild(b)});
+  LIB.forEach(e=>{const b=document.createElement('button');b.className='chip';b.textContent=e.t;b.onclick=()=>runRx(e.t,libToRx(e));$e('rxChips').appendChild(b)});
+
+  function labCard(){const cs=V35.cards.filter(c=>c.alive()&&$e('v36Cards').contains(c.el));return cs[cs.length-1]||null}
+  async function buildLab(text){
+    text=String(text||'').trim();if(!text)return;
+    const stEl=$e('v36In');
+    try{
+      const C=labCard();
+      if(C&&!C.frozen&&!V35.wants3D(text)&&!isReactionRequest(text)){const cmd=V35.parseCmd(text,C);if(cmd){C.command(text,'lab');return}}
+      if(isReactionRequest(text)){labSelect('react');$e('rxIn').value=text;return runRx(text)}
+      const handled=await withTarget($e('v36Cards'),()=>route(text));
+      if(handled===false)toast('I did not understand that as a model request. Try: make a 3D model of a carbon atom.');
+    }catch(e){toast(e.message||String(e))}
+    stEl.focus();
+  }
+  $e('v36Go').onclick=()=>{const v=$e('v36In').value;$e('v36In').value='';buildLab(v)};
+  $e('v36In').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$e('v36Go').click()}});
+  $e('v36Mic').onclick=()=>dictate($e('v36Mic'),$e('v36In'),t=>buildLab(t));
+  $e('v36Saved').onclick=()=>{
+    const l=V35.gal.all().slice().reverse(),box=$e('v36Cards');
+    if(!l.length)return toast('No saved models yet. Build one and say "save it".');
+    const d=document.createElement('div');d.className='msg bot';d.innerHTML='<b>Your saved 3D models</b><div class="v35bar">'+l.map(x=>'<button class="chip" data-id="'+esc(x.id)+'">'+esc(x.name)+'</button>').join('')+'</div>';
+    box.prepend(d);
+    d.addEventListener('click',e=>{const b=e.target.closest('button[data-id]');if(!b)return;const it=V35.gal.all().find(x=>x.id===b.dataset.id);if(it)withTarget(box,()=>{if(it.kind==='atom')V35.makeCard('atom',it.data.st,{}).intro();else V35.makeCard('spec',it.data.spec,{}).intro()})});
+  };
+  $e('v36Old').onclick=()=>{$$('#p-lab .seg button').forEach(b=>b.classList.toggle('on',b.dataset.lab==='model'));$$('#p-lab .labp').forEach(p=>p.classList.toggle('on',p.id==='lab-model'));const b=seg.querySelector('[data-lab="model"]');if(b)b.click()};
+
+  /* buttons that open an editable atom from the periodic table and the atom lab */
+  function zFromText(sel){const h=document.querySelector(sel);const m=h&&/^\s*(\d{1,3})\b/.exec(h.textContent||'');return m?+m[1]:0}
+  function openEditableAtom(z){
+    if(!z||z<1||z>118)return toast('Pick an element first.');
+    labSelect('build');withTarget($e('v36Cards'),()=>{V35.openAtom(z)});
+    setTimeout(()=>{const c=$e('v36Cards');c.scrollIntoView({behavior:'smooth',block:'start'})},200);
+  }
+  const ptRow=document.querySelector('#ptModal .row');
+  if(ptRow&&!$e('v36PtOpen')){
+    const b=document.createElement('button');b.id='v36PtOpen';b.className='btn sm';b.style.flex='0 0 auto';b.textContent='Open editable atom (voice + edit)';
+    b.onclick=()=>{const z=zFromText('#ptInfo h3');const c=$e('ptClose');if(c)c.click();openEditableAtom(z)};ptRow.appendChild(b);
+  }
+  const atGo=$e('atGo');
+  if(atGo&&!$e('v36AtOpen')){
+    const b=document.createElement('button');b.id='v36AtOpen';b.className='ghost';b.textContent='Open editable atom (voice + edit)';
+    b.onclick=()=>{const z=zFromText('#atInfo h3')||V34.findEl($e('atFind').value);openEditableAtom(z)};atGo.parentNode.appendChild(b);
+  }
+  const mmGo=$e('mmGo');
+  if(mmGo&&!$e('v36MmOpen')){
+    const b=document.createElement('button');b.id='v36MmOpen';b.className='ghost';b.textContent='Open in Smart models (voice + edit)';
+    b.onclick=()=>{labSelect('build');const t=$e('mmIn').value.trim();if(t){$e('v36In').value='';buildLab('3D model of '+t)}};mmGo.parentNode.appendChild(b);
+  }
+
+  /* reactions wiring */
+  async function runRx(text,known){
+    const st=$e('rxSt'),box=$e('v36Rx');
+    labSelect('react');T.stop();
+    try{
+      st.textContent=known?'Preparing the animation\u2026':'Finding the reaction\u2026 (unknown reactions are built with AI and checked for balance)';
+      const rx=known||await findReaction(text);
+      const d=document.createElement('div');d.className='msg bot v35msg';box.prepend(d);
+      mountRx(d,rx);st.textContent='Done. Play, pause or scrub the animation, or press Narrate.';
+      d.scrollIntoView({behavior:'smooth',block:'nearest'});
+    }catch(e){st.textContent='\u26A0 '+(e.message||e)}
+  }
+  $e('rxGo').onclick=()=>{const v=$e('rxIn').value.trim();if(v)runRx(v)};
+  $e('rxIn').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$e('rxGo').click()}});
+  $e('rxMic').onclick=()=>dictate($e('rxMic'),$e('rxIn'),t=>{$e('rxIn').value=t;runRx(t)});
+
+  /* chat commands */
+  const _route36=route;
+  route=async function(t){
+    const s=String(t).trim();
+    try{
+      if(/^(?:open|show|go to)\s+(?:the\s+)?(?:chemical\s+)?reactions?(?:\s+(?:lab|tab))?$/i.test(s)){go('lab');labSelect('react');return true}
+      if(/^(?:open|show|go to)\s+(?:the\s+)?smart models?$/i.test(s)){go('lab');labSelect('build');return true}
+      if(isReactionRequest(s)){
+        $$('#log .typing').forEach(x=>x.remove());
+        const ph=addMsg('bot','<span class="dots"><i></i><i></i><i></i></span> Preparing a 3D reaction animation\u2026');
+        try{const rx=await findReaction(s);ph.className='msg bot v35msg';mountRx(ph,rx);log.scrollTop=log.scrollHeight}
+        catch(e){ph.remove();botSay('\u26A0 '+(e.message||e),{silent:true})}
+        return true;
+      }
+    }catch(e){$$('#log .typing').forEach(x=>x.remove());botSay('\u26A0 '+(e.message||e),{silent:true});return true}
+    return _route36(t);
+  };
+  window.V36={LIB,parseSmiles,expandH,balanceError,mapAtoms,findLibEquation,findLibText,prepareAnim,mountRx,findReaction,T};
+  /* self-check of the built-in library (silent unless something is wrong) */
+  LIB.forEach(e=>{const er=balanceError(libToRx(e));if(er)console.warn('PACK 36 library problem in "'+e.t+'": '+er)});
+})()}catch(e){console.error('PACK 36 (Groq voice, Lab, Reactions) failed:',e)}
+/* ================= END PACK 36 ================= */
 </script>
 </body>
 </html>
