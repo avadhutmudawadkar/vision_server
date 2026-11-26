@@ -11188,6 +11188,1142 @@ try{(function(){
   },1000);
 })()}catch(e){console.error('PACK 37 (wake word) failed:',e)}
 /* ================= END PACK 37 ================= */
+ /* ================= PACK 38: Chemistry Studio ================= */
+/* Paste this AFTER PACK 36 (it needs Pack 34 and Pack 35; Pack 37 is optional).                                           */
+/*  3D Lab gets two new sections:                                                                                           */
+/*   Table tools : property heat-map of the periodic table, trend charts, compare two elements (bond type), Aufbau animation,*/
+/*                 spectra lab (hydrogen-like series, flame tests, photon calculator), nuclear lab (binding energy, valley of */
+/*                 stability, decay equations and chains, half-life simulator, carbon dating), element quiz.                */
+/*   Chem calc   : equation balancer, stoichiometry with limiting reagent, reaction predictor (precipitation, displacement,   */
+/*                 neutralization, gas evolution, combustion) with a 3D beaker, molar mass and composition, empirical        */
+/*                 formula, pH, dilution, gas law.                                                                           */
+/*  Chat: "balance Fe + O2 -> Fe2O3", "molar mass of C6H12O6", "what happens when silver nitrate reacts with sodium chloride",*/
+/*        "pH of 0.01 M HCl", "alpha decay of uranium-238", "compare sodium and chlorine", "animate the electron configuration of iron". */
+try{(function(){
+  if(window.__pack38)return;
+  if(!window.V34||!V34.EL||!window.V35||!V35.openAtom||!V35.openSpec){console.error('PACK 38 needs PACK 34 and PACK 35 pasted above it.');return}
+  window.__pack38=1;
+  const EL=V34.EL,TT=V35.TTS,TAU=Math.PI*2;
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const $e=id=>document.getElementById(id);
+  const sup=s=>String(s).replace(/[0-9+\-]/g,c=>'⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻'['0123456789+-'.indexOf(c)]);
+  const sub=s=>String(s).replace(/[0-9]/g,c=>'₀₁₂₃₄₅₆₇₈₉'[+c]);
+  const nf=(v,d)=>{if(!isFinite(v))return '–';const a=Math.abs(v);if(a!==0&&(a>=1e6||a<1e-3))return v.toExponential(d==null?3:d).replace(/e\+?(-?)0*(\d+)/,(m,s,x)=>'×10'+sup((s||'')+x));return String(+v.toPrecision(d==null?4:d+1))};
+  const gcd=(a,b)=>{a=Math.abs(a);b=Math.abs(b);while(b){const t=a%b;a=b;b=t}return a};
+  const say=(t,force)=>{try{if(force||TT.on)return TT.say(t,{force:!!force,max:1200})}catch(e){}return Promise.resolve()};
+  const SYM={};EL.forEach(e=>{if(e)SYM[e.sym]=e});
+  const rseed=a=>()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+  const CATN={alkali:'alkali metal',alkaline:'alkaline earth metal',transition:'transition metal',post:'post-transition metal',metalloid:'metalloid',nonmetal:'reactive nonmetal',halogen:'halogen',noble:'noble gas',lanth:'lanthanide',actin:'actinide'};
+  const CATC={alkali:'#ff6b6b',alkaline:'#ffa94d',transition:'#74c0fc',post:'#8ce99a',metalloid:'#c3a6ff',nonmetal:'#ffe066',halogen:'#63e6be',noble:'#e599f7',lanth:'#ffc9de',actin:'#ffa8a8'};
+
+  /* ---------- data ---------- */
+  const IE1={1:13.598,2:24.587,3:5.392,4:9.323,5:8.298,6:11.26,7:14.534,8:13.618,9:17.423,10:21.565,11:5.139,12:7.646,13:5.986,14:8.152,15:10.487,16:10.36,17:12.968,18:15.76,19:4.341,20:6.113,21:6.561,22:6.828,23:6.746,24:6.767,25:7.434,26:7.902,27:7.881,28:7.64,29:7.726,30:9.394,31:5.999,32:7.899,33:9.789,34:9.752,35:11.814,36:14.0,37:4.177,38:5.695,39:6.217,40:6.634,41:6.759,42:7.092,43:7.28,44:7.361,45:7.459,46:8.337,47:7.576,48:8.994,49:5.786,50:7.344,51:8.608,52:9.01,53:10.451,54:12.13,55:3.894,56:5.212,57:5.577,58:5.539,74:7.864,78:8.959,79:9.226,80:10.438,81:6.108,82:7.417,83:7.286,86:10.749,92:6.194};
+  const ENP={1:2.20,3:.98,4:1.57,5:2.04,6:2.55,7:3.04,8:3.44,9:3.98,11:.93,12:1.31,13:1.61,14:1.90,15:2.19,16:2.58,17:3.16,19:.82,20:1.00,21:1.36,22:1.54,23:1.63,24:1.66,25:1.55,26:1.83,27:1.88,28:1.91,29:1.90,30:1.65,31:1.81,32:2.01,33:2.18,34:2.55,35:2.96,36:3.00,37:.82,38:.95,39:1.22,40:1.33,41:1.6,42:2.16,43:1.9,44:2.2,45:2.28,46:2.20,47:1.93,48:1.69,49:1.78,50:1.96,51:2.05,52:2.1,53:2.66,54:2.6,55:.79,56:.89,57:1.1,58:1.12,59:1.13,60:1.14,61:1.13,62:1.17,63:1.2,64:1.2,65:1.1,66:1.22,67:1.23,68:1.24,69:1.25,70:1.1,71:1.27,72:1.3,73:1.5,74:2.36,75:1.9,76:2.2,77:2.20,78:2.28,79:2.54,80:2.00,81:1.62,82:2.33,83:2.02,84:2.0,85:2.2,86:2.2,87:.7,88:.9,89:1.1,90:1.3,91:1.5,92:1.38,93:1.36,94:1.28,95:1.13,96:1.28,97:1.3,98:1.3,99:1.3,100:1.3,101:1.3,102:1.3,103:1.3};
+  const ORDER=['1s','2s','2p','3s','3p','4s','3d','4p','5s','4d','5p','6s','4f','5d','6p','7s','5f','6d','7p'];
+  const SL='spdf';
+  const subN=k=>2*(2*SL.indexOf(k[1])+1);
+  const cfgOf=z=>V34.cfgOf(z);
+  /* Slater's rules for the outermost electron */
+  const SGROUPS=[['1s'],['2s','2p'],['3s','3p'],['3d'],['4s','4p'],['4d'],['4f'],['5s','5p'],['5d'],['5f'],['6s','6p'],['6d'],['7s','7p']];
+  function slater(z){
+    const c=cfgOf(z);let gi=-1;
+    SGROUPS.forEach((g,i)=>{if(g.some(k=>c[k]>0))gi=i});
+    if(gi<0)return {zeff:z,n:1};
+    const grp=SGROUPS[gi],n=+grp[0][0],isD=/[df]/.test(grp[0][1]);let sh=0;
+    SGROUPS.forEach((g,i)=>{
+      const cnt=g.reduce((s,k)=>s+(c[k]||0),0);if(!cnt)return;
+      if(i===gi){sh+=(cnt-1)*(grp[0]==='1s'?.30:.35);return}
+      if(i>gi)return;
+      const gn=+g[0][0];
+      if(isD)sh+=cnt*1.0;
+      else if(gn===n-1)sh+=cnt*.85;else if(gn<n-1)sh+=cnt*1.0;else sh+=cnt*.85;
+    });
+    return {zeff:z-sh,n};
+  }
+  const NSTAR={1:1,2:2,3:3,4:3.7,5:4.0,6:4.2,7:4.4};
+  const PROPS={
+    en:{name:'Electronegativity (Pauling)',unit:'',f:z=>ENP[z]==null?null:ENP[z],d:2,info:'How strongly an atom pulls shared electrons toward itself. It rises across a period and falls down a group.'},
+    ie:{name:'First ionization energy',unit:'eV',f:z=>IE1[z]==null?null:IE1[z],d:2,info:'Energy needed to remove the outermost electron. It rises across a period and falls down a group, with dips at B and O (p-subshell effects).'},
+    zeff:{name:'Effective nuclear charge (Slater)',unit:'',f:z=>slater(z).zeff,d:2,info:'The pull the outer electron actually feels after inner electrons shield part of the nucleus. It rises steadily across a period.'},
+    rad:{name:'Estimated atomic radius (Slater, pm)',unit:'pm',f:z=>{const s=slater(z);return 52.9*Math.pow(NSTAR[s.n]||s.n,2)/s.zeff},d:0,info:'Estimated as 52.9 pm × n*² / Zeff. The trend is right (smaller across a period, larger down a group); real measured radii differ in detail.'},
+    val:{name:'Valence electrons',unit:'',f:z=>valence(z),d:0,info:'Electrons that take part in bonding: outer s and p electrons, plus (n−1)d for d-block and (n−2)f for f-block atoms.'},
+    unp:{name:'Unpaired electrons',unit:'',f:z=>unpaired(z),d:0,info:'Counted with Hund’s rule. Unpaired electrons make an atom paramagnetic.'},
+    mass:{name:'Atomic mass',unit:'u',f:z=>EL[z].mass,d:3,info:'Average relative atomic mass of the natural isotopes.'},
+    shells:{name:'Occupied electron shells',unit:'',f:z=>EL[z].shells.filter(x=>x>0).length,d:0,info:'Equals the period number.'}
+  };
+  function unpaired(z){const c=cfgOf(z);let u=0;Object.keys(c).forEach(k=>{const o=c[k],orb=2*SL.indexOf(k[1])+1;if(o>0&&o<2*orb)u+=o<=orb?o:2*orb-o});return u}
+  function valence(z){
+    const e=EL[z],c=cfgOf(z);let mx=0;Object.keys(c).forEach(k=>{if(c[k]>0)mx=Math.max(mx,+k[0])});
+    let v=(c[mx+'s']||0)+(c[mx+'p']||0);
+    if(e.block==='d'){v=(c[mx+'s']||0)+(c[(mx-1)+'d']||0)+((c[mx+'p']||0))}
+    if(e.block==='f'){v=(c[mx+'s']||0)+(c[(mx-1)+'d']||0)+(c[(mx-2)+'f']||0)}
+    if(z===46)v=10;
+    return v;
+  }
+  /* wavelength to colour */
+  function wlRGB(nm){
+    let r=0,g=0,b=0;
+    if(nm>=380&&nm<440){r=-(nm-440)/60;b=1}else if(nm<490){g=(nm-440)/50;b=1}else if(nm<510){g=1;b=-(nm-510)/20}else if(nm<580){r=(nm-510)/70;g=1}else if(nm<645){r=1;g=-(nm-645)/65}else if(nm<=780)r=1;
+    let f=1;if(nm<420)f=.3+.7*(nm-380)/40;else if(nm>700)f=.3+.7*(780-nm)/80;
+    return [r,g,b].map(v=>Math.round(255*Math.pow(clamp(v*f,0,1),.8)));
+  }
+  const wlCss=nm=>nm<380||nm>780?'#888':'rgb('+wlRGB(nm).join(',')+')';
+
+  /* ---------- nuclear physics (semi-empirical mass formula) ---------- */
+  const ME=.511;
+  function bind(Z,N){
+    const A=Z+N;if(A<2)return 0;
+    let d=0;if(Z%2===0&&N%2===0)d=11.18/Math.sqrt(A);else if(Z%2===1&&N%2===1)d=-11.18/Math.sqrt(A);
+    const B=15.75*A-17.8*Math.pow(A,2/3)-.711*Z*(Z-1)/Math.cbrt(A)-23.7*(A-2*Z)*(A-2*Z)/A+d;
+    return Math.max(B,0);
+  }
+  const bpn=(Z,N)=>bind(Z,N)/(Z+N);
+  function zStable(A){let best=1,bb=-1e9;for(let Z=1;Z<=Math.min(A,118);Z++){const b=bind(Z,A-Z);if(b>bb){bb=b;best=Z}}return best}
+  const nStable=Z=>{let best=Z,bz=1e9;for(let A=Z;A<=Z*3+8;A++){const zs=zStable(A);const d=Math.abs(zs-Z);if(d<bz||(d===bz&&bind(Z,A-Z)>bind(Z,best-Z)+0)){bz=d;best=A-Z}}return best};
+  const NOT={ '1-3':['β⁻',12.32,'y'],'6-14':['β⁻',5730,'y'],'11-22':['β⁺',2.602,'y'],'9-18':['β⁺',109.77,'min'],'19-40':['β⁻',1.248e9,'y'],'27-60':['β⁻',5.271,'y'],'38-90':['β⁻',28.79,'y'],'53-131':['β⁻',8.025,'d'],'55-137':['β⁻',30.17,'y'],'84-210':['α',138.376,'d'],'86-222':['α',3.8235,'d'],'88-226':['α',1600,'y'],'90-232':['α',1.405e10,'y'],'92-235':['α',7.04e8,'y'],'92-238':['α',4.468e9,'y'],'94-239':['α',24110,'y'],'95-241':['α',432.6,'y'],'43-99':['IT',6.0067,'h'],'82-214':['β⁻',26.8,'min'],'83-214':['β⁻',19.9,'min']};
+  const UNIT_S={s:1,min:60,h:3600,d:86400,y:3.15576e7};
+  /* decay of nuclide (Z, A): returns {mode, Z2, A2, known, half:{v,u}} */
+  function decayOf(Z,A){
+    const N=A-Z,k=Z+'-'+A,known=NOT[k];let mode;
+    if(known)mode=known[0];
+    else if(Z>=84&&A>=206&&N>nStable(Z)-8)mode='α';
+    else{const ns=nStable(Z);if(N>ns+1)mode='β⁻';else if(N<ns-1)mode='β⁺';else mode='stable'}
+    let Z2=Z,A2=A,em='';
+    if(mode==='α'){Z2=Z-2;A2=A-4;em='⁴₂He'}
+    else if(mode==='β⁻'){Z2=Z+1;em='⁰₋₁e + ν̅'}
+    else if(mode==='β⁺'){Z2=Z-1;em='⁰₊₁e + ν'}
+    else if(mode==='IT'){em='γ'}
+    return {mode,Z2,A2,em,known:!!known,half:known?{v:known[1],u:known[2]}:null};
+  }
+  const nuc=(Z,A)=>sup(A)+sub(Z)+((EL[Z]&&EL[Z].sym)||'?');
+  const CHAINS={'U-238':[[92,238],[90,234],[91,234],[92,234],[90,230],[88,226],[86,222],[84,218],[82,214],[83,214],[84,214],[82,210],[83,210],[84,210],[82,206]],
+    'Th-232':[[90,232],[88,228],[89,228],[90,228],[88,224],[86,220],[84,216],[82,212],[83,212],[84,212],[82,208]],
+    'U-235':[[92,235],[90,231],[91,231],[89,227],[90,227],[88,223],[86,219],[84,215],[82,211],[83,211],[81,207],[82,207]]};
+  const CHAIN_MODE={'92-238':'α','90-234':'β⁻','91-234':'β⁻','92-234':'α','90-230':'α','88-226':'α','86-222':'α','84-218':'α','82-214':'β⁻','83-214':'β⁻','84-214':'α','82-210':'β⁻','83-210':'β⁻','84-210':'α',
+    '90-232':'α','88-228':'β⁻','89-228':'β⁻','90-228':'α','88-224':'α','86-220':'α','84-216':'α','82-212':'β⁻','83-212':'β⁻','84-212':'α',
+    '92-235':'α','90-231':'β⁻','91-231':'α','89-227':'β⁻','90-227':'α','88-223':'α','86-219':'α','84-215':'α','82-211':'β⁻','83-211':'α','81-207':'β⁻'};
+  function nuclideFrom(text){
+    const t=String(text).trim();let m=t.match(/^(\d{1,3})\s*[- ]?\s*([A-Za-z]{1,12})$/)||t.match(/^([A-Za-z]{1,12})\s*[- ]?\s*(\d{1,3})$/);
+    if(!m)return null;let a,s;if(/^\d/.test(m[1])){a=+m[1];s=m[2]}else{s=m[1];a=+m[2]}
+    const z=V34.findEl(s.toLowerCase())||V34.findEl(s);if(!z||a<z||a>z*3+12)return null;return {Z:z,A:a};
+  }
+  const halfSec=h=>h?h.v*UNIT_S[h.u]:0;
+  const fmtHalf=h=>h?nf(h.v,4)+' '+({y:'years',d:'days',h:'hours',min:'minutes',s:'seconds'})[h.u]:'not tabulated here';
+
+  /* ---------- drawing helper ---------- */
+  function setupCv(cv,w,h){const d=window.devicePixelRatio||1;cv.width=Math.round(w*d);cv.height=Math.round(h*d);cv.style.width='100%';cv.style.maxWidth=w+'px';cv.style.aspectRatio=w+'/'+h;const x=cv.getContext('2d');x.setTransform(d,0,0,d,0,0);return x}
+  function plot(cv,o){
+    const W=o.w||560,H=o.h||280,x=setupCv(cv,W,H),L=52,R=14,T=16,B=40;
+    x.clearRect(0,0,W,H);x.fillStyle='#10060b';x.fillRect(0,0,W,H);
+    const xs=[],ys=[];(o.series||[]).forEach(s=>s.pts.forEach(p=>{if(p[1]!=null&&isFinite(p[1])){xs.push(p[0]);ys.push(p[1])}}));
+    if(!xs.length){x.fillStyle='#b98f5e';x.fillText('No data',20,30);return}
+    const x0=o.xmin!=null?o.xmin:Math.min.apply(null,xs),x1=o.xmax!=null?o.xmax:Math.max.apply(null,xs);
+    let y0=o.ymin!=null?o.ymin:Math.min.apply(null,ys),y1=o.ymax!=null?o.ymax:Math.max.apply(null,ys);if(y1===y0)y1=y0+1;
+    const sx=v=>L+(v-x0)/(x1-x0||1)*(W-L-R),sy=v=>H-B-(v-y0)/(y1-y0)*(H-B-T);
+    x.strokeStyle='rgba(245,197,24,.15)';x.fillStyle='#b98f5e';x.font='11px sans-serif';x.lineWidth=1;
+    for(let i=0;i<=5;i++){const v=y0+(y1-y0)*i/5,py=sy(v);x.beginPath();x.moveTo(L,py);x.lineTo(W-R,py);x.stroke();x.textAlign='right';x.fillText(nf(v,3),L-5,py+4)}
+    for(let i=0;i<=6;i++){const v=x0+(x1-x0)*i/6,px=sx(v);x.beginPath();x.moveTo(px,T);x.lineTo(px,H-B);x.stroke();x.textAlign='center';x.fillText(nf(v,3),px,H-B+14)}
+    x.fillStyle='#e9c98d';x.textAlign='center';x.fillText(o.xlab||'',(L+W-R)/2,H-6);
+    x.save();x.translate(12,(T+H-B)/2);x.rotate(-Math.PI/2);x.fillText(o.ylab||'',0,0);x.restore();
+    (o.vlines||[]).forEach(v=>{x.strokeStyle=v.color||'rgba(224,49,63,.6)';x.setLineDash([4,4]);x.beginPath();x.moveTo(sx(v.x),T);x.lineTo(sx(v.x),H-B);x.stroke();x.setLineDash([])});
+    (o.series||[]).forEach(s=>{
+      x.strokeStyle=s.color||'#f5c518';x.fillStyle=s.color||'#f5c518';x.lineWidth=s.lw||1.6;
+      if(s.line!==false){x.beginPath();let st=false;s.pts.forEach(p=>{if(p[1]==null||!isFinite(p[1])){st=false;return}const px=sx(p[0]),py=sy(p[1]);if(!st){x.moveTo(px,py);st=true}else x.lineTo(px,py)});x.stroke()}
+      if(s.dots){s.pts.forEach(p=>{if(p[1]==null||!isFinite(p[1]))return;x.beginPath();x.arc(sx(p[0]),sy(p[1]),s.r||2.4,0,TAU);x.fill()})}
+    });
+    (o.marks||[]).forEach(m=>{const px=sx(m.x),py=sy(m.y);x.fillStyle=m.color||'#e0313f';x.beginPath();x.arc(px,py,4.5,0,TAU);x.fill();x.fillStyle='#ffecc9';x.textAlign=m.align||'left';x.font='12px sans-serif';x.fillText(m.label||'',px+(m.align==='right'?-8:8),py-8)});
+    return {sx,sy};
+  }
+  /* ---------- panels in the 3D Lab ---------- */
+  const lab=document.getElementById('p-lab'),seg=lab&&lab.querySelector('.seg');
+  if(!lab||!seg){console.error('PACK 38 needs the 3D Lab tab from PACK 34.');return}
+  function labSelect(k){
+    if(!lab.classList.contains('on'))go('lab');
+    $$('#p-lab .seg button').forEach(b=>b.classList.toggle('on',b.dataset.lab===k));
+    $$('#p-lab .labp').forEach(p=>p.classList.toggle('on',p.id==='lab-'+k));
+  }
+  [['tools','Table tools'],['calc','Chem calc']].forEach(a=>{
+    if(seg.querySelector('[data-lab="'+a[0]+'"]'))return;
+    const b=document.createElement('button');b.dataset.lab=a[0];b.textContent=a[1];b.onclick=()=>labSelect(a[0]);seg.appendChild(b);
+  });
+  const css=document.createElement('style');
+  css.textContent='.v38h{display:grid;grid-template-columns:repeat(18,minmax(0,1fr));gap:1px;min-width:430px}'
+   +'.v38w{overflow-x:auto;padding-bottom:6px}'
+   +'.v38c{aspect-ratio:1/1;border-radius:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;line-height:1.05;cursor:pointer;color:#10060b;border:1px solid rgba(0,0,0,.35);user-select:none;position:relative}'
+   +'.v38c b{font-size:11px}.v38c small{font-size:7px;opacity:.75}.v38c.dim{opacity:.18}.v38c.sel{outline:2px solid #fff;z-index:2}'
+   +'.v38d{border:1px solid var(--line);border-radius:12px;margin:10px 0;background:rgba(245,197,24,.03)}.v38d>summary{cursor:pointer;padding:10px 12px;color:var(--gold);font-family:Orbitron,sans-serif;font-size:13px;letter-spacing:.08em}'
+   +'.v38b{padding:4px 12px 12px}.v38r{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0}.v38r input,.v38r select{flex:1 1 120px;min-width:0;margin:0}'
+   +'.v38t{width:100%;border-collapse:collapse;font-size:13px;margin:6px 0}.v38t th,.v38t td{border-bottom:1px solid rgba(245,197,24,.15);padding:4px 6px;text-align:left;vertical-align:top}.v38t th{color:var(--gold);font-weight:600}'
+   +'.v38o{margin:8px 0;padding:10px;border:1px solid var(--line);border-radius:10px;background:rgba(0,0,0,.25);font-size:14px;line-height:1.5;word-break:break-word}'
+   +'.v38eq{font-size:17px;font-family:Georgia,serif;color:#fff}.v38k{color:var(--muted);font-size:12px}.v38g{color:var(--green)}.v38x{color:#ff8a8a}'
+   +'.v38sw{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:middle;margin-right:4px;border:1px solid rgba(255,255,255,.3)}'
+   +'.v38b canvas{width:100%;border-radius:8px;border:1px solid var(--line)}.v38leg{height:10px;border-radius:5px;margin:4px 0}'
+   +'.v38b button.on{border-color:var(--gold);color:#fff}.v38q{display:flex;flex-wrap:wrap;gap:6px}.v38q button.ok{background:rgba(57,217,138,.25)}.v38q button.no{background:rgba(224,49,63,.3)}';
+  document.head.appendChild(css);
+  function panelHTML(){return ''}
+  const tools=document.createElement('div');tools.className='card labp';tools.id='lab-tools';
+  const calc=document.createElement('div');calc.className='card labp';calc.id='lab-calc';
+  lab.appendChild(tools);lab.appendChild(calc);
+  tools.innerHTML='<h3>🧪 Periodic table tools</h3><div class="hint">Tap a section to open it. Every tool can speak what it shows: press its Explain button.</div><div id="v38tools"></div>';
+  calc.innerHTML='<h3>⚗ Chemistry calculators</h3><div class="hint">Balance equations, work out how much product you get, predict what happens when two substances meet, and more.</div><div id="v38calc"></div>';
+  /* a collapsible section whose body is built the first time it opens */
+  function section(host,title,build,open){
+    const d=document.createElement('details');d.className='v38d';d.innerHTML='<summary>'+title+'</summary><div class="v38b"></div>';
+    let built=false;const body=d.querySelector('.v38b');
+    const go2=()=>{if(built)return;built=true;try{build(body)}catch(e){body.textContent='Could not build this tool: '+e.message;console.error('PACK 38',e)}};
+    d.addEventListener('toggle',()=>{if(d.open)go2()});host.appendChild(d);if(open){d.open=true;go2()}
+    return d;
+  }
+  const out=(el,html)=>{el.innerHTML=html};
+
+  /* =====================================================================
+     Table tools: 3D model target, heat map, trends, compare, Aufbau, quiz
+     ===================================================================== */
+  let redirect=null;
+  const _addMsg38=addMsg;
+  addMsg=function(){const d=_addMsg38.apply(this,arguments);if(redirect&&d&&d.nodeType===1){redirect.prepend(d)}return d};
+  async function inCards(fn){redirect=$e('v38cards');try{return await fn()}finally{redirect=null}}
+  const tbox=$e('v38tools'),cbox=$e('v38calc');
+  tools.insertAdjacentHTML('beforeend','<div id="v38cards"></div>');
+  const props=z=>{const o={};Object.keys(PROPS).forEach(k=>{o[k]=PROPS[k].f(z)});return o};
+  const showVal=(k,v)=>v==null?'–':nf(v,PROPS[k].d===0?3:4)+(PROPS[k].unit?' '+PROPS[k].unit:'');
+  const posOf=e=>e.f!=null?{r:e.p===6?9:10,c:3+e.f}:{r:e.p,c:e.g};
+  const SCALE=['#440154','#3b528b','#21918c','#5ec962','#fde725'];
+  function scaleCol(t){
+    t=clamp(t,0,1)*(SCALE.length-1);const i=Math.min(SCALE.length-2,Math.floor(t)),f=t-i,a=SCALE[i],b=SCALE[i+1];
+    const p=h=>[1,3,5].map(j=>parseInt(h.substr(j,2),16));const A=p(a),B=p(b);return A.map((v,j)=>Math.round(v+(B[j]-v)*f));
+  }
+  const lum=c=>(.299*c[0]+.587*c[1]+.114*c[2]);
+  const hexRGB=h=>[1,3,5].map(j=>parseInt(h.substr(j,2),16));
+  function extremes(k){
+    let lo=null,hi=null;for(let z=1;z<=118;z++){const v=PROPS[k].f(z);if(v==null)continue;if(!lo||v<lo.v)lo={z,v};if(!hi||v>hi.v)hi={z,v}}return {lo,hi};
+  }
+  function describeProp(k){
+    const P=PROPS[k],x=extremes(k);
+    return P.name+'. '+P.info+' The highest value is '+EL[x.hi.z].name+', '+nf(x.hi.v,3)+(P.unit?' '+P.unit:'')+'. The lowest is '+EL[x.lo.z].name+', '+nf(x.lo.v,3)+(P.unit?' '+P.unit:'')+'.';
+  }
+  /* ---------- 1. heat map ---------- */
+  section(tbox,'Heat map of the periodic table',body=>{
+    body.innerHTML='<div class="v38r"><select id="v38hp"></select><select id="v38hc"><option value="">Highlight a family…</option></select><button class="ghost" id="v38hx">Explain</button></div>'
+      +'<div class="v38k" id="v38hl"></div><div class="v38leg" id="v38hg"></div><div class="v38w"><div class="v38h" id="v38hm"></div></div><div class="v38o" id="v38hi">Tap any element for its numbers and a 3D atom.</div>';
+    const sel=body.querySelector('#v38hp');
+    Object.keys(PROPS).forEach(k=>sel.insertAdjacentHTML('beforeend','<option value="'+k+'">'+esc(PROPS[k].name)+'</option>'));
+    sel.insertAdjacentHTML('beforeend','<option value="cat">Family (category)</option><option value="block">Block (s, p, d, f)</option>');
+    sel.value='en';
+    const cs=body.querySelector('#v38hc');Object.keys(CATN).forEach(k=>cs.insertAdjacentHTML('beforeend','<option value="'+k+'">'+esc(CATN[k])+'</option>'));
+    const grid=body.querySelector('#v38hm');let selZ=0;
+    const BLK={s:'#ff8787',p:'#ffd43b',d:'#74c0fc',f:'#b197fc'};
+    EL.forEach(e=>{
+      if(!e)return;const p=posOf(e),c=document.createElement('div');c.className='v38c';c.dataset.z=e.z;c.style.gridRow=p.r;c.style.gridColumn=p.c;
+      c.innerHTML='<small>'+e.z+'</small><b>'+e.sym+'</b>';c.onclick=()=>pickEl(e.z);grid.appendChild(c);
+    });
+    const rl=document.createElement('div');rl.style.cssText='grid-row:8;grid-column:1/19;height:6px';grid.appendChild(rl);
+    function paint(){
+      const k=sel.value,fam=cs.value,leg=body.querySelector('#v38hg'),lt=body.querySelector('#v38hl');
+      let lo=0,hi=1;
+      if(PROPS[k]){const x=extremes(k);lo=x.lo.v;hi=x.hi.v;leg.style.background='linear-gradient(90deg,'+SCALE.join(',')+')';lt.textContent=PROPS[k].name+': '+nf(lo,3)+(PROPS[k].unit?' '+PROPS[k].unit:'')+' (dark) to '+nf(hi,3)+(PROPS[k].unit?' '+PROPS[k].unit:'')+' (bright). Grey = no data.'}
+      else{leg.style.background='none';lt.textContent=k==='cat'?'Colours show the family each element belongs to.':'Colours show the subshell being filled.'}
+      grid.querySelectorAll('.v38c').forEach(c=>{
+        const z=+c.dataset.z,e=EL[z];let col;
+        if(PROPS[k]){const v=PROPS[k].f(z);col=v==null?[120,120,120]:scaleCol((v-lo)/((hi-lo)||1))}
+        else if(k==='cat')col=hexRGB(CATC[e.cat]||'#999999');else col=hexRGB(BLK[e.block]||'#999999');
+        c.style.background='rgb('+col.join(',')+')';c.style.color=lum(col)<110?'#fff':'#10060b';
+        c.classList.toggle('dim',!!fam&&e.cat!==fam);c.classList.toggle('sel',z===selZ);
+      });
+    }
+    function pickEl(z){
+      selZ=z;paint();const e=EL[z],P=props(z);
+      body.querySelector('#v38hi').innerHTML='<b>'+esc(e.name)+'</b> ('+e.sym+', Z = '+z+') · '+esc(CATN[e.cat]||'')+' · period '+e.p+(e.g?', group '+e.g:'')+', '+e.block+'-block<br>'
+        +'<span class="v38k">Configuration:</span> '+esc(Object.keys(cfgOf(z)).map(k=>k+sup(cfgOf(z)[k])).join(' '))+'<br>'
+        +Object.keys(PROPS).map(k=>'<span class="v38k">'+esc(PROPS[k].name)+':</span> '+showVal(k,P[k])).join('<br>')
+        +'<div class="v38r"><button class="btn sm" data-a="atom">Open 3D atom (editable)</button><button class="ghost" data-a="auf">Aufbau animation</button><button class="ghost" data-a="cmp">Compare…</button><button class="ghost" data-a="say">Explain</button></div>';
+      body.querySelector('#v38hi').onclick=ev=>{
+        const b=ev.target.closest('button[data-a]');if(!b)return;const a=b.dataset.a;
+        if(a==='atom')inCards(()=>V35.openAtom(z)).then(()=>$e('v38cards').scrollIntoView({behavior:'smooth',block:'start'}));
+        else if(a==='auf')window.V38&&V38.aufbau(z);
+        else if(a==='cmp')window.V38&&V38.compare(z);
+        else say(e.name+', atomic number '+z+'. It is a '+(CATN[e.cat]||'element')+' in period '+e.p+(e.g?' and group '+e.g:'')+'. Its electron configuration is '+Object.keys(cfgOf(z)).map(k=>k+' '+cfgOf(z)[k]).join(', ')+'. '+(PROPS.en.f(z)!=null?'Its electronegativity is '+PROPS.en.f(z)+'.':''),true);
+      };
+    }
+    sel.onchange=paint;cs.onchange=paint;
+    body.querySelector('#v38hx').onclick=()=>{const k=sel.value;say(PROPS[k]?describeProp(k):(k==='cat'?'The colours group elements into families such as alkali metals, halogens and noble gases, which behave alike.':'The blocks s, p, d and f show which subshell receives the last electron.'),true)};
+    paint();
+  },true);
+
+  /* ---------- 2. trends ---------- */
+  section(tbox,'Trend charts (across a period, down a group)',body=>{
+    body.innerHTML='<div class="v38r"><select id="v38tp"></select><select id="v38tm"><option value="all">All elements</option></select><button class="ghost" id="v38tx">Explain</button></div><canvas id="v38tc"></canvas><div class="v38o" id="v38tt"></div>';
+    const sp=body.querySelector('#v38tp'),sm=body.querySelector('#v38tm');
+    ['en','ie','zeff','rad','val','unp','mass'].forEach(k=>sp.insertAdjacentHTML('beforeend','<option value="'+k+'">'+esc(PROPS[k].name)+'</option>'));
+    for(let p=1;p<=7;p++)sm.insertAdjacentHTML('beforeend','<option value="p'+p+'">Period '+p+' (across)</option>');
+    for(let g=1;g<=18;g++)sm.insertAdjacentHTML('beforeend','<option value="g'+g+'">Group '+g+' (down)</option>');
+    const cv=body.querySelector('#v38tc');
+    function elsFor(m){
+      if(m==='all')return EL.filter(Boolean);
+      if(m[0]==='p')return EL.filter(e=>e&&e.p===+m.slice(1)&&e.f==null);
+      return EL.filter(e=>e&&e.g===+m.slice(1));
+    }
+    function summary(k,m,els){
+      const vals=els.map(e=>({e,v:PROPS[k].f(e.z)})).filter(x=>x.v!=null);if(vals.length<2)return 'Not enough data for this selection.';
+      const a=vals[0],b=vals[vals.length-1],hi=vals.reduce((s,x)=>x.v>s.v?x:s),lo=vals.reduce((s,x)=>x.v<s.v?x:s);
+      const dir=b.v>a.v?'rises':'falls';
+      if(m==='all')return PROPS[k].info;
+      if(m[0]==='p')return 'Across period '+m.slice(1)+' the value generally '+dir+' from '+nf(a.v,3)+' ('+a.e.name+') to '+nf(b.v,3)+' ('+b.e.name+'). The highest is '+hi.e.name+' and the lowest is '+lo.e.name+'. '+PROPS[k].info;
+      return 'Down group '+m.slice(1)+' the value generally '+dir+' from '+nf(a.v,3)+' ('+a.e.name+') to '+nf(b.v,3)+' ('+b.e.name+'). '+PROPS[k].info;
+    }
+    function draw(){
+      const k=sp.value,m=sm.value,els=elsFor(m),P=PROPS[k];
+      const xf=m==='all'?e=>e.z:m[0]==='p'?e=>e.g||e.z:e=>e.p;
+      const pts=els.map(e=>[xf(e),P.f(e.z)]).sort((a,b)=>a[0]-b[0]);
+      const ser=[{pts,color:'#f5c518',dots:true,r:3}];
+      const o={series:ser,xlab:m==='all'?'Atomic number Z':m[0]==='p'?'Group':'Period',ylab:P.name,vlines:m==='all'?[2,10,18,36,54,86].map(z=>({x:z+.5})):[],marks:[]};
+      if(m==='all'){const x=extremes(k);o.marks=[{x:x.hi.z,y:x.hi.v,label:EL[x.hi.z].sym,color:'#39d98a'},{x:x.lo.z,y:x.lo.v,label:EL[x.lo.z].sym,color:'#e0313f'}]}
+      plot(cv,o);
+      body.querySelector('#v38tt').textContent=summary(k,m,els)+(m==='all'?' Dashed lines mark the ends of each period: the pattern repeats, which is what “periodic” means.':'');
+    }
+    sp.onchange=draw;sm.onchange=draw;body.querySelector('#v38tx').onclick=()=>say(body.querySelector('#v38tt').textContent,true);
+    draw();
+  });
+
+  /* ---------- 3. compare two elements ---------- */
+  function bondType(a,b){
+    const ea=ENP[a],eb=ENP[b];
+    const metal=z=>['alkali','alkaline','transition','post','lanth','actin'].indexOf(EL[z].cat)>=0;
+    if(metal(a)&&metal(b))return 'Both are metals, so atoms share a sea of delocalised electrons: metallic bonding (an alloy, not a compound).';
+    if(ea==null||eb==null)return 'Electronegativity is not tabulated for one of them (noble gases rarely bond), so the bond type cannot be estimated.';
+    const d=Math.abs(ea-eb);
+    if(d>1.7)return 'ΔEN = '+nf(d,3)+' (larger than about 1.7): ionic. '+EL[ea>eb?b:a].name+' gives electrons to '+EL[ea>eb?a:b].name+'.';
+    if(d>=.4)return 'ΔEN = '+nf(d,3)+': polar covalent. Electrons are shared unequally, pulled toward '+EL[ea>eb?a:b].name+'.';
+    return 'ΔEN = '+nf(d,3)+' (below 0.4): essentially non-polar covalent, electrons shared almost equally.';
+  }
+  function compareHTML(a,b){
+    const A=props(a),B=props(b),rows=Object.keys(PROPS).map(k=>'<tr><td>'+esc(PROPS[k].name)+'</td><td>'+showVal(k,A[k])+'</td><td>'+showVal(k,B[k])+'</td></tr>');
+    const cf=z=>Object.keys(cfgOf(z)).map(k=>k+sup(cfgOf(z)[k])).join(' ');
+    return '<table class="v38t"><tr><th></th><th>'+esc(EL[a].name)+' ('+EL[a].sym+')</th><th>'+esc(EL[b].name)+' ('+EL[b].sym+')</th></tr>'
+      +'<tr><td>Atomic number</td><td>'+a+'</td><td>'+b+'</td></tr><tr><td>Family</td><td>'+esc(CATN[EL[a].cat]||'')+'</td><td>'+esc(CATN[EL[b].cat]||'')+'</td></tr>'
+      +'<tr><td>Period, group</td><td>'+EL[a].p+', '+(EL[a].g||'f')+'</td><td>'+EL[b].p+', '+(EL[b].g||'f')+'</td></tr>'
+      +'<tr><td>Configuration</td><td>'+esc(cf(a))+'</td><td>'+esc(cf(b))+'</td></tr>'+rows.join('')+'</table>'
+      +'<div class="v38o"><b>Bond between them:</b> '+esc(bondType(a,b))+'</div>';
+  }
+  const cmpSec=section(tbox,'Compare two elements (and the bond between them)',body=>{
+    body.innerHTML='<div class="v38r"><input id="v38ca" placeholder="Element A, e.g. sodium"><input id="v38cb" placeholder="Element B, e.g. chlorine"><button class="btn sm" id="v38cg">Compare</button></div><div id="v38co"></div><div class="v38r"><button class="ghost" id="v38c1">3D atom A</button><button class="ghost" id="v38c2">3D atom B</button><button class="ghost" id="v38cx">Explain</button></div>';
+    const A=body.querySelector('#v38ca'),Bx=body.querySelector('#v38cb');
+    const run=()=>{const a=V34.findEl(A.value.trim().toLowerCase()),b=V34.findEl(Bx.value.trim().toLowerCase());
+      if(!a||!b){body.querySelector('#v38co').innerHTML='<div class="v38o v38x">I could not find one of those elements. Use a name, symbol or number.</div>';return null}
+      body.querySelector('#v38co').innerHTML=compareHTML(a,b);return [a,b]};
+    body.querySelector('#v38cg').onclick=run;
+    body.querySelector('#v38c1').onclick=()=>{const z=V34.findEl(A.value.trim().toLowerCase());if(z)inCards(()=>V35.openAtom(z))};
+    body.querySelector('#v38c2').onclick=()=>{const z=V34.findEl(Bx.value.trim().toLowerCase());if(z)inCards(()=>V35.openAtom(z))};
+    body.querySelector('#v38cx').onclick=()=>{const r=run();if(r)say(EL[r[0]].name+' and '+EL[r[1]].name+'. '+bondType(r[0],r[1]),true)};
+    cmpSec._set=(a,b)=>{A.value=EL[a].name;if(b)Bx.value=EL[b].name;if(a&&b)run()};
+  });
+
+  /* ---------- 4. Aufbau animation ---------- */
+  function placeE(boxes,key){
+    const arr=boxes[key];let i=arr.findIndex(b=>b[0]+b[1]===0);
+    if(i>=0){arr[i][0]=1;return {i,spin:'up'}}
+    i=arr.findIndex(b=>b[0]===1&&b[1]===0);if(i>=0){arr[i][1]=1;return {i,spin:'down'}}
+    return null;
+  }
+  function newBoxes(){const b={};ORDER.forEach(k=>{b[k]=Array.from({length:2*SL.indexOf(k[1])+1},()=>[0,0])});return b}
+  function aufbauPlan(z){
+    const steps=[],boxes=newBoxes();let left=z,k=0;
+    for(const key of ORDER){
+      while(left>0&&boxes[key].reduce((s,b)=>s+b[0]+b[1],0)<subN(key)){
+        const r=placeE(boxes,key);k++;left--;
+        const first=boxes[key].reduce((s,b)=>s+b[0]+b[1],0)===1;
+        const why=r.spin==='up'?'Electron '+k+' goes into '+key+': the lowest-energy subshell with room (Aufbau). It takes an empty orbital with spin up, because Hund’s rule says electrons spread out before pairing.'
+          :'Electron '+k+' pairs up in an '+key+' orbital with opposite spin (Pauli exclusion: no two electrons share all four quantum numbers).';
+        steps.push({key,box:r.i,spin:r.spin,snap:JSON.stringify(boxes),text:(first?'Now the '+key+' subshell. ':'')+why});
+      }
+    }
+    const actual=cfgOf(z),ideal={};ORDER.forEach(kk=>{const n=boxes[kk].reduce((s,b)=>s+b[0]+b[1],0);if(n)ideal[kk]=n});
+    const diffs=[];new Set(Object.keys(ideal).concat(Object.keys(actual))).forEach(kk=>{if((ideal[kk]||0)!==(actual[kk]||0))diffs.push(kk)});
+    let exc=null;
+    if(diffs.length){
+      const fin=newBoxes();Object.keys(actual).forEach(kk=>{for(let i=0;i<actual[kk];i++)placeE(fin,kk)});
+      const fmt=c=>ORDER.filter(kk=>c[kk]).map(kk=>kk+sup(c[kk])).join(' ');
+      exc={snap:JSON.stringify(fin),text:'Exception! The simple filling order predicts '+fmt(ideal)+', but experiments show '+fmt(actual)+'. A half-filled or completely filled d or f subshell is especially stable (exchange energy), and the 4s/3d-type levels are very close in energy, so '+(diffs.length>1?'an electron moves between subshells.':'the arrangement changes.')};
+    }
+    return {steps,exc,finalBoxes:JSON.parse(exc?exc.snap:steps.length?steps[steps.length-1].snap:JSON.stringify(newBoxes()))};
+  }
+  function drawBoxes(cv,boxes,z,hl){
+    const keys=ORDER.filter(k=>{const n=boxes[k].reduce((s,b)=>s+b[0]+b[1],0);return n>0});
+    let top=Math.max(1,ORDER.indexOf(keys[keys.length-1])+1);top=Math.min(ORDER.length,top+1);
+    const rows=ORDER.slice(0,top),rh=34,W=560,H=rows.length*rh+24,x=setupCv(cv,W,H);
+    x.fillStyle='#10060b';x.fillRect(0,0,W,H);x.font='13px sans-serif';
+    x.fillStyle='#b98f5e';x.textAlign='left';x.fillText('Energy ↑',6,14);
+    rows.forEach((k,ri)=>{
+      const y=H-(ri+1)*rh,n=boxes[k].reduce((s,b)=>s+b[0]+b[1],0);
+      x.fillStyle=n?'#ffecc9':'#6d5a45';x.textAlign='right';x.fillText(k,52,y+rh/2+3);
+      boxes[k].forEach((b,i)=>{
+        const bx=62+i*34;x.strokeStyle=(hl&&hl.key===k&&hl.box===i)?'#f5c518':'rgba(245,197,24,.45)';x.lineWidth=(hl&&hl.key===k&&hl.box===i)?2.5:1;x.strokeRect(bx,y+3,28,rh-8);
+        x.textAlign='center';x.font='bold 17px sans-serif';
+        if(b[0]){x.fillStyle='#7be8ff';x.fillText('↑',bx+8,y+rh/2+6)}
+        if(b[1]){x.fillStyle='#ff9a9a';x.fillText('↓',bx+20,y+rh/2+6)}
+        x.font='13px sans-serif';
+      });
+      if(n){x.fillStyle='#b98f5e';x.textAlign='left';x.fillText(sup(n)+' e',62+boxes[k].length*34+4,y+rh/2+3)}
+    });
+  }
+  function mountAufbau(host,z0){
+    host.innerHTML='<div class="v38r"><input class="af-in" placeholder="Element, e.g. chromium"><button class="btn sm af-go">Show</button></div>'
+      +'<div class="v38r"><button class="ghost af-play">▶ Play</button><button class="ghost af-step">Step ⏭</button><button class="ghost af-reset">Reset</button><select class="af-sp" style="flex:0 0 90px"><option value="900">Slow</option><option value="500" selected>Normal</option><option value="220">Fast</option></select><button class="ghost af-say">Explain</button></div>'
+      +'<canvas class="af-cv"></canvas><div class="v38o af-tx"></div>';
+    const q=s=>host.querySelector(s);let plan=null,idx=0,timer=0,z=0;
+    function title(){return EL[z].name+' ('+EL[z].sym+'): '+Math.min(idx,z)+' of '+z+' electrons placed'}
+    function render(hl){
+      const boxes=idx===0?newBoxes():idx>plan.steps.length?plan.finalBoxes:JSON.parse(plan.steps[idx-1].snap);
+      drawBoxes(q('.af-cv'),boxes,z,hl);
+    }
+    function show(){
+      if(idx===0){q('.af-tx').textContent='Electrons fill the lowest-energy orbitals first (Aufbau). One orbital holds at most two electrons with opposite spins (Pauli), and orbitals of equal energy each get one electron before any pairs (Hund). Press Play or Step.';render();return}
+      if(idx>plan.steps.length){q('.af-tx').innerHTML='<b>'+esc(title())+'</b><br>'+esc(plan.exc.text);render();return}
+      const s=plan.steps[idx-1];q('.af-tx').innerHTML='<b>'+esc(title())+'</b><br>'+esc(s.text)+(idx===plan.steps.length&&!plan.exc?'<br><span class="v38g">Done: '+esc(Object.keys(cfgOf(z)).map(k=>k+sup(cfgOf(z)[k])).join(' '))+'</span>':'');
+      render({key:s.key,box:s.box});
+    }
+    function total(){return plan.steps.length+(plan.exc?1:0)}
+    function step(){if(idx<total()){idx++;show();if(TT.on)say(idx>plan.steps.length?plan.exc.text:plan.steps[idx-1].text)}else stop()}
+    function stop(){clearInterval(timer);timer=0;q('.af-play').textContent='▶ Play'}
+    function load(zz){
+      stop();z=zz;plan=aufbauPlan(z);idx=0;q('.af-in').value=EL[z].name;show();
+    }
+    q('.af-go').onclick=()=>{const zz=V34.findEl(q('.af-in').value.trim().toLowerCase());if(zz)load(zz);else toast('I could not find that element.')};
+    q('.af-in').addEventListener('keydown',e=>{if(e.key==='Enter')q('.af-go').click()});
+    q('.af-play').onclick=()=>{if(timer){stop();return}if(idx>=total())idx=0;q('.af-play').textContent='⏸ Pause';timer=setInterval(step,+q('.af-sp').value)};
+    q('.af-step').onclick=()=>{stop();step()};
+    q('.af-reset').onclick=()=>{stop();idx=0;show()};
+    q('.af-say').onclick=()=>{
+      const c=cfgOf(z),t=EL[z].name+' has '+z+' electrons. Following the filling order, the configuration is '+Object.keys(c).map(k=>k+' '+c[k]).join(', ')+'. '+(plan.exc?plan.exc.text:'This follows the simple filling order with no exceptions.')+' Unpaired electrons: '+unpaired(z)+'.';
+      say(t,true);
+    };
+    load(z0||6);
+    host._load=load;host._finish=()=>{stop();idx=total();show()};
+    return host;
+  }
+  const aufSec=section(tbox,'Aufbau animation: watch the electrons fill the orbitals',body=>{mountAufbau(body,6);aufSec._body=body});
+
+  /* ---------- 5. element quiz ---------- */
+  section(tbox,'Element quiz',body=>{
+    body.innerHTML='<div class="v38r"><select id="v38qm"><option value="mix">Mixed</option><option value="sym">Names and symbols</option><option value="pos">Group and period</option><option value="val">Valence electrons</option><option value="en">Electronegativity</option></select><select id="v38qr"><option value="36">Elements 1–36</option><option value="18">Elements 1–18</option><option value="86">Elements 1–86</option></select><button class="btn sm" id="v38qg">Start quiz</button></div><div id="v38qo"></div>';
+    const R=Math.random;
+    const pickZ=max=>1+Math.floor(R()*max);
+    const shuffle=a=>a.map(v=>[R(),v]).sort((x,y)=>x[0]-y[0]).map(x=>x[1]);
+    function opts(correct,wrongs){const s=[...new Set([correct].concat(wrongs.filter(w=>w!==correct)))].slice(0,4);return shuffle(s)}
+    function makeQ(mode,max){
+      if(mode==='mix')mode=['sym','pos','val','en'][Math.floor(R()*4)];
+      let z=pickZ(max),e=EL[z];
+      if(mode==='sym'){
+        if(R()<.5){const w=[];while(w.length<5)w.push(EL[pickZ(max)].sym);return {q:'What is the symbol for '+e.name+'?',o:opts(e.sym,w),a:e.sym,why:e.name+' has the symbol '+e.sym+'.'}}
+        const w=[];while(w.length<5)w.push(EL[pickZ(max)].name);return {q:'Which element has the symbol '+e.sym+'?',o:opts(e.name,w),a:e.name,why:e.sym+' is '+e.name+'.'}}
+      if(mode==='pos'){
+        while(!EL[z].g)z=pickZ(max);e=EL[z];const w=[];while(w.length<6)w.push('Group '+(1+Math.floor(R()*18))+', period '+(1+Math.floor(R()*5)));
+        const c='Group '+e.g+', period '+e.p;return {q:'Where is '+e.name+' in the periodic table?',o:opts(c,w),a:c,why:e.name+' sits in group '+e.g+' and period '+e.p+'.'}}
+      if(mode==='val'){
+        while(!EL[z].g||EL[z].block==='d')z=pickZ(max);e=EL[z];const v=valence(z);const c=String(v),w=[v+1,v-1,v+2,Math.abs(v-2)].map(String);
+        return {q:'How many valence electrons does '+e.name+' have?',o:opts(c,w),a:c,why:e.name+' ('+Object.keys(cfgOf(z)).map(k=>k+sup(cfgOf(z)[k])).join(' ')+') has '+v+' valence electrons.'}}
+      let a=pickZ(Math.min(max,86)),b=pickZ(Math.min(max,86));while(ENP[a]==null||ENP[b]==null||a===b||Math.abs(ENP[a]-ENP[b])<.3){a=pickZ(Math.min(max,86));b=pickZ(Math.min(max,86))}
+      const win=ENP[a]>ENP[b]?a:b;return {q:'Which element is more electronegative?',o:shuffle([EL[a].name,EL[b].name]),a:EL[win].name,why:EL[a].name+' '+ENP[a]+' versus '+EL[b].name+' '+ENP[b]+'.'}
+    }
+    body.querySelector('#v38qg').onclick=()=>{
+      const mode=body.querySelector('#v38qm').value,max=+body.querySelector('#v38qr').value,qs=[];for(let i=0;i<10;i++)qs.push(makeQ(mode,max));
+      let i=0,score=0;const box=body.querySelector('#v38qo');
+      const show=()=>{
+        if(i>=qs.length){box.innerHTML='<div class="v38o"><b>Finished: '+score+' out of '+qs.length+'.</b> '+(score>=8?'Excellent!':score>=5?'Good, keep practising.':'Try the heat map and trend tools, then play again.')+'</div>';say('Quiz finished. You scored '+score+' out of '+qs.length+'.');return}
+        const q=qs[i];box.innerHTML='<div class="v38o"><b>Question '+(i+1)+' of '+qs.length+'</b><br>'+esc(q.q)+'</div><div class="v38q"></div><div class="v38o v38k" style="display:none"></div>';
+        const qb=box.querySelector('.v38q'),fb=box.lastElementChild;
+        q.o.forEach(t=>{const b=document.createElement('button');b.className='chip';b.textContent=t;b.onclick=()=>{
+          [...qb.children].forEach(x=>{x.disabled=true;if(x.textContent===q.a)x.classList.add('ok')});
+          if(t===q.a)score++;else b.classList.add('no');
+          fb.style.display='block';fb.textContent=(t===q.a?'Correct. ':'Not quite. ')+q.why;
+          const nx=document.createElement('button');nx.className='chip';nx.textContent=i+1<qs.length?'Next':'Finish';nx.onclick=()=>{i++;show()};fb.appendChild(document.createElement('br'));fb.appendChild(nx);
+        };qb.appendChild(b)});
+      };
+      show();
+    };
+  });
+
+  /* =====================================================================
+     Spectra lab
+     ===================================================================== */
+  const RYD=1.0973731568e7,HC=1239.84198; /* HC in eV*nm */
+  const SERIES={1:'Lyman (to n = 1)',2:'Balmer (to n = 2)',3:'Paschen (to n = 3)',4:'Brackett (to n = 4)',5:'Pfund (to n = 5)'};
+  const regionOf=nm=>nm<380?'ultraviolet':nm<=750?'visible':'infrared';
+  function hLines(Zn,nl,count){
+    const L=[];for(let nu=nl+1;nu<=nl+count;nu++){const inv=RYD*Zn*Zn*(1/(nl*nl)-1/(nu*nu));const nm=1e9/inv;L.push({nu,nl,nm,ev:HC/nm})}return L;
+  }
+  const FLAME=[['Lithium','Li','crimson red','#dc143c'],['Sodium','Na','intense yellow-orange (589 nm)','#ffb000'],['Potassium','K','lilac / pale violet','#c8a2e8'],['Rubidium','Rb','red-violet','#b0407a'],['Caesium','Cs','blue-violet','#6a5acd'],['Calcium','Ca','orange-red','#ff6a2a'],['Strontium','Sr','bright red','#ff2a2a'],['Barium','Ba','pale apple green','#a8e060'],['Copper','Cu','blue-green','#18c8a8'],['Boron','B','green','#32cd32'],['Indium','In','indigo blue','#4b3fd8']];
+  section(tbox,'Spectra lab: hydrogen lines, flame tests, light converter',body=>{
+    body.innerHTML='<div class="v38r"><select id="v38sz"><option value="1">Hydrogen (H)</option><option value="2">He⁺ (Z = 2)</option><option value="3">Li²⁺ (Z = 3)</option><option value="4">Be³⁺ (Z = 4)</option></select><select id="v38ss"></select><button class="ghost" id="v38sx">Explain</button></div>'
+      +'<canvas id="v38sc"></canvas><div id="v38st"></div><canvas id="v38sd"></canvas><div class="v38o" id="v38sn"></div>'
+      +'<h4 style="margin:14px 0 6px">Flame tests</h4><div id="v38sf"></div>'
+      +'<h4 style="margin:14px 0 6px">Light converter</h4><div class="v38r"><input id="v38lw" placeholder="Wavelength nm"><input id="v38le" placeholder="Energy eV"><input id="v38lf" placeholder="Frequency THz"></div><div class="v38o" id="v38lo">Type a value in any one box.</div>';
+    const ss=body.querySelector('#v38ss');Object.keys(SERIES).forEach(k=>ss.insertAdjacentHTML('beforeend','<option value="'+k+'">'+SERIES[k]+'</option>'));ss.value='2';
+    const sz=body.querySelector('#v38sz');
+    function draw(){
+      const Zn=+sz.value,nl=+ss.value,L=hLines(Zn,nl,7),cv=body.querySelector('#v38sc'),W=560,H=90,x=setupCv(cv,W,H);
+      x.fillStyle='#000';x.fillRect(0,0,W,H);
+      /* visible band 380-750 as faint background */
+      for(let px=0;px<W;px++){const nm=380+px/W*370;x.fillStyle='rgba('+wlRGB(nm).join(',')+',.18)';x.fillRect(px,0,1,H-24)}
+      x.font='11px sans-serif';x.textAlign='center';x.fillStyle='#b98f5e';
+      [400,500,600,700].forEach(nm=>{const px=(nm-380)/370*W;x.fillText(nm,px,H-10)});x.fillText('nm',W-14,H-10);
+      let outside=0;
+      L.forEach(l=>{if(l.nm<380||l.nm>750){outside++;return}const px=(l.nm-380)/370*W;x.fillStyle=wlCss(l.nm);x.fillRect(px-1,0,2.5,H-24)});
+      x.textAlign='left';x.fillStyle='#e9c98d';x.fillText('Visible window 380–750 nm. '+(outside?outside+' of '+L.length+' lines fall outside it.':'All lines shown are visible.'),6,H-26>12?12:12);
+      body.querySelector('#v38st').innerHTML='<table class="v38t"><tr><th>Transition</th><th>λ (nm)</th><th>Energy (eV)</th><th>Region</th></tr>'
+        +L.map(l=>'<tr><td>n = '+l.nu+' → '+l.nl+'</td><td><span class="v38sw" style="background:'+wlCss(l.nm)+'"></span>'+nf(l.nm,5)+'</td><td>'+nf(l.ev,4)+'</td><td>'+regionOf(l.nm)+'</td></tr>').join('')+'</table>';
+      /* energy level diagram */
+      const d=body.querySelector('#v38sd'),W2=560,H2=220,y=setupCv(d,W2,H2);y.fillStyle='#10060b';y.fillRect(0,0,W2,H2);
+      const En=n=>-13.6057*Zn*Zn/(n*n),ymin=En(1),sy=e=>H2-16-(e-ymin)/(0-ymin)*(H2-34);
+      for(let n=1;n<=8;n++){const py=sy(En(n));y.strokeStyle='rgba(245,197,24,.6)';y.beginPath();y.moveTo(60,py);y.lineTo(W2-110,py);y.stroke();y.fillStyle='#e9c98d';y.font='11px sans-serif';y.textAlign='right';y.fillText('n='+n,54,py+4);y.textAlign='left';if(n<=4)y.fillText(nf(En(n),4)+' eV',W2-104,py+4)}
+      L.forEach((l,i)=>{const px=90+i*52,a=sy(En(l.nu)),b=sy(En(l.nl));y.strokeStyle=wlCss(l.nm);if(l.nm>750||l.nm<380)y.strokeStyle='#8a8a8a';y.lineWidth=2;y.beginPath();y.moveTo(px,a);y.lineTo(px,b);y.stroke();y.beginPath();y.moveTo(px,b);y.lineTo(px-4,b-8);y.lineTo(px+4,b-8);y.closePath();y.fillStyle=y.strokeStyle;y.fill();y.lineWidth=1});
+      body.querySelector('#v38sn').textContent=(Zn===1&&nl===2?'Hα (n = 3 → 2) is the red line near 656 nm, the one that makes nebulae glow red. ':'')+'Computed from the Rydberg formula 1/λ = R Z² (1/n₁² − 1/n₂²) with R = 1.09737×10⁷ m⁻¹, vacuum wavelengths, nucleus mass treated as infinite. Grey arrows are outside visible light.';
+    }
+    sz.onchange=draw;ss.onchange=draw;
+    body.querySelector('#v38sx').onclick=()=>{const Zn=+sz.value,nl=+ss.value,L=hLines(Zn,nl,3);say('The '+SERIES[nl].split(' ')[0]+' series of '+(Zn===1?'hydrogen':'a hydrogen-like ion with nuclear charge '+Zn)+' is made when the electron falls to level '+nl+'. The first lines are at '+L.map(l=>nf(l.nm,4)+' nanometres, '+regionOf(l.nm)).join('; ')+'. Each line is one photon whose energy equals the gap between two energy levels.',true)};
+    draw();
+    const fl=body.querySelector('#v38sf');fl.innerHTML='<table class="v38t">'+FLAME.map(f=>'<tr><td><span class="v38sw" style="background:'+f[3]+'"></span>'+f[0]+' ('+f[1]+')</td><td>'+f[2]+'</td></tr>').join('')+'</table><div class="v38o">Each element’s electrons jump between its own set of levels, so each gives its own colours. Colours are approximate: real flames vary with temperature and contamination.</div>';
+    const W=body.querySelector('#v38lw'),E=body.querySelector('#v38le'),F=body.querySelector('#v38lf'),O=body.querySelector('#v38lo');
+    function conv(from){
+      let nm;const v=parseFloat((from==='w'?W:from==='e'?E:F).value);if(!(v>0)){O.textContent='Enter a positive number.';return}
+      nm=from==='w'?v:from==='e'?HC/v:299792.458/v;
+      if(from!=='w')W.value=nf(nm,6);if(from!=='e')E.value=nf(HC/nm,6);if(from!=='f')F.value=nf(299792.458/nm,6);
+      O.innerHTML='<span class="v38sw" style="background:'+wlCss(nm)+'"></span><b>'+nf(nm,5)+' nm</b> is '+regionOf(nm)+' light'+(nm>=380&&nm<=750?' (the colour shown)':'')+'. Photon energy '+nf(HC/nm,4)+' eV, frequency '+nf(299792.458/nm,5)+' THz. Uses E = hc/λ.';
+    }
+    W.oninput=()=>conv('w');E.oninput=()=>conv('e');F.oninput=()=>conv('f');
+  });
+
+  /* =====================================================================
+     Nuclear lab
+     ===================================================================== */
+  function eqnFor(Z,A){
+    const d=decayOf(Z,A);
+    if(d.mode==='stable')return {d,text:nuc(Z,A)+' is (predicted) stable: it does not decay.'};
+    if(!EL[d.Z2])return {d,text:'Daughter nucleus out of range.'};
+    return {d,text:nuc(Z,A)+' → '+nuc(d.Z2,d.A2)+(d.em?' + '+d.em:''),
+      mode:d.mode};
+  }
+  const MODEN={'α':'alpha decay: the nucleus emits a helium-4 nucleus (2 protons, 2 neutrons), so Z drops by 2 and A by 4.','β⁻':'beta-minus decay: a neutron turns into a proton, emitting an electron and an antineutrino, so Z rises by 1 and A stays the same.','β⁺':'beta-plus decay (positron emission): a proton turns into a neutron, emitting a positron and a neutrino, so Z drops by 1 and A stays the same.','IT':'isomeric transition: the nucleus drops to a lower energy state and emits a gamma ray.'};
+  function decayText(Z,A){
+    const r=eqnFor(Z,A);if(r.d.mode==='stable')return r.text;
+    return r.text+'. This is '+MODEN[r.d.mode]+' Half-life: '+fmtHalf(r.d.half)+(r.d.known?'.':' (decay mode predicted from the valley of stability; no half-life tabulated here).');
+  }
+  section(tbox,'Nuclear lab: binding energy, stability, decay',body=>{
+    body.innerHTML='<h4 style="margin:4px 0 6px">Binding energy per nucleon</h4><canvas id="v38nb"></canvas><div class="v38o" id="v38nbt"></div>'
+      +'<h4 style="margin:14px 0 6px">Valley of stability</h4><canvas id="v38nv"></canvas><div class="v38o" id="v38nvt"></div>'
+      +'<h4 style="margin:14px 0 6px">Decay equation</h4><div class="v38r"><input id="v38di" placeholder="e.g. uranium-238, C-14, 226 radium"><button class="btn sm" id="v38dg">Decay it</button></div><div class="v38o" id="v38do"></div><div class="v38r"><button class="ghost" id="v38dx">Explain</button></div>'
+      +'<h4 style="margin:14px 0 6px">Decay chains</h4><div class="v38r"><select id="v38cs"></select></div><div id="v38cr"></div>'
+      +'<h4 style="margin:14px 0 6px">Half-life simulator</h4><div class="v38r"><input id="v38hn" value="200" placeholder="Atoms"><button class="btn sm" id="v38hr">Run</button></div><canvas id="v38hv"></canvas><canvas id="v38hw"></canvas><div class="v38o" id="v38ho">Each atom decays at random, but the crowd follows a smooth curve.</div>'
+      +'<h4 style="margin:14px 0 6px">Carbon dating</h4><div class="v38r"><input id="v38ka" placeholder="Age in years"><input id="v38kf" placeholder="% carbon-14 left"></div><div class="v38o" id="v38ko">Type an age or a percentage. Uses the half-life 5730 years.</div>';
+    /* binding energy curve */
+    const pts=[];let best={A:2,v:0};
+    for(let A=4;A<=250;A++){const Z=zStable(A),v=bpn(Z,A-Z);pts.push([A,v]);if(v>best.v)best={A,v,Z}}
+    const lbl=(A,Z)=>EL[Z].sym+'-'+A;
+    const fe=(()=>{const Z=26,A=56;return {A,v:bpn(Z,A-Z)}})(),u=(()=>{const Z=92,A=238;return {A,v:bpn(Z,A-Z)}})(),he=(()=>{const Z=2,A=4;return {A,v:bpn(Z,A-Z)}})();
+    plot(body.querySelector('#v38nb'),{series:[{pts,color:'#f5c518'}],xlab:'Mass number A',ylab:'Binding energy per nucleon (MeV)',marks:[{x:best.A,y:best.v,label:'peak '+lbl(best.A,best.Z)+' '+nf(best.v,3),color:'#39d98a',align:'left'},{x:u.A,y:u.v,label:'U-238',color:'#e0313f',align:'right'}],ymin:0});
+    body.querySelector('#v38nbt').textContent='The curve rises steeply, peaks near iron and nickel, then falls slowly. Light nuclei release energy by fusing (towards the peak), heavy nuclei release energy by splitting (fission). This uses the semi-empirical mass formula, so values are approximate: the model gives about '+nf(best.v,3)+' MeV at the peak (measured Fe-56 is 8.79 MeV) and is poor for the lightest nuclei such as helium-4.';
+    /* valley */
+    const val=[],eq=[];for(let Zv=1;Zv<=100;Zv++){val.push([nStable(Zv),Zv]);eq.push([Zv,Zv])}
+    plot(body.querySelector('#v38nv'),{series:[{pts:val,color:'#39d98a',lw:2.2},{pts:eq,color:'#7be8ff',lw:1}],xlab:'Neutrons N',ylab:'Protons Z',xmin:0,ymin:0});
+    body.querySelector('#v38nvt').textContent='Green: the model’s most stable neutron count for each Z. Blue: N = Z. Heavy nuclei need more neutrons than protons to offset proton repulsion, so the green line bends away from the blue one. Nuclei above the green line (too many protons) tend to decay by beta-plus; below it by beta-minus; the heaviest by alpha decay.';
+    /* decay equation */
+    const di=body.querySelector('#v38di'),dout=body.querySelector('#v38do');let last=null;
+    function runDecay(){const n=nuclideFrom(di.value);if(!n){dout.innerHTML='<span class="v38x">Try a form like uranium-238, U-238 or 14 C.</span>';last=null;return}last=n;
+      let html='<div class="v38eq">'+esc(eqnFor(n.Z,n.A).text)+'</div>';const d=decayOf(n.Z,n.A);
+      if(d.mode!=='stable')html+='<div>'+esc(MODEN[d.mode])+' Half-life: '+esc(fmtHalf(d.half))+(d.known?'':' (mode predicted, not tabulated)')+'</div>';
+      dout.innerHTML=html}
+    body.querySelector('#v38dg').onclick=runDecay;di.addEventListener('keydown',e=>{if(e.key==='Enter')runDecay()});
+    body.querySelector('#v38dx').onclick=()=>{if(!last)runDecay();if(last)say(decayText(last.Z,last.A),true)};
+    di.value='uranium-238';runDecay();
+    /* chains */
+    const cs=body.querySelector('#v38cs');Object.keys(CHAINS).forEach(k=>cs.insertAdjacentHTML('beforeend','<option>'+k+'</option>'));
+    function chain(){
+      const ch=CHAINS[cs.value];let a=0,b=0,h='<table class="v38t"><tr><th>Step</th><th>Nuclide</th><th>Decay</th><th>Half-life</th></tr>';
+      ch.forEach((p,i)=>{const k=p[0]+'-'+p[1],m=CHAIN_MODE[k]||'stable';if(m==='α')a++;if(m==='β⁻')b++;const d=NOT[k];
+        h+='<tr><td>'+(i+1)+'</td><td>'+nuc(p[0],p[1])+'</td><td>'+(CHAIN_MODE[k]?m:'stable end')+'</td><td>'+(d?fmtHalf({v:d[1],u:d[2]}):'')+'</td></tr>'});
+      body.querySelector('#v38cr').innerHTML=h+'</table><div class="v38o">'+a+' alpha and '+b+' beta-minus decays turn '+nuc(ch[0][0],ch[0][1])+' into stable '+nuc(ch[ch.length-1][0],ch[ch.length-1][1])+'. Some half-lives are blank where this pack has no value.</div>';
+    }
+    cs.onchange=chain;chain();
+    /* half-life simulator */
+    let timer=0;
+    body.querySelector('#v38hr').onclick=()=>{
+      clearInterval(timer);const N0=clamp(Math.round(+body.querySelector('#v38hn').value)||200,10,2500),gc=body.querySelector('#v38hv'),pc=body.querySelector('#v38hw');
+      const alive=new Array(N0).fill(true);let t=0,left=N0;const data=[[0,N0]],p=1-Math.pow(.5,.25),maxT=7;
+      const cols=Math.ceil(Math.sqrt(N0*2)),rows=Math.ceil(N0/cols),cell=Math.max(3,Math.min(14,Math.floor(540/cols)));
+      function frame(){
+        const W=560,H=rows*cell+8,x=setupCv(gc,W,H);x.fillStyle='#10060b';x.fillRect(0,0,W,H);
+        for(let i=0;i<N0;i++){const cx=4+(i%cols)*cell,cy=4+Math.floor(i/cols)*cell;x.fillStyle=alive[i]?'#f5c518':'#3a2a2a';x.beginPath();x.arc(cx+cell/2,cy+cell/2,Math.max(1,cell/2-1),0,TAU);x.fill()}
+        const th=[];for(let q=0;q<=maxT*4;q++)th.push([q/4,N0*Math.pow(.5,q/4)]);
+        plot(pc,{h:220,series:[{pts:th,color:'#7be8ff',lw:1},{pts:data,color:'#f5c518',dots:true,r:2.5,lw:1.6}],xlab:'Time (in half-lives)',ylab:'Atoms left',xmin:0,xmax:maxT,ymin:0,ymax:N0});
+        body.querySelector('#v38ho').textContent='Time '+nf(t,3)+' half-lives: '+left+' of '+N0+' atoms left (theory: '+nf(N0*Math.pow(.5,t),4)+'). Blue line = theory, yellow dots = this random run.';
+      }
+      timer=setInterval(()=>{
+        for(let i=0;i<N0;i++)if(alive[i]&&Math.random()<p){alive[i]=false;left--}
+        t+=.25;data.push([t,left]);frame();if(t>=maxT){clearInterval(timer);say('After '+maxT+' half-lives, '+left+' of '+N0+' atoms remain.')}
+      },160);frame();
+    };
+    /* carbon dating */
+    const ka=body.querySelector('#v38ka'),kf=body.querySelector('#v38kf'),ko=body.querySelector('#v38ko'),T=5730;
+    ka.oninput=()=>{const a=parseFloat(ka.value);if(!(a>=0)){return}const f=100*Math.pow(.5,a/T);kf.value=nf(f,5);ko.textContent=nf(a,5)+' years is '+nf(a/T,3)+' half-lives, so '+nf(f,4)+'% of the carbon-14 remains. Carbon dating works to roughly 50,000 years.'};
+    kf.oninput=()=>{const f=parseFloat(kf.value);if(!(f>0&&f<=100)){return}const a=-T*Math.log(f/100)/Math.LN2;ka.value=nf(a,5);ko.textContent='With '+nf(f,4)+'% left the sample is about '+nf(a,5)+' years old (age = half-life × log₂(100 / percent left)).'};
+  });
+
+  /* =====================================================================
+     Chemistry calculators: formulas, balancing, stoichiometry, pH ...
+     ===================================================================== */
+  const pretty=f=>String(f).replace(/([A-Za-z)\]])(\d+)/g,(m,a,d)=>a+sub(d)).replace(/[.*]/g,'·');
+  const AMASS=z=>PROPS.mass.f(z);
+  function parseF(str){
+    str=String(str).replace(/\s+/g,'').replace(/\((aq|s|l|g)\)$/i,'');if(!str)return null;
+    const parts=str.split(/[·.*]/),tot={};
+    for(let pi=0;pi<parts.length;pi++){
+      let p=parts[pi],mult=1;const mm=p.match(/^(\d+)(?=[A-Z(\[])/);if(mm){mult=+mm[1];p=p.slice(mm[1].length)}
+      const st=[{}];let i=0;
+      while(i<p.length){
+        const ch=p[i];
+        if(ch==='('||ch==='['){st.push({});i++}
+        else if(ch===')'||ch===']'){
+          i++;let n='';while(/\d/.test(p[i]||'')){n+=p[i];i++}n=n?+n:1;
+          const top=st.pop();if(!st.length)return null;const cur=st[st.length-1];Object.keys(top).forEach(k=>{cur[k]=(cur[k]||0)+top[k]*n});
+        }else if(/[A-Z]/.test(ch)){
+          let s=ch;i++;if(/[a-z]/.test(p[i]||'')){s+=p[i];i++}
+          let n='';while(/\d/.test(p[i]||'')){n+=p[i];i++}n=n?+n:1;
+          if(!SYM[s])return null;const cur=st[st.length-1];cur[s]=(cur[s]||0)+n;
+        }else return null;
+      }
+      if(st.length!==1)return null;
+      Object.keys(st[0]).forEach(k=>{tot[k]=(tot[k]||0)+st[0][k]*mult});
+    }
+    return Object.keys(tot).length?tot:null;
+  }
+  const canon=c=>Object.keys(c).sort().map(k=>k+c[k]).join('');
+  const molarMass=c=>Object.keys(c).reduce((s,k)=>s+c[k]*AMASS(SYM[k].z),0);
+  const AV=6.02214076e23;
+  /* ---- equation balancing (exact rational arithmetic) ---- */
+  function frac(n,d){if(d<0){n=-n;d=-d}const g=gcd(n,d)||1;return [n/g,d/g]}
+  const fadd=(a,b)=>frac(a[0]*b[1]+b[0]*a[1],a[1]*b[1]),fmul=(a,b)=>frac(a[0]*b[0],a[1]*b[1]),fdiv=(a,b)=>frac(a[0]*b[1],a[1]*b[0]);
+  function balance(L,R){
+    const sp=L.concat(R).map(parseF);if(sp.some(x=>!x))return {err:'I could not read one of the formulas. Use symbols like Fe2O3 or Ca(OH)2.'};
+    const els=[...new Set([].concat.apply([],sp.map(c=>Object.keys(c))))];
+    const rE=new Set([].concat.apply([],sp.slice(0,L.length).map(c=>Object.keys(c)))),pE=new Set([].concat.apply([],sp.slice(L.length).map(c=>Object.keys(c))));
+    for(const e of els)if(!rE.has(e)||!pE.has(e))return {err:'Element '+e+' appears on only one side, so the equation cannot be balanced as written.'};
+    return solveNull(sp,els,L.length);
+  }
+  function solveNull(sp,els,nL){
+    const rows=els.length,cols=sp.length,M=els.map(e=>sp.map((c,j)=>frac((c[e]||0)*(j<nL?1:-1),1)));
+    const piv=[];let r=0;
+    for(let c=0;c<cols&&r<rows;c++){
+      let p=-1;for(let i=r;i<rows;i++)if(M[i][c][0]!==0){p=i;break}
+      if(p<0)continue;const t=M[r];M[r]=M[p];M[p]=t;
+      const pv=M[r][c];M[r]=M[r].map(v=>fdiv(v,pv));
+      for(let i=0;i<rows;i++){if(i===r||M[i][c][0]===0)continue;const f=M[i][c];M[i]=M[i].map((v,j)=>{const m=fmul(f,M[r][j]);return fadd(v,[-m[0],m[1]])})}
+      piv.push(c);r++;
+    }
+    const free=[];for(let c=0;c<cols;c++)if(piv.indexOf(c)<0)free.push(c);
+    if(free.length===0)return {err:'No set of whole-number coefficients balances this. Check the formulas.'};
+    if(free.length>1)return {err:'This can be balanced in more than one independent way (it is really several reactions combined). Try splitting it up.'};
+    const f=free[0],sol=new Array(cols).fill(null);sol[f]=[1,1];
+    piv.forEach((c,i)=>{const v=M[i][f];sol[c]=[-v[0],v[1]]});
+    let l=1;sol.forEach(v=>{l=l*v[1]/gcd(l,v[1])});
+    let co=sol.map(v=>v[0]*(l/v[1]));const g=co.reduce((a,b)=>gcd(a,b),0)||1;co=co.map(v=>v/g);
+    if(co.every(v=>v<0))co=co.map(v=>-v);
+    if(co.some(v=>v<=0))return {err:'The coefficients came out zero or negative, so these reactants and products do not form a valid reaction.'};
+    return {co};
+  }
+  function splitEq(text){
+    const s=String(text).replace(/[→⇌➔]/g,'->').replace(/=>/g,'->');
+    let parts=s.split('->');if(parts.length!==2)parts=s.split(/\s=\s|=/);if(parts.length!==2)return null;
+    const side=t=>t.split(/\s*\+\s*/).map(x=>x.trim().replace(/^\d+\s*(?=[A-Z(\[])/,'').replace(/\((aq|s|l|g)\)$/i,'').trim()).filter(Boolean);
+    const L=side(parts[0]),R=side(parts[1]);return L.length&&R.length?{L,R}:null;
+  }
+  function eqString(L,R,co){
+    const t=(a,off)=>a.map((f,i)=>(co[i+off]>1?co[i+off]+' ':'')+pretty(f)).join(' + ');
+    return t(L,0)+' → '+t(R,L.length);
+  }
+  function balanceText(text){
+    const eq=splitEq(text);if(!eq)return {err:'Write it like: Fe + O2 -> Fe2O3'};
+    const b=balance(eq.L,eq.R);if(b.err)return b;
+    return {eq,co:b.co,text:eqString(eq.L,eq.R,b.co)};
+  }
+  /* ---- builders for the calculator panel ---- */
+  const bal=cbox;
+  section(cbox,'Equation balancer',body=>{
+    body.innerHTML='<div class="v38r"><input id="v38be" placeholder="Fe + O2 -> Fe2O3"><button class="btn sm" id="v38bg">Balance</button></div><div class="v38r"><button class="chip" data-e="Fe + O2 -> Fe2O3">Fe + O₂</button><button class="chip" data-e="C3H8 + O2 -> CO2 + H2O">Propane burning</button><button class="chip" data-e="Al + HCl -> AlCl3 + H2">Al + HCl</button><button class="chip" data-e="KMnO4 + HCl -> KCl + MnCl2 + H2O + Cl2">KMnO₄ + HCl</button></div><div class="v38o" id="v38bo"></div><div class="v38r"><button class="ghost" id="v38bx">Explain</button></div>';
+    const i=body.querySelector('#v38be'),o=body.querySelector('#v38bo');let last=null;
+    function run(){const r=balanceText(i.value);last=r;
+      if(r.err){o.innerHTML='<span class="v38x">'+esc(r.err)+'</span>';return}
+      o.innerHTML='<div class="v38eq">'+esc(r.text)+'</div><div>Atom check: '+esc(atomCheck(r.eq,r.co))+'</div>'}
+    function atomCheck(eq,co){
+      const side=(a,off)=>{const t={};a.forEach((f,i)=>{const c=parseF(f);Object.keys(c).forEach(k=>{t[k]=(t[k]||0)+c[k]*co[i+off]})});return t};
+      const l=side(eq.L,0),r=side(eq.R,eq.L.length);return Object.keys(l).sort().map(k=>k+' '+l[k]+' = '+r[k]).join(', ');
+    }
+    body.querySelector('#v38bg').onclick=run;i.addEventListener('keydown',e=>{if(e.key==='Enter')run()});
+    body.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{i.value=b.dataset.e;run()});
+    body.querySelector('#v38bx').onclick=()=>{if(!last)run();if(last&&last.text)say('The balanced equation is '+last.eq.L.map((f,k)=>(last.co[k]>1?last.co[k]+' ':'')+f).join(' plus ')+' gives '+last.eq.R.map((f,k)=>(last.co[k+last.eq.L.length]>1?last.co[k+last.eq.L.length]+' ':'')+f).join(' plus ')+'. Every element has the same number of atoms on both sides, because atoms are never created or destroyed.',true);else if(last)say(last.err,true)};
+    i.value='C3H8 + O2 -> CO2 + H2O';run();
+  },true);
+  /* ---- molar mass and composition ---- */
+  function compText(f){
+    const c=parseF(f);if(!c)return null;const M=molarMass(c);
+    return {c,M,rows:Object.keys(c).map(k=>({k,n:c[k],m:c[k]*AMASS(SYM[k].z),pct:100*c[k]*AMASS(SYM[k].z)/M}))};
+  }
+  section(cbox,'Molar mass, percent composition and the mole',body=>{
+    body.innerHTML='<div class="v38r"><input id="v38mf" placeholder="C6H12O6 or CuSO4.5H2O or Ca(OH)2"><button class="btn sm" id="v38mg">Calculate</button></div><div id="v38mo"></div>'
+      +'<div class="v38r"><input id="v38mg1" placeholder="Grams"><input id="v38mg2" placeholder="Moles"><input id="v38mg3" placeholder="Particles"></div><div class="v38o" id="v38mc">Enter a formula first, then grams, moles or particles.</div><div class="v38r"><button class="ghost" id="v38mx">Explain</button></div>';
+    const f=body.querySelector('#v38mf'),o=body.querySelector('#v38mo'),G=body.querySelector('#v38mg1'),Mo=body.querySelector('#v38mg2'),P=body.querySelector('#v38mg3'),C=body.querySelector('#v38mc');
+    let cur=null;
+    function run(){cur=compText(f.value);if(!cur){o.innerHTML='<span class="v38x">I could not read that formula.</span>';return}
+      o.innerHTML='<div class="v38eq">'+esc(pretty(f.value))+' : '+nf(cur.M,6)+' g/mol</div><table class="v38t"><tr><th>Element</th><th>Atoms</th><th>Mass (g/mol)</th><th>Percent</th></tr>'+cur.rows.map(r=>'<tr><td>'+esc(SYM[r.k].name)+'</td><td>'+r.n+'</td><td>'+nf(r.m,5)+'</td><td>'+nf(r.pct,4)+'%</td></tr>').join('')+'</table>';conv(null)}
+    function conv(from){
+      if(!cur)return;let mol;
+      if(from==='g'){const v=parseFloat(G.value);if(!(v>=0))return;mol=v/cur.M}
+      else if(from==='m'){mol=parseFloat(Mo.value);if(!(mol>=0))return}
+      else if(from==='p'){const v=parseFloat(P.value);if(!(v>=0))return;mol=v/AV}
+      else return;
+      if(from!=='g')G.value=nf(mol*cur.M,6);if(from!=='m')Mo.value=nf(mol,6);if(from!=='p')P.value=nf(mol*AV,6);
+      C.textContent=nf(mol*cur.M,5)+' g = '+nf(mol,5)+' mol = '+nf(mol*AV,5)+' particles (Avogadro: 6.022×10²³ per mole, molar mass '+nf(cur.M,5)+' g/mol).';
+    }
+    G.oninput=()=>conv('g');Mo.oninput=()=>conv('m');P.oninput=()=>conv('p');
+    body.querySelector('#v38mg').onclick=run;f.addEventListener('keydown',e=>{if(e.key==='Enter')run()});
+    body.querySelector('#v38mx').onclick=()=>{if(!cur)run();if(cur)say('The molar mass of '+f.value+' is '+nf(cur.M,5)+' grams per mole. '+cur.rows.map(r=>SYM[r.k].name+' makes up '+nf(r.pct,3)+' percent').join(', ')+'.',true)};
+    f.value='C6H12O6';run();
+  });
+  /* ---- empirical formula ---- */
+  function empirical(text,molM){
+    const t=String(text).replace(/%/g,' ').replace(/,/g,' ').match(/[A-Z][a-z]?\s*[:=]?\s*\d+(\.\d+)?/g);if(!t||t.length<2)return {err:'Give each element and its percent or mass, e.g. C 40 H 6.7 O 53.3'};
+    const els=t.map(s=>{const m=s.match(/([A-Z][a-z]?)\s*[:=]?\s*(\d+(?:\.\d+)?)/);return [m[1],+m[2]]});
+    if(els.some(e=>!SYM[e[0]]))return {err:'One of those is not an element symbol.'};
+    const mol=els.map(e=>e[1]/AMASS(SYM[e[0]].z)),mn=Math.min.apply(null,mol),rat=mol.map(v=>v/mn);
+    let mult=0;for(let k=1;k<=8&&!mult;k++)if(rat.every(r=>Math.abs(r*k-Math.round(r*k))<.07*Math.max(1,k/2)&&Math.round(r*k)>0))mult=k;
+    if(!mult)return {err:'The ratios are not close to whole numbers: check the data.'};
+    const n=rat.map(r=>Math.round(r*mult)),f=els.map((e,i)=>e[0]+(n[i]>1?n[i]:'')).join('');
+    const c=parseF(f),M=molarMass(c);let mf=null,k=null;
+    if(molM>0){k=Math.round(molM/M);if(k>=1&&Math.abs(k*M-molM)/molM<.05)mf=els.map((e,i)=>e[0]+(n[i]*k>1?n[i]*k:'')).join('')}
+    return {f,M,mf,k,rat,els};
+  }
+  section(cbox,'Empirical and molecular formula',body=>{
+    body.innerHTML='<div class="v38r"><input id="v38ef" placeholder="C 40 H 6.7 O 53.3"><input id="v38em" placeholder="Molar mass (optional)" style="flex:0 0 150px"><button class="btn sm" id="v38eg">Find formula</button></div><div class="v38o" id="v38eo">Enter percent composition (or masses in grams) for each element.</div>';
+    const f=body.querySelector('#v38ef'),m=body.querySelector('#v38em'),o=body.querySelector('#v38eo');
+    const run=()=>{const r=empirical(f.value,parseFloat(m.value));if(r.err){o.innerHTML='<span class="v38x">'+esc(r.err)+'</span>';return}
+      o.innerHTML='<div class="v38eq">Empirical formula: '+esc(pretty(r.f))+'</div>Mole ratios (divided by the smallest): '+esc(r.els.map((e,i)=>e[0]+' '+nf(r.rat[i],4)).join(', '))+'. Empirical mass '+nf(r.M,5)+' g/mol.'+(r.mf?'<div class="v38eq">Molecular formula: '+esc(pretty(r.mf))+' (×'+r.k+')</div>':'')};
+    body.querySelector('#v38eg').onclick=run;
+  });
+
+  /* ---- stoichiometry with limiting reagent ---- */
+  function stoich(eq,co,amts,actual){
+    const n=eq.L.length,mols=eq.L.map((f,i)=>{const c=parseF(f),a=amts[i];return a.u==='g'?a.v/molarMass(c):a.v});
+    const xi=mols.map((m,i)=>m/co[i]),lim=xi.indexOf(Math.min.apply(null,xi)),x=xi[lim];
+    const prod=eq.R.map((f,j)=>{const c=parseF(f),mol=x*co[n+j];return {f,mol,g:mol*molarMass(c)}});
+    const left=eq.L.map((f,i)=>{const c=parseF(f),rem=mols[i]-x*co[i];return {f,mol:rem,g:rem*molarMass(c)}});
+    return {mols,lim,x,prod,left,pct:actual>0?100*actual/prod[0].g:null};
+  }
+  section(cbox,'Stoichiometry: limiting reagent and percent yield',body=>{
+    body.innerHTML='<div class="v38r"><input id="v38xe" placeholder="N2 + H2 -> NH3"><button class="btn sm" id="v38xg">Set up</button></div><div id="v38xr"></div><div class="v38o" id="v38xo">Enter an equation, press Set up, then type how much of each reactant you have.</div><div class="v38r"><button class="ghost" id="v38xx">Explain</button></div>';
+    const ie=body.querySelector('#v38xe'),rs=body.querySelector('#v38xr'),o=body.querySelector('#v38xo');let last=null,cur=null;
+    function setup(){
+      const b=balanceText(ie.value);if(b.err){o.innerHTML='<span class="v38x">'+esc(b.err)+'</span>';rs.innerHTML='';cur=null;return}
+      cur=b;rs.innerHTML='<div class="v38eq">'+esc(b.text)+'</div>'+b.eq.L.map((f,i)=>'<div class="v38r"><span style="flex:0 0 90px">'+esc(pretty(f))+'</span><input class="xa" data-i="'+i+'" placeholder="amount"><select class="xu" style="flex:0 0 80px"><option value="g">grams</option><option value="mol">moles</option></select></div>').join('')
+        +'<div class="v38r"><input id="v38xy" placeholder="Actual yield of '+esc(pretty(b.eq.R[0]))+' in grams (optional)"><button class="btn sm" id="v38xc">Calculate</button></div>';
+      rs.querySelector('#v38xc').onclick=calc;o.textContent='Fill in the amounts and press Calculate.';
+    }
+    function calc(){
+      if(!cur)return;const am=[...rs.querySelectorAll('.xa')].map((el,i)=>({v:parseFloat(el.value),u:rs.querySelectorAll('.xu')[i].value}));
+      if(am.some(a=>!(a.v>=0))){o.innerHTML='<span class="v38x">Enter a number for every reactant.</span>';return}
+      const r=stoich(cur.eq,cur.co,am,parseFloat(rs.querySelector('#v38xy').value));last={r,eq:cur.eq};
+      o.innerHTML='<table class="v38t"><tr><th>Reactant</th><th>Moles</th><th>Left over (g)</th></tr>'+cur.eq.L.map((f,i)=>'<tr><td>'+esc(pretty(f))+(i===r.lim?' <b>(limiting)</b>':'')+'</td><td>'+nf(r.mols[i],4)+'</td><td>'+(i===r.lim?'0':nf(r.left[i].g,4))+'</td></tr>').join('')+'</table>'
+        +'<table class="v38t"><tr><th>Product</th><th>Theoretical moles</th><th>Theoretical mass (g)</th></tr>'+r.prod.map(p=>'<tr><td>'+esc(pretty(p.f))+'</td><td>'+nf(p.mol,4)+'</td><td>'+nf(p.g,4)+'</td></tr>').join('')+'</table>'
+        +'<div class="v38eq">Limiting reagent: '+esc(pretty(cur.eq.L[r.lim]))+'</div>'+(r.pct!=null?'<div class="v38eq">Percent yield: '+nf(r.pct,4)+'%</div>':'');
+    }
+    body.querySelector('#v38xg').onclick=setup;
+    body.querySelector('#v38xx').onclick=()=>{if(!last)calc();if(last)say('The limiting reagent is '+last.eq.L[last.r.lim]+'. It runs out first, so it decides how much product forms. The theoretical yield of '+last.eq.R[0]+' is '+nf(last.r.prod[0].g,3)+' grams.'+(last.r.pct!=null?' The percent yield is '+nf(last.r.pct,3)+' percent.':''),true)};
+    ie.value='N2 + H2 -> NH3';setup();
+    rs.querySelectorAll('.xa')[0].value='28';rs.querySelectorAll('.xa')[1].value='10';calc();
+  });
+  /* ---- pH ---- */
+  const KA={'acetic acid':1.8e-5,'hydrofluoric acid':6.8e-4,'formic acid':1.8e-4,'carbonic acid (1st)':4.3e-7,'hypochlorous acid':3.0e-8,'benzoic acid':6.3e-5};
+  const KB={'ammonia':1.8e-5,'methylamine':4.4e-4,'pyridine':1.7e-9};
+  const log10=Math.log10;
+  function phCalc(type,C,K,C2,n){
+    n=n||1;
+    if(type==='sa'){const h=C*n;const H=h>1e-6?h:(h+Math.sqrt(h*h+4e-14))/2;return {pH:-log10(H),note:'A strong acid ionises completely, so [H⁺] = '+nf(h,3)+' M.'}}
+    if(type==='sb'){const o=C*n,OH=o>1e-6?o:(o+Math.sqrt(o*o+4e-14))/2;return {pH:14+log10(OH),note:'A strong base ionises completely, so [OH⁻] = '+nf(o,3)+' M, pOH = '+nf(-log10(OH),4)+'.'}}
+    if(type==='wa'){const x=(-K+Math.sqrt(K*K+4*K*C))/2;return {pH:-log10(x),note:'Solving Ka = x²/(C − x): [H⁺] = '+nf(x,3)+' M, so only '+nf(100*x/C,3)+'% of the acid ionises.'}}
+    if(type==='wb'){const x=(-K+Math.sqrt(K*K+4*K*C))/2;return {pH:14+log10(x),note:'Solving Kb = x²/(C − x): [OH⁻] = '+nf(x,3)+' M, pOH = '+nf(-log10(x),4)+'.'}}
+    const pk=-log10(K);return {pH:pk+log10(C2/C),note:'Henderson–Hasselbalch: pH = pKa + log([base]/[acid]) = '+nf(pk,4)+' + log('+nf(C2,3)+'/'+nf(C,3)+').'};
+  }
+  const phWord=p=>p<6.95?'acidic':p>7.05?'basic (alkaline)':'neutral';
+  const phCol=p=>{const c=['#e6212a','#f0572a','#f58a1f','#f6c21b','#d7e022','#8dd13a','#41b84a','#1fa87a','#1aa0a8','#2a7fc5','#3d5bc8','#5a45c0','#7338b0','#8a2a9a','#6a1f7a'];return c[clamp(Math.round(p),0,14)]};
+  section(cbox,'pH: strong and weak acids, bases, buffers',body=>{
+    body.innerHTML='<div class="v38r"><select id="v38pt"><option value="sa">Strong acid (HCl, HNO₃, ...)</option><option value="sb">Strong base (NaOH, KOH, ...)</option><option value="wa">Weak acid</option><option value="wb">Weak base</option><option value="bf">Buffer (weak acid + its salt)</option></select></div>'
+      +'<div class="v38r"><input id="v38pc" placeholder="Concentration (M)" value="0.01"><input id="v38pk" placeholder="Ka or Kb, e.g. 1.8e-5"><select id="v38pp" style="flex:0 0 150px"><option value="">Preset…</option></select></div><div class="v38r"><input id="v38ps" placeholder="Salt (conjugate base) conc, M"><input id="v38pn" placeholder="H⁺ or OH⁻ per formula (1)"></div><div class="v38r"><button class="btn sm" id="v38pg">Find pH</button><button class="ghost" id="v38px">Explain</button></div><div class="v38o" id="v38po"></div><div class="v38w"><div id="v38pb" style="display:flex;height:22px;min-width:300px"></div></div>';
+    const t=body.querySelector('#v38pt'),pp=body.querySelector('#v38pp');
+    Object.keys(KA).forEach(k=>pp.insertAdjacentHTML('beforeend','<option value="a|'+k+'">'+k+' (Ka)</option>'));Object.keys(KB).forEach(k=>pp.insertAdjacentHTML('beforeend','<option value="b|'+k+'">'+k+' (Kb)</option>'));
+    pp.onchange=()=>{const v=pp.value.split('|');if(v.length===2){body.querySelector('#v38pk').value=(v[0]==='a'?KA:KB)[v[1]];if(v[0]==='a'&&t.value!=='bf')t.value='wa';if(v[0]==='b')t.value='wb'}};
+    const bar=body.querySelector('#v38pb');for(let i=0;i<=14;i++)bar.insertAdjacentHTML('beforeend','<div style="flex:1;background:'+phCol(i)+';text-align:center;font-size:10px;color:#000" data-p="'+i+'">'+i+'</div>');
+    let last=null;
+    function run(){
+      const ty=t.value,C=parseFloat(body.querySelector('#v38pc').value),K=parseFloat(body.querySelector('#v38pk').value),S=parseFloat(body.querySelector('#v38ps').value),n=parseFloat(body.querySelector('#v38pn').value)||1,o=body.querySelector('#v38po');
+      if(!(C>0)||((ty==='wa'||ty==='wb'||ty==='bf')&&!(K>0))||(ty==='bf'&&!(S>0))){o.innerHTML='<span class="v38x">Fill in the numbers this type needs (concentrations above 0, and K for weak acids, bases and buffers).</span>';return}
+      const r=phCalc(ty,C,K,S,n);last=r;
+      bar.querySelectorAll('div').forEach(d=>d.style.outline=(+d.dataset.p===Math.round(r.pH))?'2px solid #fff':'none');
+      o.innerHTML='<div class="v38eq">pH = '+nf(r.pH,4)+' ('+phWord(r.pH)+')</div>'+esc(r.note);
+    }
+    body.querySelector('#v38pg').onclick=run;body.querySelector('#v38px').onclick=()=>{if(!last)run();if(last)say('The pH is '+nf(last.pH,3)+', which is '+phWord(last.pH)+'. '+last.note.replace(/[⁺⁻²]/g,''),true)};
+    run();
+  });
+  /* ---- quick formulas: dilution, ideal gas ---- */
+  section(cbox,'Dilution and ideal gas',body=>{
+    body.innerHTML='<h4 style="margin:4px 0 6px">Dilution: C₁V₁ = C₂V₂ (leave one box empty)</h4><div class="v38r"><input id="v38d1" placeholder="C1 (M)"><input id="v38d2" placeholder="V1 (mL)"><input id="v38d3" placeholder="C2 (M)"><input id="v38d4" placeholder="V2 (mL)"></div><div class="v38o" id="v38do2"></div>'
+      +'<h4 style="margin:12px 0 6px">Ideal gas: PV = nRT (leave one box empty)</h4><div class="v38r"><input id="v38g1" placeholder="P (atm)"><input id="v38g2" placeholder="V (L)"><input id="v38g3" placeholder="n (mol)"><input id="v38g4" placeholder="T (K)"></div><div class="v38o" id="v38go"></div>';
+    function solve(ids,out,fn){
+      const els=ids.map(i=>body.querySelector(i)),vals=els.map(e=>parseFloat(e.value)),o=body.querySelector(out);
+      const missing=vals.map((v,i)=>isNaN(v)?i:-1).filter(i=>i>=0);
+      if(missing.length!==1){o.textContent='Fill in exactly three boxes.';return}
+      if(vals.some(v=>v<=0)){o.textContent='Values must be positive.';return}
+      const k=missing[0],r=fn(vals,k);o.textContent=r;
+    }
+    const D=()=>solve(['#v38d1','#v38d2','#v38d3','#v38d4'],'#v38do2',(v,k)=>{let r;if(k===0)r=v[2]*v[3]/v[1];else if(k===1)r=v[2]*v[3]/v[0];else if(k===2)r=v[0]*v[1]/v[3];else r=v[0]*v[1]/v[2];return ['C1','V1','C2','V2'][k]+' = '+nf(r,5)+(k%2?' mL':' M')+(k===3?'. Add '+nf(r-v[1],4)+' mL of solvent to '+nf(v[1],4)+' mL.':'')});
+    const R=0.082057366;
+    const G=()=>solve(['#v38g1','#v38g2','#v38g3','#v38g4'],'#v38go',(v,k)=>{let r;if(k===0)r=v[2]*R*v[3]/v[1];else if(k===1)r=v[2]*R*v[3]/v[0];else if(k===2)r=v[0]*v[1]/(R*v[3]);else r=v[0]*v[1]/(R*v[2]);return ['P','V','n','T'][k]+' = '+nf(r,5)+[' atm',' L',' mol',' K'][k]+' (R = 0.08206 L atm / mol K)'});
+    ['#v38d1','#v38d2','#v38d3','#v38d4'].forEach(i=>body.querySelector(i).oninput=D);['#v38g1','#v38g2','#v38g3','#v38g4'].forEach(i=>body.querySelector(i).oninput=G);
+  });
+
+  /* =====================================================================
+     Reaction predictor (dilute aqueous solutions, textbook rules)
+     ===================================================================== */
+  const CATS=[
+    {id:'Na',f:'Na',q:1,name:'sodium',col:null,m:1},{id:'K',f:'K',q:1,name:'potassium',m:1},{id:'Li',f:'Li',q:1,name:'lithium',m:1},
+    {id:'NH4',f:'NH4',q:1,name:'ammonium',poly:1},{id:'Ag',f:'Ag',q:1,name:'silver',m:1},{id:'H',f:'H',q:1,name:'hydrogen'},
+    {id:'Cu',f:'Cu',q:2,name:'copper(II)',col:'#3fa7ff',cn:'blue',m:1},{id:'Fe2',f:'Fe',q:2,name:'iron(II)',col:'#8fd19e',cn:'pale green',m:1},
+    {id:'Fe3',f:'Fe',q:3,name:'iron(III)',col:'#d9a441',cn:'yellow-brown',m:1},{id:'Ca',f:'Ca',q:2,name:'calcium',m:1},{id:'Ba',f:'Ba',q:2,name:'barium',m:1},
+    {id:'Sr',f:'Sr',q:2,name:'strontium',m:1},{id:'Mg',f:'Mg',q:2,name:'magnesium',m:1},{id:'Zn',f:'Zn',q:2,name:'zinc',m:1},{id:'Pb',f:'Pb',q:2,name:'lead(II)',m:1},
+    {id:'Al',f:'Al',q:3,name:'aluminium',m:1},{id:'Ni',f:'Ni',q:2,name:'nickel(II)',col:'#59c27a',cn:'green',m:1},{id:'Co',f:'Co',q:2,name:'cobalt(II)',col:'#e87aa0',cn:'pink',m:1},{id:'Mn',f:'Mn',q:2,name:'manganese(II)',col:'#f3d6e6',cn:'very pale pink',m:1}];
+  const ANS=[
+    {id:'Cl',f:'Cl',q:1,name:'chloride'},{id:'Br',f:'Br',q:1,name:'bromide'},{id:'I',f:'I',q:1,name:'iodide'},{id:'NO3',f:'NO3',q:1,name:'nitrate',poly:1},
+    {id:'SO4',f:'SO4',q:2,name:'sulfate',poly:1},{id:'CO3',f:'CO3',q:2,name:'carbonate',poly:1},{id:'OH',f:'OH',q:1,name:'hydroxide',poly:1},
+    {id:'S',f:'S',q:2,name:'sulfide'},{id:'PO4',f:'PO4',q:3,name:'phosphate',poly:1},{id:'CH3COO',f:'CH3COO',q:1,name:'acetate',poly:1},{id:'CrO4',f:'CrO4',q:2,name:'chromate',poly:1,col:'#e6d73a',cn:'yellow'}];
+  const catBy=id=>CATS.find(c=>c.id===id),anBy=id=>ANS.find(a=>a.id===id);
+  const part=(x,n)=>x.poly&&n>1?'('+x.f+')'+n:x.f+(n>1?n:'');
+  function ionFormula(c,a){
+    if(c.id==='H'&&a.id==='OH')return 'H2O';if(c.id==='H'&&a.id==='CH3COO')return 'CH3COOH';
+    const g=gcd(c.q,a.q),nc=a.q/g,na=c.q/g;return part(c,nc)+part(a,na);
+  }
+  const FIDX={};CATS.forEach(c=>ANS.forEach(a=>{const f=ionFormula(c,a),p=parseF(f);if(p){const k=canon(p);if(!FIDX[k]||c.id==='Fe2'&&false)FIDX[k]={c,a,f}}}));
+  /* solubility: true soluble, 'slight', false insoluble */
+  function soluble(c,a){
+    const g1=['Na','K','Li','NH4'].indexOf(c.id)>=0;
+    if(c.id==='H')return true;if(g1)return true;
+    if(a.id==='NO3'||a.id==='CH3COO')return a.id==='CH3COO'&&c.id==='Ag'?'slight':true;
+    if(['Cl','Br','I'].indexOf(a.id)>=0)return ['Ag','Pb'].indexOf(c.id)>=0?false:true;
+    if(a.id==='SO4')return ['Ba','Sr','Pb'].indexOf(c.id)>=0?false:c.id==='Ca'?'slight':true;
+    if(a.id==='OH')return ['Ba','Sr'].indexOf(c.id)>=0?true:c.id==='Ca'?'slight':false;
+    if(a.id==='S')return ['Ca','Ba','Sr','Mg'].indexOf(c.id)>=0?true:false;
+    return false; /* carbonate, phosphate, chromate */
+  }
+  function precipColour(c,a){
+    if(a.id==='S')return ['black','#222'];
+    if(a.id==='CrO4')return c.id==='Ag'?['brick red','#b3382c']:['yellow','#e6d73a'];
+    if(a.id==='I')return ['yellow','#f1dc3c'];if(a.id==='Br')return ['cream','#f2ebc8'];
+    if(a.id==='OH'){if(c.id==='Cu')return ['pale blue','#7fb7ff'];if(c.id==='Fe3')return ['reddish-brown','#9a4a22'];if(c.id==='Fe2')return ['green','#6aa07a'];if(c.id==='Ni')return ['green','#6cc08a'];if(c.id==='Co')return ['blue-pink','#8a8ad8']}
+    if(a.id==='CO3'&&c.id==='Cu')return ['blue-green','#4fb3a5'];if(a.id==='CO3'&&c.id==='Fe2')return ['grey-green','#8fa89a'];
+    if(c.col&&c.id!=='Mn')return [c.cn,c.col];
+    if(a.id==='PO4'&&c.id==='Ag')return ['yellow','#f1dc3c'];
+    return ['white','#f4f4f4'];
+  }
+  const ACT=['Li','K','Ba','Sr','Ca','Na','Mg','Al','Mn','Zn','Fe','Ni','Pb','H','Cu','Ag'];
+  const WATER_METALS=['Li','K','Ba','Sr','Ca','Na'];
+  const defCat=sym=>sym==='Fe'?catBy('Fe2'):CATS.find(c=>c.f===sym&&c.m);
+  const SYMNAME={Li:'lithium',K:'potassium',Ba:'barium',Sr:'strontium',Ca:'calcium',Na:'sodium',Mg:'magnesium',Al:'aluminium',Mn:'manganese',Zn:'zinc',Fe:'iron',Ni:'nickel',Pb:'lead',Cu:'copper',Ag:'silver'};
+  /* name -> reactant parsing */
+  const CWORDS={sodium:'Na',potassium:'K',lithium:'Li',ammonium:'NH4',silver:'Ag',copper:'Cu','copper(ii)':'Cu',cupric:'Cu',iron:'Fe3','iron(iii)':'Fe3','iron(ii)':'Fe2',ferric:'Fe3',ferrous:'Fe2',calcium:'Ca',barium:'Ba',strontium:'Sr',magnesium:'Mg',zinc:'Zn',lead:'Pb','lead(ii)':'Pb',aluminium:'Al',aluminum:'Al',nickel:'Ni','nickel(ii)':'Ni',cobalt:'Co',manganese:'Mn',hydrogen:'H'};
+  const AWORDS={chloride:'Cl',bromide:'Br',iodide:'I',nitrate:'NO3',sulfate:'SO4',sulphate:'SO4',carbonate:'CO3',hydroxide:'OH',sulfide:'S',sulphide:'S',phosphate:'PO4',acetate:'CH3COO',ethanoate:'CH3COO',chromate:'CrO4'};
+  const ACIDS={'hydrochloric acid':'Cl','hydrobromic acid':'Br','hydroiodic acid':'I','nitric acid':'NO3','sulfuric acid':'SO4','sulphuric acid':'SO4','acetic acid':'CH3COO','ethanoic acid':'CH3COO','carbonic acid':'CO3','phosphoric acid':'PO4','hydrogen sulfide':'S','vinegar':'CH3COO'};
+  const ELNAMES={chlorine:'Cl2',bromine:'Br2',iodine:'I2',oxygen:'O2',water:'H2O','methane':'CH4','ethane':'C2H6','propane':'C3H8','butane':'C4H10','ethanol':'C2H6O','glucose':'C6H12O6','hydrogen gas':'H2'};
+  function reactantFrom(text){
+    let t=String(text).trim().toLowerCase().replace(/\b(aqueous|solution|of|dilute|concentrated|metal|solid|a|the|some|piece)\b/g,' ').replace(/\s+/g,' ').trim();
+    if(!t)return null;
+    t=t.replace(/\(\s*(iii|ii)\s*\)/g,'($1)').replace(/(iron|copper|lead|nickel)\s*(\((?:ii|iii)\))/g,'$1$2');
+    if(ACIDS[t])return {kind:'ionic',c:catBy('H'),a:anBy(ACIDS[t]),label:text.trim(),aq:true};
+    if(ELNAMES[t])return fromFormula(ELNAMES[t]);
+    const w=t.split(' ');
+    if(w.length===2&&CWORDS[w[0]]&&AWORDS[w[1]])return {kind:'ionic',c:catBy(CWORDS[w[0]]),a:anBy(AWORDS[w[1]]),aq:true};
+    if(w.length===2&&w[0]==='hydrogen'&&AWORDS[w[1]])return {kind:'ionic',c:catBy('H'),a:anBy(AWORDS[w[1]]),aq:true};
+    if(w.length===1&&CWORDS[w[0]]&&w[0]!=='ammonium'&&w[0]!=='hydrogen'){const sym=CWORDS[w[0]].replace(/\d/g,'');if(ACT.indexOf(sym)>=0)return {kind:'metal',sym}}
+    return fromFormula(String(text).trim().replace(/\((aq|s|l|g)\)$/i,'').replace(/\s+/g,''));
+  }
+  function fromFormula(f){
+    const p=parseF(f);if(!p)return null;const k=canon(p);
+    if(k==='H2O1')return {kind:'water'};
+    if(k==='O2')return {kind:'o2'};
+    if(p.Cl===2&&Object.keys(p).length===1||p.Br===2&&Object.keys(p).length===1||p.I===2&&Object.keys(p).length===1)return {kind:'halogen',sym:Object.keys(p)[0]};
+    if(Object.keys(p).length===1&&p[Object.keys(p)[0]]===1&&ACT.indexOf(Object.keys(p)[0])>=0)return {kind:'metal',sym:Object.keys(p)[0]};
+    if(FIDX[k]){const x=FIDX[k];return {kind:'ionic',c:x.c,a:x.a,aq:true,f:x.f}}
+    if(f==='CH3COOH')return {kind:'ionic',c:catBy('H'),a:anBy('CH3COO'),aq:true};
+    const els=Object.keys(p);if(els.every(e=>'CHO'.indexOf(e)>=0)&&p.C&&p.H)return {kind:'organic',p,f};
+    return null;
+  }
+  const STRONG_H=['Cl','Br','I','NO3','SO4'];
+  /* species model for equations */
+  function spIon(c,a,state,note){
+    const g=gcd(c.q,a.q),nc=a.q/g,na=c.q/g,f=ionFormula(c,a);
+    const strong=!(c.id==='H')||STRONG_H.indexOf(a.id)>=0||a.id==='OH';
+    const ions=(state==='aq'&&strong&&f!=='H2O'&&f!=='CH3COOH')?[{c:c,n:nc,kind:'c'},{a:a,n:na,kind:'a'}]:null;
+    return {f,state,ions};
+  }
+  const IONSUP={1:'⁺',2:'²⁺',3:'³⁺'},ANSUP={1:'⁻',2:'²⁻',3:'³⁻'};
+  const ionKey=i=>i.kind==='c'?i.c.id+'+':i.a.id+'-';
+  const ionDisp=i=>i.kind==='c'?pretty(i.c.f)+IONSUP[i.c.q]:pretty(i.a.f)+ANSUP[i.a.q];
+  function netIonic(L,R,co){
+    const sideMap=(arr,off)=>{const m={},order=[];arr.forEach((s,i)=>{const c=co[i+off];
+      if(s.ions)s.ions.forEach(io=>{const k=ionKey(io);if(!m[k]){m[k]={n:0,d:ionDisp(io)+'(aq)'};order.push(k)}m[k].n+=c*io.n});
+      else{const k=s.f+'|'+s.state;if(!m[k]){m[k]={n:0,d:pretty(s.f)+'('+s.state+')'};order.push(k)}m[k].n+=c}});return {m,order}};
+    const A=sideMap(L,0),B=sideMap(R,L.length);
+    Object.keys(A.m).forEach(k=>{if(B.m[k]){const t=Math.min(A.m[k].n,B.m[k].n);A.m[k].n-=t;B.m[k].n-=t}});
+    const al=A.order.filter(k=>A.m[k].n>0),bl=B.order.filter(k=>B.m[k].n>0);
+    let g=0;al.forEach(k=>g=gcd(g,A.m[k].n));bl.forEach(k=>g=gcd(g,B.m[k].n));g=g||1;
+    const fmt=(l,M)=>l.map(k=>(M[k].n/g>1?M[k].n/g+' ':'')+M[k].d).join(' + ');
+    return fmt(al,A.m)+' → '+fmt(bl,B.m);
+  }
+  const stateSp=(f,st)=>({f,state:st,ions:null});
+  /* the predictor itself */
+  function predict(r1,r2){
+    const A=r1,B=r2,rs=[A,B];
+    const kinds=rs.map(r=>r.kind);
+    const res=(o)=>Object.assign({reacts:false,obs:[],why:[]},o);
+    const needs=()=>res({err:'Name two substances, for example silver nitrate + sodium chloride, or zinc + copper sulfate.'});
+    /* helper to finish: given species lists, balance, net ionic */
+    function finish(Ls,Rs,extra){
+      const b=balance(Ls.map(s=>s.f),Rs.map(s=>s.f));
+      if(b.err)return res(Object.assign({reacts:true,err2:b.err},extra));
+      const text=Ls.map((s,i)=>(b.co[i]>1?b.co[i]+' ':'')+pretty(s.f)+'('+s.state+')').join(' + ')+' → '+Rs.map((s,i)=>(b.co[i+Ls.length]>1?b.co[i+Ls.length]+' ':'')+pretty(s.f)+'('+s.state+')').join(' + ');
+      let net=null;if(Ls.concat(Rs).some(s=>s.ions))net=netIonic(Ls,Rs,b.co);
+      return res(Object.assign({reacts:true,eq:text,net,L:Ls,R:Rs,co:b.co},extra));
+    }
+    const sorted=rs.slice().sort((x,y)=>x.kind.localeCompare(y.kind));
+    const k=sorted.map(x=>x.kind).join('+');
+    const ion=rs.find(r=>r.kind==='ionic');
+    /* ionic + ionic */
+    if(kinds[0]==='ionic'&&kinds[1]==='ionic'){
+      const c1=A.c,a1=A.a,c2=B.c,a2=B.a;
+      const solid=r=>soluble(r.c,r.a)!==true&&r.c.id!=='H';
+      const isAcid=r=>r.c.id==='H';
+      if(isAcid(A)&&isAcid(B))return res({why:['Two acids: no exchange gives a new kind of substance.']});
+      const dissolves=r=>!solid(r)||(isAcid(r===A?B:A)&&['CO3','OH','S'].indexOf(r.a.id)>=0);
+      if(!dissolves(A)||!dissolves(B))return res({why:[(solid(A)?ionFormula(c1,a1):ionFormula(c2,a2))+' is insoluble, so it stays as a solid and does not supply ions to react with.']});
+      const Ls=[{f:ionFormula(c1,a1),state:solid(A)?'s':'aq',ions:null},{f:ionFormula(c2,a2),state:solid(B)?'s':'aq',ions:null}];
+      Ls.forEach((s,i)=>{const r=i?B:A;if(s.state==='aq')s.ions=spIon(r.c,r.a,'aq').ions});
+      const Rs=[],obs=[],why=[];let react=false,kind='';
+      const prodPairs=[[c1,a2],[c2,a1]];
+      let gas=null;
+      prodPairs.forEach(([c,a])=>{
+        if(c.id==='H'&&a.id==='OH'){Rs.push({f:'H2O',state:'l'});react=true;kind=kind||'neutralisation';obs.push('The solution warms slightly (neutralisation is exothermic). There is usually no visible change.');why.push('H⁺ and OH⁻ combine to form water.')}
+        else if(c.id==='H'&&a.id==='CO3'){Rs.push({f:'CO2',state:'g'},{f:'H2O',state:'l'});react=true;gas='CO2';kind='gas';obs.push('Bubbles of colourless carbon dioxide gas fizz out (it turns limewater milky).');why.push('Carbonic acid is unstable and breaks down to CO₂ and water.')}
+        else if(c.id==='H'&&a.id==='S'){Rs.push({f:'H2S',state:'g'});react=true;gas='H2S';kind='gas';obs.push('A gas with a rotten-egg smell (hydrogen sulfide, toxic) is released.');why.push('Sulfides react with acids to give H₂S gas.')}
+        else if(c.id==='NH4'&&a.id==='OH'){Rs.push({f:'NH3',state:'g'},{f:'H2O',state:'l'});react=true;gas='NH3';kind='gas';obs.push('A sharp-smelling gas, ammonia, is released (turns damp red litmus blue).');why.push('NH₄⁺ and OH⁻ give ammonia gas and water.')}
+        else if(c.id==='H'&&a.id==='CH3COO'){Rs.push({f:'CH3COOH',state:'aq'});react=true;kind=kind||'weak';obs.push('A vinegar smell appears as weak acetic acid forms.');why.push('Acetic acid is a weak acid, so H⁺ and acetate stay combined.')}
+        else{
+          const s=soluble(c,a);
+          if(s===true)Rs.push({f:ionFormula(c,a),state:'aq',ions:spIon(c,a,'aq').ions});
+          else{Rs.push({f:ionFormula(c,a),state:'s'});react=true;kind='precip';const pc=precipColour(c,a);obs.push('A '+pc[0]+' precipitate of '+pretty(ionFormula(c,a))+' forms'+(s==='slight'?' (it is only slightly soluble, so it may be cloudy)':'')+'.');why.push(ionFormula(c,a)+' is '+(s==='slight'?'only slightly soluble':'insoluble')+' in water, so the ions lock together and fall out as a solid.')}
+        }
+      });
+      if(!react)return res({why:['Swapping partners gives '+Rs.map(s=>pretty(s.f)).join(' and ')+', and both are soluble. All the ions stay dissolved, so nothing happens that you could observe.']});
+      const out=finish(Ls,Rs,{kind,obs,why});
+      const solids=Rs.filter(s=>s.state==='s'),pcol=solids.length?precipColour(...(prodPairs.find(p=>ionFormula(p[0],p[1])===solids[0].f))):null;
+      out.scene={solids:solids.map(s=>({f:s.f,col:pcol[1],name:pcol[0]})),gas:!!gas,reactCats:[c1,c2],productCats:Rs.filter(s=>s.state==='aq'&&s.ions).map(s=>s.ions[0].c),gasName:gas};
+      if(c1.col&&!Rs.some(s=>s.ions&&s.ions[0].c===c1)&&!solids.length&&false)out.obs.push('');
+      return out;
+    }
+    /* metal + X */
+    const metal=rs.find(r=>r.kind==='metal'),other=rs.find(r=>r!==metal);
+    if(metal&&other){
+      const m=defCat(metal.sym);
+      if(other.kind==='water'){
+        if(WATER_METALS.indexOf(metal.sym)>=0){
+          const hy={f:ionFormula(m,anBy('OH')),state:'aq',ions:spIon(m,anBy('OH'),'aq').ions};
+          return finish([stateSp(metal.sym,'s'),stateSp('H2O','l')],[hy,stateSp('H2','g')],{kind:'metal-water',obs:['The metal fizzes as hydrogen gas is released and the water turns alkaline (phenolphthalein would turn pink).'+(metal.sym==='K'||metal.sym==='Li'||metal.sym==='Na'?' '+SYMNAME[metal.sym][0].toUpperCase()+SYMNAME[metal.sym].slice(1)+' may skid around or catch fire: this is dangerous.':'')],why:[SYMNAME[metal.sym]+' is high in the activity series, so it can push hydrogen out of water.'],scene:{gas:true,metal:metal.sym,metalGone:true,alk:true}});
+        }
+        return res({why:[SYMNAME[metal.sym]+' is too unreactive to displace hydrogen from cold water.'+(metal.sym==='Mg'?' (Magnesium reacts very slowly with cold water and quickly with steam.)':'')]});
+      }
+      if(other.kind==='o2'){
+        const f=(m.q===1?m.f+'2O':m.q===2?m.f+'O':m.f+'2O3');
+        return finish([stateSp(metal.sym,'s'),stateSp('O2','g')],[stateSp(f,'s')],{kind:'oxidation',obs:['The metal slowly (or, if heated, brightly) combines with oxygen to form its oxide.'],why:['Metals lose electrons to oxygen to make oxides.'],scene:null,note:'Oxide formula assumes the common charge '+m.q+'+.'});
+      }
+      if(other.kind==='ionic'){
+        const c=other.c,a=other.a;
+        if(c.id==='H'){
+          if(a.id==='NO3')return res({reacts:true,kind:'special',obs:[],why:['Nitric acid is an oxidising acid: with a metal it gives nitrogen oxides and water rather than hydrogen, so no simple equation is given here.']});
+          if(ACT.indexOf(metal.sym)>ACT.indexOf('H'))return res({why:[SYMNAME[metal.sym]+' is below hydrogen in the activity series, so it cannot displace hydrogen from an acid.']});
+          if(metal.sym==='Pb')return res({why:['Lead is just above hydrogen, but the insoluble lead chloride or sulfate that forms coats the metal and the reaction stops almost immediately.']});
+          const salt={f:ionFormula(m,a),state:'aq',ions:spIon(m,a,'aq').ions};
+          if(a.id==='CH3COO')salt.ions=spIon(m,a,'aq').ions;
+          return finish([stateSp(metal.sym,'s'),{f:ionFormula(c,a),state:'aq',ions:spIon(c,a,'aq').ions}],[salt,stateSp('H2','g')],{kind:'metal-acid',obs:['Bubbles of hydrogen gas form on the metal, which gradually dissolves. The test tube warms.'+(m.col?' The solution turns '+m.cn+'.':'')],why:[SYMNAME[metal.sym]+' is above hydrogen in the activity series, so it reduces H⁺ to hydrogen gas.'],scene:{gas:true,metal:metal.sym,metalGone:true,productCats:[m]}});
+        }
+        if(c.m&&c.f!==metal.sym){
+          if(ACT.indexOf(c.f)<0)return res({why:['The activity series used here does not cover '+c.name+'.']});
+          if(WATER_METALS.indexOf(metal.sym)>=0)return res({reacts:true,kind:'special',why:[SYMNAME[metal.sym]+' is so reactive that it would react with the water in the solution first, so a clean displacement does not happen. Try a less reactive metal.']});
+          if(ACT.indexOf(metal.sym)>=ACT.indexOf(c.f))return res({why:[SYMNAME[metal.sym]+' is less reactive than '+c.f+' (lower in the activity series), so it cannot push '+c.name+' out of its compound.']});
+          if(!soluble(m,a))return res({why:['The new salt would be insoluble and coat the metal; no clean displacement is predicted.']});
+          const out=finish([stateSp(metal.sym,'s'),{f:ionFormula(c,a),state:'aq',ions:spIon(c,a,'aq').ions}],[{f:ionFormula(m,a),state:'aq',ions:spIon(m,a,'aq').ions},stateSp(c.f,'s')],{kind:'displacement',why:[SYMNAME[metal.sym]+' is more reactive than '+c.f+', so its atoms give electrons to '+c.name+' ions, which become metal.']});
+          const dep={Cu:'reddish-brown copper',Ag:'grey-silver crystals of silver',Pb:'grey lead',Fe:'grey iron',Ni:'grey nickel',Zn:'grey zinc',Mg:'grey magnesium',Mn:'grey manganese',Co:'grey cobalt'}[c.f]||'metal';
+          out.obs=['The '+SYMNAME[metal.sym]+' becomes coated with '+dep+'.'].concat(c.col?['The '+c.cn+' colour of the solution fades'+(m.col?' and turns '+m.cn:'')+'.']:[]);
+          out.scene={metal:metal.sym,deposit:c.f,fade:c.col||null,productCats:[m],reactCats:[c]};return out;
+        }
+      }
+      return res({why:['I do not have a rule for that metal and substance together.']});
+    }
+    /* halogen + halide */
+    const hal=rs.find(r=>r.kind==='halogen'),salt=rs.find(r=>r.kind==='ionic');
+    if(hal&&salt){
+      const order=['Cl','Br','I'],x=hal.sym,y=salt.a.f;
+      if(order.indexOf(y)<0)return res({why:['Halogen displacement only applies to chloride, bromide and iodide salts.']});
+      if(order.indexOf(x)>=order.indexOf(y))return res({why:[x+'₂ is not more reactive than '+y+'⁻’s halogen ('+y+'₂), so it cannot take its place. Reactivity falls: Cl > Br > I.']});
+      const nc=anBy(x),sA=salt.a;
+      const out=finish([stateSp(x+'2','aq'),{f:ionFormula(salt.c,sA),state:'aq',ions:spIon(salt.c,sA,'aq').ions}],[{f:ionFormula(salt.c,nc),state:'aq',ions:spIon(salt.c,nc,'aq').ions},stateSp(y+'2','aq')],{kind:'halogen',why:[x+'₂ is a stronger oxidising agent than '+y+'₂, so it takes electrons from '+y+'⁻ ions and releases the free halogen.']});
+      out.obs=[y==='Br'?'The solution turns orange-brown as bromine forms.':'The solution turns brown as iodine forms (it turns starch blue-black).'];
+      out.scene={tint:y==='Br'?'#e67e22':'#6b4226',productCats:[salt.c]};return out;
+    }
+    /* combustion */
+    const org=rs.find(r=>r.kind==='organic'),ox=rs.find(r=>r.kind==='o2');
+    if(org&&ox){return finish([stateSp(org.f,'g'),stateSp('O2','g')],[stateSp('CO2','g'),stateSp('H2O','g')],{kind:'combustion',obs:['It burns with a flame, releasing heat and light. Carbon dioxide and water vapour form.'],why:['Complete combustion converts all the carbon to CO₂ and all the hydrogen to H₂O.'],scene:{flame:true}})}
+    return res({why:['I do not have a rule for that pair. I handle: two ionic compounds or acids/bases in water, a metal with an acid, a salt, water or oxygen, a halogen with a halide, and burning an organic compound.']});
+  }
+
+  /* ---- 3D beaker scene for a prediction ---- */
+  const METALC={Li:'#c9ccd0',K:'#cfd2d6',Ba:'#b8b8a8',Sr:'#c0c0b0',Ca:'#d0d0d0',Na:'#c9ccd0',Mg:'#d4d8dc',Al:'#c0c6cc',Mn:'#9a9a9a',Zn:'#9aa3ad',Fe:'#7a7f87',Ni:'#a8aaa8',Pb:'#6a6f78',Cu:'#c06a3b',Ag:'#e4e6ea'};
+  const DEPC={Cu:'#b8532a',Ag:'#d8dce2',Pb:'#555a62',Fe:'#555a60',Ni:'#8c8e8c',Zn:'#8c939c',Mg:'#b0b4b8',Mn:'#808080',Co:'#7a7a8a'};
+  function sceneSpec(res,title){
+    const S=res.scene||{},obj=[],parts=[];
+    const col=S.tint||(S.productCats||[]).find(c=>c&&c.col)&&(S.productCats||[]).find(c=>c&&c.col).col||(S.reactCats||[]).find(c=>c&&c.col)&&(S.reactCats||[]).find(c=>c&&c.col).col||(S.alk?'#e8a0d0':'#bfe3ff');
+    const pale=col==='#bfe3ff'||col==='#e8a0d0';
+    obj.push({t:'lathe',name:'beaker',profile:[[0.01,0],[1.7,0],[1.75,4.2]],pos:[0,0,0],color:'#cfe8ff',opacity:.14});parts.push({name:'beaker',desc:'A glass beaker holding the reaction mixture.'});
+    obj.push({t:'cylinder',name:'solution',from:[0,.05,0],to:[0,2.8,0],r:1.6,color:col,opacity:pale?.28:.5});
+    parts.push({name:'solution',desc:pale?'The liquid is colourless or nearly so.':'The liquid is coloured by the dissolved ions it contains.'});
+    (S.solids||[]).forEach((s,i)=>{
+      obj.push({t:'cylinder',name:'precipitate',from:[0,.05,0],to:[0,.4,0],r:1.5,color:s.col,opacity:.95});
+      obj.push({t:'points',name:'suspended solid',kind:'gauss',count:260,r:3,pos:[0,1.3,0],color:s.col,size:.07,anim:{type:'bob',speed:.5,amp:.08}});
+      parts.push({name:'precipitate',desc:'A '+s.name+' solid, '+pretty(s.f)+', settles at the bottom.'});
+    });
+    if(S.gas||S.flame){
+      [[-.7,1.4],[.6,1.9],[0,2.4],[-.2,.8],[.9,1.0]].forEach((p,i)=>obj.push({t:'sphere',name:'gas bubbles',pos:[p[0],p[1],(i%2?.4:-.3)],r:.13+.03*(i%3),color:'#ffffff',opacity:.55,anim:{type:'bob',speed:.8+.2*i,amp:.35}}));
+      parts.push({name:'gas bubbles',desc:'Bubbles of gas rise out of the liquid.'+(res.kind==='gas'||res.kind==='metal-acid'||res.kind==='metal-water'?'':'')})}
+    if(S.metal){
+      const mc=METALC[S.metal]||'#aaaaaa';
+      if(!S.metalGone||true)obj.push({t:'box',name:'metal',pos:[0,1.3,0],size:[.5,S.metalGone?1.2:2,.25],color:mc,opacity:1});
+      parts.push({name:'metal',desc:'A strip of '+SYMNAME[S.metal]+'.'+(S.metalGone?' It slowly dissolves as it reacts.':'')});
+      if(S.deposit){obj.push({t:'box',name:'deposit',pos:[0,1.3,0],size:[.62,2.1,.37],color:DEPC[S.deposit]||'#a0522d',opacity:.92});parts.push({name:'deposit',desc:'A coating of '+(SYMNAME[S.deposit]||S.deposit)+' metal collects on the strip.'})}
+    }
+    if(S.flame){obj.push({t:'cone',name:'flame',from:[0,2.9,0],to:[0,4.6,0],r:.7,color:'#ff9a1f',opacity:.8,anim:{type:'pulse',speed:2,amp:.08}});parts.push({name:'flame',desc:'The hot flame of burning fuel.'})}
+    obj.push({t:'label',name:'title',pos:[0,5.2,0],text:(title||'Reaction').slice(0,40),size:.55,color:'#ffe9a8'});
+    const summ=(res.obs||[]).join(' ')+' '+(res.eq?'The balanced equation is '+res.eq.replace(/\([a-z]+\)/g,'')+'.':'');
+    return {kind:'scene',title:title||'Reaction',summary:summ.trim()||'Mixed solutions.',parts,objects:obj};
+  }
+  /* ---- predictor panel ---- */
+  function showPrediction(host,A,B,res,label){
+    const nm=(x)=>x;
+    if(res.err){host.innerHTML='<div class="v38o v38x">'+esc(res.err)+'</div>';return}
+    let h='';
+    if(!res.reacts){h+='<div class="v38eq v38x">No reaction predicted</div>'}
+    else h+='<div class="v38eq v38g">Reaction predicted'+(res.kind?': '+esc({precip:'precipitation',gas:'gas-forming',neutralisation:'neutralisation (acid + base)',weak:'weak acid formation','metal-acid':'metal + acid','metal-water':'metal + water',displacement:'single displacement',halogen:'halogen displacement',combustion:'combustion',oxidation:'oxidation',special:'special case'}[res.kind]||res.kind):'')+'</div>';
+    if(res.eq)h+='<div><span class="v38k">Balanced equation:</span><div class="v38eq">'+esc(res.eq)+'</div></div>';
+    if(res.err2)h+='<div class="v38x">'+esc(res.err2)+'</div>';
+    if(res.net)h+='<div><span class="v38k">Net ionic equation (spectator ions removed):</span><div class="v38eq">'+esc(res.net)+'</div></div>';
+    if(res.obs&&res.obs.length)h+='<div><span class="v38k">What you would see:</span> '+esc(res.obs.join(' '))+'</div>';
+    if(res.why&&res.why.length)h+='<div><span class="v38k">Why:</span> '+esc(res.why.join(' '))+'</div>';
+    if(res.note)h+='<div class="v38k">'+esc(res.note)+'</div>';
+    h+='<div class="v38k">Assumes dilute aqueous solutions at room temperature and textbook solubility and activity-series rules. Real chemistry has exceptions.</div>';
+    h+='<div class="v38r">'+(res.scene?'<button class="btn sm" data-a="3d">Show in 3D</button>':'')+'<button class="ghost" data-a="say">Explain</button></div>';
+    host.innerHTML=h;
+    host.querySelector('[data-a=say]').onclick=()=>say(spoken(res),true);
+    const b=host.querySelector('[data-a="3d"]');if(b)b.onclick=()=>inCards(()=>V35.openSpec(sceneSpec(res,label)));
+    host._res=res;
+  }
+  function spoken(res){
+    if(res.err)return res.err;
+    if(!res.reacts)return 'No reaction is predicted. '+(res.why||[]).join(' ');
+    return 'A reaction occurs. '+(res.eq?'The balanced equation is '+res.eq.replace(/\([a-z]+\)/g,'').replace(/→/g,'gives')+'. ':'')+(res.obs||[]).join(' ')+' '+(res.why||[]).join(' ');
+  }
+  function predictText(a,b){
+    const A=reactantFrom(a),B=reactantFrom(b);
+    if(!A)return {err:'I did not recognise "'+a.trim()+'". Use a name like silver nitrate or a formula like AgNO3.'};
+    if(!B)return {err:'I did not recognise "'+b.trim()+'". Use a name like sodium chloride or a formula like NaCl.'};
+    return predict(A,B);
+  }
+  section(cbox,'Reaction predictor: what happens when A meets B?',body=>{
+    body.innerHTML='<div class="v38r"><input id="v38ra" placeholder="First substance, e.g. silver nitrate"><input id="v38rb" placeholder="Second, e.g. sodium chloride"></div><div class="v38r"><button class="btn sm" id="v38rg">Predict</button></div>'
+      +'<div class="v38r" id="v38rx"></div><div id="v38ro"></div>';
+    const ex=[['silver nitrate','sodium chloride'],['zinc','copper sulfate'],['hydrochloric acid','sodium hydroxide'],['sodium carbonate','hydrochloric acid'],['lead nitrate','potassium iodide'],['magnesium','hydrochloric acid'],['chlorine','sodium bromide'],['sodium','water'],['copper','zinc sulfate'],['sodium chloride','potassium nitrate'],['CH4','O2']];
+    const A=body.querySelector('#v38ra'),B=body.querySelector('#v38rb'),O=body.querySelector('#v38ro');
+    ex.forEach(e=>{const b=document.createElement('button');b.className='chip';b.textContent=e[0]+' + '+e[1];b.onclick=()=>{A.value=e[0];B.value=e[1];run()};body.querySelector('#v38rx').appendChild(b)});
+    function run(){showPrediction(O,null,null,predictText(A.value,B.value),A.value.trim()+' + '+B.value.trim())}
+    body.querySelector('#v38rg').onclick=run;[A,B].forEach(i=>i.addEventListener('keydown',e=>{if(e.key==='Enter')run()}));
+    body.closest('details')._set=(a,b)=>{A.value=a;B.value=b;run()};
+    A.value='silver nitrate';B.value='sodium chloride';run();
+  },true);
+
+  /* =====================================================================
+     Chat commands and public API
+     ===================================================================== */
+  async function openSec(sec,tab){labSelect(tab);try{go('lab')}catch(e){}if(!sec.open){sec.open=true;await new Promise(r=>setTimeout(r,40))}try{sec.scrollIntoView({behavior:'smooth',block:'start'})}catch(e){}}
+  const secOf=(host,key)=>[...host.querySelectorAll('details.v38d')].find(d=>d.querySelector('summary').textContent.toLowerCase().indexOf(key)===0);
+  const done=()=>{$$('#log .typing').forEach(x=>x.remove())};
+  function reply(html,speak){done();const d=addMsg('bot',html);if(speak)say(speak,true);return d}
+  const STRONGA={hcl:1,hbr:1,hi:1,hno3:1,hclo4:1,h2so4:2,'hydrochloric acid':1,'nitric acid':1,'sulfuric acid':2,'hydrobromic acid':1};
+  const STRONGB={naoh:1,koh:1,lioh:1,'ba(oh)2':2,'ca(oh)2':2,'sodium hydroxide':1,'potassium hydroxide':1,'barium hydroxide':2,'calcium hydroxide':2};
+  function phFromChat(C,name){
+    const n=name.trim().toLowerCase();
+    if(STRONGA[n]!=null)return {r:phCalc('sa',C,0,0,STRONGA[n]),what:name.trim()+' (strong acid)'};
+    if(STRONGB[n]!=null)return {r:phCalc('sb',C,0,0,STRONGB[n]),what:name.trim()+' (strong base)'};
+    if(KA[n]!=null)return {r:phCalc('wa',C,KA[n]),what:name.trim()+' (weak acid, Ka '+KA[n]+')'};
+    if(KB[n]!=null)return {r:phCalc('wb',C,KB[n]),what:name.trim()+' (weak base, Kb '+KB[n]+')'};
+    if(/^(ch3cooh|vinegar)$/.test(n))return {r:phCalc('wa',C,KA['acetic acid']),what:'acetic acid (weak acid, Ka 1.8e-5)'};
+    if(n==='nh3')return {r:phCalc('wb',C,KB.ammonia),what:'ammonia (weak base)'};
+    return null;
+  }
+  async function chatRoute(s){
+    let m;
+    if(m=s.match(/^(?:please\s+)?balance\s+(?:the\s+)?(?:equation\s*:?\s*)?(.+)$/i)){
+      const r=balanceText(m[1]);
+      if(r.err){reply('<b>Balancing</b><div class="v38o v38x">'+esc(r.err)+'</div>',r.err);return true}
+      reply('<b>Balanced equation</b><div class="v38eq">'+esc(r.text)+'</div>','The balanced equation is '+r.eq.L.map((f,k)=>(r.co[k]>1?r.co[k]+' ':'')+f).join(' plus ')+' gives '+r.eq.R.map((f,k)=>(r.co[k+r.eq.L.length]>1?r.co[k+r.eq.L.length]+' ':'')+f).join(' plus ')+'.');return true}
+    if(m=s.match(/^(?:what(?:'s| is) the )?(?:molar mass|molecular (?:mass|weight)|formula mass|percent(?:age)? composition|mass percent)\s+(?:of\s+)?(.+?)\??$/i)){
+      const f=m[1].trim(),w=reactantFrom(f);let formula=f;
+      if(w&&w.kind==='ionic')formula=w.f||ionFormula(w.c,w.a);else if(ELNAMES[f.toLowerCase()])formula=ELNAMES[f.toLowerCase()];
+      const c=compText(formula);if(!c)return false;
+      reply('<b>'+esc(pretty(formula))+'</b><div class="v38eq">'+nf(c.M,6)+' g/mol</div><table class="v38t"><tr><th>Element</th><th>Atoms</th><th>Percent</th></tr>'+c.rows.map(r=>'<tr><td>'+esc(SYM[r.k].name)+'</td><td>'+r.n+'</td><td>'+nf(r.pct,4)+'%</td></tr>').join('')+'</table>',
+        'The molar mass of '+formula+' is '+nf(c.M,5)+' grams per mole. '+c.rows.map(r=>SYM[r.k].name+' is '+nf(r.pct,3)+' percent').join(', ')+'.');return true}
+    if(m=s.match(/^(?:what(?:'s| is) )?(?:the )?ph (?:of|for)\s+(?:a\s+)?(\d*\.?\d+(?:e-?\d+)?)\s*(?:m|molar|mol\/l)?\s*(?:solution of\s+)?(.+?)\??$/i)){
+      const C=parseFloat(m[1]),r=phFromChat(C,m[2]);
+      if(r){reply('<b>pH of '+nf(C,3)+' M '+esc(r.what)+'</b><div class="v38eq">pH = '+nf(r.r.pH,4)+' ('+phWord(r.r.pH)+')</div>'+esc(r.r.note),'The pH of '+nf(C,3)+' molar '+r.what.replace(/\(.*\)/,'')+' is '+nf(r.r.pH,3)+', which is '+phWord(r.r.pH)+'.');return true}
+    }
+    if(m=s.match(/^(?:what(?:'s| is) )?(?:the )?(?:(alpha|beta|beta[- ]minus|beta[- ]plus|gamma)\s+)?decay\s+(?:equation\s+)?(?:of|for)\s+(.+?)\??$/i)||(m=s.match(/^(?:what(?:'s| is) )?(?:the )?(half[- ]?life)\s+of\s+(.+?)\??$/i))){
+      const n=nuclideFrom(m[2]);if(n){const d=decayOf(n.Z,n.A);
+        reply('<b>'+esc(EL[n.Z].name+'-'+n.A)+'</b><div class="v38eq">'+esc(eqnFor(n.Z,n.A).text)+'</div>'+(d.mode!=='stable'?esc(MODEN[d.mode])+' Half-life: '+esc(fmtHalf(d.half))+(d.known?'':' (mode predicted, no half-life tabulated here)'):''),decayText(n.Z,n.A));return true}}
+    if(m=s.match(/^compare\s+(.+?)\s+(?:and|with|to|vs\.?|versus)\s+(.+?)$/i)){
+      const a=V34.findEl(m[1].trim().toLowerCase()),b=V34.findEl(m[2].trim().toLowerCase());
+      if(a&&b&&a!==b){reply('<b>'+esc(EL[a].name+' vs '+EL[b].name)+'</b>'+compareHTML(a,b),EL[a].name+' and '+EL[b].name+'. '+bondType(a,b));return true}}
+    if(m=s.match(/(?:animate|show|play|explain|watch|fill)\b.*\b(?:electron configuration|aufbau|orbital filling|filling orbitals|orbital boxes?)\s*(?:of|for)?\s*(.*)$/i)){
+      const z=V34.findEl((m[1]||'').trim().toLowerCase().replace(/[?.!]+$/,''));
+      if(z){done();await openSec(aufSec,'tools');if(aufSec._body&&aufSec._body._load)aufSec._body._load(z);const p=aufbauPlan(z);reply('Opened the Aufbau animation for <b>'+esc(EL[z].name)+'</b> in the 3D Lab. Press Play to watch the electrons fill in.',EL[z].name+' has '+z+' electrons. '+(p.exc?p.exc.text:'It follows the standard filling order.'));return true}}
+    if(m=s.match(/^(?:what\s+happens|what\s+will\s+happen|what\s+would\s+happen)\s+(?:when|if)\s+(?:i\s+|we\s+|you\s+)?(?:mix(?:es|ed)?|add(?:s|ed)?|react(?:s|ed)?|put(?:s)?|drop(?:s|ped)?|pour(?:s|ed)?|combine(?:s|d)?)?\s*(.+?)\s+(?:reacts?\s+with|is\s+mixed\s+with|is\s+added\s+to|are\s+mixed\s+with|mix(?:es)?\s+with|to|into|in|with|and|meets?|touches)\s+(.+?)\??$/i)||(m=s.match(/^(?:predict|react|mix)\s+(?:the\s+reaction\s+(?:of|between)\s+)?(.+?)\s+(?:with|and|\+)\s+(.+?)\??$/i))){
+      const res=predictText(m[1],m[2]);
+      if(res.err&&/did not recognise/.test(res.err)){return false}
+      const d=reply('<b>'+esc(m[1].trim()+' + '+m[2].trim())+'</b><div class="v38pr"></div>',spoken(res));
+      showPrediction(d.querySelector('.v38pr'),null,null,res,m[1].trim()+' + '+m[2].trim());return true}
+    if(/^(?:open |show |go to )?(?:the )?(?:periodic table tools|element heat ?map|heat ?map|chem(?:istry)? (?:studio|calculators?))$/i.test(s)){
+      done();const tab=/calc/i.test(s)?'calc':'tools';labSelect(tab);try{go('lab')}catch(e){}reply('Opened the '+(tab==='calc'?'chemistry calculators':'periodic table tools')+' in the 3D Lab.');return true}
+    return false;
+  }
+  const _route38=route;
+  route=async function(t){
+    const s=String(t).trim();
+    try{if(s.length<260&&await chatRoute(s))return true}catch(e){console.error('PACK 38 chat',e);done();botSay('⚠ '+(e.message||e),{silent:true});return true}
+    return _route38(t);
+  };
+  const predSec0=secOf(cbox,'reaction predictor');
+  window.V38={version:38,parseF,molarMass,balance:balanceText,stoich,predict:predictText,phCalc,decay:decayOf,nuclide:nuclideFrom,bind,bpn,hLines,compare:async(z)=>{await openSec(cmpSec,'tools');if(cmpSec._set)cmpSec._set(z,z===11?17:11)},aufbau:async(z)=>{await openSec(aufSec,'tools');if(aufSec._body&&aufSec._body._load)aufSec._body._load(z)},sections:{aufSec,cmpSec,predSec:predSec0},canon,compText,empirical};
+  console.log('PACK 38 loaded: Chemistry Studio');
+})()}catch(e){console.error('PACK 38 failed:',e)}
 </script>
 </body>
 </html>
