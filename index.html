@@ -13400,48 +13400,43 @@ try{(function(){
   window.V39={version:39,open:openModel,formulaGen,gens:GENS,cards:CARDS,exportBytes,meshOf,buildGLB,buildSTL,THETA,spindlePts,hexColoring,hexCells,polyMin,polyMax};
   console.log('PACK 39 loaded: Spatial Engine ('+Object.keys(GENS).length+' models)');
 })()}catch(e){console.error('PACK 39 failed:',e)}
-/* ================= IDENTITY PATCH: "who made you?" -> developed by Avadhut Mudawadkar ================= */
-/* Paste this LAST (after all your packs), inside the same script block, before the closing script tag.       */
-/* It answers these questions instantly on this device, before anything is sent to Groq or the Tier 2 model,  */
-/* so Qwen / GPT / Llama can no longer introduce themselves as VISION's maker. Works for Tier 1 and Tier 2.   */
+ /* ================= IDENTITY PATCH v2: any creator / developer question -> Avadhut Mudawadkar ================= */
+/* REPLACE the old identity patch with this one. Paste it LAST (after every other pack), inside the same script block. */
 try{(function(){
-  if(window.__identityPatch)return;window.__identityPatch=1;
+  if(window.__identityPatch2)return;window.__identityPatch2=1;
   const DEV='Avadhut Mudawadkar';
   const norm=s=>String(s||'').toLowerCase().replace(/[\u2018\u2019\u201C\u201D"'`]/g,'').replace(/[?!.,;:()]/g,' ').replace(/\s+/g,' ').trim();
-  const AIS='qwen|alibaba|alibabas|openai|chatgpt|chat gpt|gpt|gpt-?\\d\\w*|gemini|bard|google|llama|meta|mistral|claude|anthropic|grok|xai|deepseek|copilot|microsoft|gemma|phi|groq|kimi|moonshot|ernie|baidu|perplexity|cohere';
-  const RE_CREATOR=[
-    /\bwho (?:made|created|developed|built|designed|programmed|coded|trained|invented|founded|owns|owned|launched|produced|engineered|authored|wrote) (?:you|u|vision|this ai|this app|this assistant|this chatbot|this bot|this application|this website|this software)\b/,
-    /\bwho (?:is|are) (?:your|ur|visions?) (?:creator|developer|maker|builder|owner|author|inventor|founder|programmer|designer|father|parent|dad|boss|master|company|team|trainer|engineer)\b/,
-    /\bwho(?:s| is| are)? (?:the )?(?:creator|developer|maker|builder|owner|author|inventor|founder|programmer|designer) of (?:you|u|vision|this (?:ai|app|assistant|chatbot|bot|application|website|software))\b/,
-    /\b(?:which|what) (?:company|organi[sz]ation|team|person|developer|lab|firm|business|startup) (?:made|created|developed|built|trained|owns|designed|is behind|runs|invented) (?:you|u|vision|this)\b/,
-    /\b(?:by )?(?:whom|who) (?:were|are|was) you (?:made|created|developed|built|designed|trained|programmed|invented)\b/,
-    /\bwho (?:were|are|was) you (?:made|created|developed|built|designed|trained|programmed|invented) by\b/,
-    /\bwho (?:gave|brought) (?:you|u) (?:life|birth|your name|existence)\b/,
-    /\b(?:tell|say) (?:me )?(?:about )?(?:your|ur) (?:creator|developer|maker|owner|builder)\b/,
-    /\b(?:your|ur) (?:creator|developer|maker|owner|builder|author|inventor|founder)\b.*\b(?:name|who|is)\b/,
-    /\bwho (?:is|are) behind (?:you|vision|this (?:ai|app|assistant|chatbot|bot))\b/,
-    /\bwhere (?:did|do) you come from\b/,
-    /\bwho (?:do you|did you) (?:belong|work) (?:to|for)\b/,
-    /\b(?:made|created|developed|built|designed|trained) (?:you|u) (?:who|\?)?$/,
-    /\bwho (?:is )?vision(?:s)? (?:creator|developer|maker|owner)\b/,
-    /\b(?:you|u) (?:were|are|was) (?:made|created|developed|built|designed|trained|programmed) by (?:whom|who|which)\b/
-  ];
-  const RE_ARE_YOU=new RegExp('\\b(?:are|r) (?:you|u|vision) (?:actually |really |basically |just |secretly |made by |created by |developed by |built by |powered by |from |a |an |the |based on |built on |by )*(?:'+AIS+')\\b');
-  const RE_MODEL=[
-    /\bwhat (?:model|llm|ai model|language model|engine|technology|tech|neural network|base model|foundation model) (?:are you|r u|do you use|is vision|powers you|are you using|are you based on|is behind you|runs you|is this)\b/,
-    /\bwhich (?:model|llm|ai model|language model|engine|ai) (?:are you|r u|do you use|is vision|powers you|are you based on|is this|is behind you)\b/,
-    /\b(?:are|r) (?:you|u) (?:built|based|powered|running|trained) (?:on|by|with|using) (?:what|which|an? \w+)\b/,
-    /\bwhat (?:are you|r u) (?:built|based|powered|running|trained) (?:on|by|with|using)\b/,
-    /\bwhat(?:s| is) (?:your|ur) (?:model|base model|underlying model|architecture|backend|brain)\b/,
-    /\bwhat (?:powers|runs|drives) (?:you|vision)\b/
-  ];
+  const CW='creators?|developers?|developing team|development team|dev team|makers?|builders?|owners?|founders?|authors?|programmers?|designers?|inventors?|engineers?|trainers?|company|organi[sz]ation|team|lab|firm|vendor|publisher|parents?|father|dad|boss|master|origin|source';
+  const VB='made|created|developed|built|designed|programmed|coded|trained|invented|founded|owns|owned|launched|produced|engineered|authored|wrote|makes|created|develops|builds|designs|trains|programs|runs|own';
+  const AIS='qwen|alibaba|alibabas|alibaba cloud|tongyi|tongyi lab|tongyi qianwen|openai|chatgpt|chat gpt|gpt|gemini|bard|google|llama|meta|mistral|claude|anthropic|grok|xai|deepseek|copilot|microsoft|gemma|groq|kimi|moonshot|ernie|baidu|perplexity|cohere';
+  const SELF='(?:you|u|your|ur|yours|vision|visions|this (?:ai|app|assistant|chatbot|bot|application|website|software|system|tool|program|project)|the (?:ai|app|assistant|chatbot|bot|application|website|software))';
+  const WH=/\b(?:who|whom|whose|which|what|whats|tell|say|name|give|share|know|show|reveal|mention|speak|talk)\b/;
   function kind(raw){
-    const t=' '+norm(raw)+' ';const s=t.trim();
-    if(s.length>140)return null;
-    if(RE_ARE_YOU.test(s))return 'model';
-    if(RE_MODEL.some(r=>r.test(s)))return 'model';
-    if(RE_CREATOR.some(r=>r.test(s)))return 'creator';
-    if(/^(?:who|whom) (?:made|created|built|developed|owns) (?:you|u)$/.test(s)||/^(?:your|ur) (?:creator|developer|maker)$/.test(s)||/^(?:creator|developer|maker) name$/.test(s))return 'creator';
+    const s=norm(raw);
+    if(!s||s.length>150||s.split(' ').length>20)return null;
+    /* "are you qwen / made by alibaba / from google ..." and "is alibaba your developer" */
+    if(new RegExp('\\b(?:are|r|were|was|is|did|do) '+SELF+' (?:\\w+ ){0,5}?(?:'+AIS+')\\b').test(s)||new RegExp('\\b(?:is|are|was) (?:'+AIS+') '+SELF+'\\b').test(s)||new RegExp('\\b(?:'+AIS+') (?:\\w+ ){0,3}'+SELF+' (?:'+CW+')\\b').test(s))return 'model';
+    if(/\bwhat (?:model|llm|ai model|language model|engine|technology|tech|neural network|base model|foundation model|ai)\b.*\b(?:you|u|vision|this)\b/.test(s)||/\bwhich (?:model|llm|ai model|language model|engine|ai)\b.*\b(?:you|u|vision|this)\b/.test(s)||/\bwhat (?:are you|r u) (?:built|based|powered|running|trained) (?:on|by|with|using)\b/.test(s)||/\b(?:your|ur) (?:model|base model|underlying model|architecture|backend|brain)\b/.test(s)||/\bwhat (?:powers|runs|drives) (?:you|vision)\b/.test(s))return 'model';
+    /* a question about someone else's creator: "who made the eiffel tower", "developer of minecraft" */
+    const other=new RegExp('\\b(?:made|created|developed|built|designed|invented|founded|owns|of|behind|for) (?!'+SELF+'\\b)(?:the |a |an )?(?!you\\b|u\\b)\\w+').exec(s);
+    const hasSelf=new RegExp('\\b'+SELF+'\\b').test(s);
+    /* verb forms: who made / created / developed ... */
+    if(new RegExp('\\b(?:who|whom|which (?:company|person|team|organi[sz]ation|developer|lab|firm)|what (?:company|person|team|organi[sz]ation|developer|lab|firm)) (?:\\w+ ){0,2}(?:'+VB+')\\b').test(s)||new RegExp('\\b(?:'+VB+') (?:you|u|vision|this)\\b').test(s)&&/\b(?:who|whom|which|what)\\b/.test(s)){
+      if(hasSelf||!other)return 'creator';
+    }
+    if(new RegExp('^(?:who|whom) (?:'+VB+') (?:this|it|that|all this|everything here)$').test(s))return 'creator';
+    if(/\b(?:by whom|by who)\b/.test(s)&&hasSelf)return 'creator';
+    if(/\bwho (?:are|is|were|was) (?:you|u) (?:\w+ ){0,2}by\b/.test(s))return 'creator';
+    /* noun forms: "who is developer", "creator name", "who is the owner", "tell me about your creator" */
+    const noun=new RegExp('\\b(?:'+CW+')\\b').test(s);
+    const strongNoun=/\b(?:creators?|developers?|developing team|development team|dev team|makers?|builders?|owners?|founders?|programmers?|inventors?|trainers?|parent company|team behind|company behind)\b/.test(s);
+    if(strongNoun&&WH.test(s)){
+      const ofOther=new RegExp('\\b(?:of|behind|for) (?!'+SELF+'\\b)(?:the |a |an )?\\w+').test(s);
+      if(!ofOther||hasSelf)return 'creator';
+    }
+    if(strongNoun&&s.split(' ').length<=4&&!/\b(?:of|for)\b/.test(s))return 'creator';
+    if(/\b(?:behind)\b/.test(s)&&hasSelf&&WH.test(s))return 'creator';
+    if(/\bwhere (?:did|do) you come from\b/.test(s)||/\bwho (?:do you|did you) (?:belong|work) (?:to|for)\b/.test(s)||/\bwho gave (?:you|u) (?:life|birth|your name|existence)\b/.test(s))return 'creator';
     return null;
   }
   const PICK=a=>a[Math.floor(Math.random()*a.length)];
@@ -13457,37 +13452,37 @@ try{(function(){
   }
   window.V_IDENTITY={kind,answer,DEV};
 
-  /* 1) before the command router (Tier 1) */
   const _route=route;
   route=async function(t){
     const k=kind(t);
-    if(k){botSay(answer(k),{silent:false});return true}
+    if(k){botSay(answer(k));return true}
     return _route(t);
   };
-  /* 2) before the server call (Tier 1 fallback and Tier 2, which skips the router) */
   const _ask=askServer;
   askServer=async function(text){
     const k=kind(text);
-    if(k){history.push({role:'user',content:text},{role:'assistant',content:answer(k)});botSay(answer(k));return}
+    if(k){const a=answer(k);history.push({role:'user',content:text},{role:'assistant',content:a});botSay(a);return}
     return _ask.apply(this,arguments);
   };
-  /* 3) a picture or PDF attached to the chat is answered by the vision model: catch the same questions there */
   const _aa=askAttachment;
   askAttachment=async function(q){
     const k=kind(q);if(k)return answer(k);
     return _aa.apply(this,arguments);
   };
-  /* 4) answers that still slip through from a model (for example a long message that contains the question) */
+  /* safety net: if a model still names its maker, replace it in any reply */
+  const FIX=[
+    [/\b(?:created|developed|trained|made|built|designed|owned|released)\s+by\s+(?:the\s+)?(?:tongyi(?:\s+lab|\s+qianwen)?|alibaba(?:\s+cloud|\s+group)?(?:\s+team)?|qwen(?:\s+team)?)\b/gi,'developed by '+DEV],
+    [/\b(?:tongyi(?:\s+lab|\s+qianwen)?|alibaba(?:\s+cloud|\s+group)?)\b(?=[^.]{0,60}\b(?:creator|developer|maker|team|company|lab)\b)/gi,DEV],
+    [/\bI(?: am|'m| m)\s+(?:a\s+|an\s+)?(?:large language model\s+)?(?:called\s+)?Qwen\b[^.]*\./gi,'I am VISION, developed by '+DEV+'.'],
+    [/\b(?:my|the)\s+(?:creator|developer|maker|developing team|development team)\s+(?:is|are)\s+(?:the\s+)?(?:tongyi(?:\s+lab)?|alibaba(?:\s+cloud)?|qwen\s+team)\b/gi,'my developer is '+DEV]
+  ];
   const _bot=botSay;
   botSay=function(text,o){
-    try{
-      if(typeof text==='string'&&/\b(?:i am|i'm|im|as an? (?:ai|language model|assistant)|my (?:name|creator|developer|maker) is)\b[^.]{0,80}\b(?:qwen|alibaba|tongyi)\b|\b(?:created|developed|trained|made|built) by (?:the )?(?:alibaba|qwen)\b|\bqwen\b[^.]{0,40}\b(?:created|developed|trained|made) by\b/i.test(text)&&text.length<400)
-        text=text.replace(/\b(?:created|developed|trained|made|built)\s+by\s+(?:the\s+)?(?:alibaba(?:\s+cloud)?(?:\s+team)?|qwen\s+team|tongyi lab)\b/gi,'developed by '+DEV).replace(/\bI(?: am|'m| m)\s+Qwen\b/gi,'I am VISION').replace(/\bQwen\b(?=[^.]{0,60}\bdeveloped by)/g,'VISION');
-    }catch(e){}
+    try{if(typeof text==='string'&&/tongyi|alibaba|qwen/i.test(text)&&text.length<900&&!/\b(?:model|llm|api|code|python|import|function)\b/i.test(text.slice(0,0)))FIX.forEach(f=>{text=text.replace(f[0],f[1])})}catch(e){}
     return _bot.call(this,text,o);
   };
-})()}catch(e){console.error('Identity patch failed:',e)}
-/* ================= END IDENTITY PATCH ================= */
+})()}catch(e){console.error('Identity patch v2 failed:',e)}
+/* ================= END IDENTITY PATCH v2 ================= */
 </script>
 </body>
 </html>
