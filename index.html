@@ -13483,6 +13483,830 @@ try{(function(){
   };
 })()}catch(e){console.error('Identity patch v2 failed:',e)}
 /* ================= END IDENTITY PATCH v2 ================= */
+ /* ================= PACK 40: AI Model Maker ================= */
+/* Paste AFTER your other packs, before the closing script tag. Needs nothing else (no server, no library, free).                                   */
+/*  Say: "make a model that classifies spiral data", "train a neural network to predict house prices", "build a spam classifier",                   */
+/*       "make a model to predict my data" (then paste a table), "train a model with 3 hidden layers of 16 on the xor problem".                      */
+/*  VISION builds the data, trains a REAL neural network (or a Naive-Bayes text model) in your browser, opens it, and lets you run it.               */
+/*  Then: "run it with 1200, 3, 10, 5", "train more", "retrain with relu", "explain", "save model", "copy code".                                     */
+try{(function(){
+  if(window.__pack40)return;window.__pack40=1;
+  const TAU=Math.PI*2;
+  const esc2=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const nf=(v,d)=>{if(!isFinite(v))return '–';d=d==null?4:d;const a=Math.abs(v);if(a!==0&&(a>=1e7||a<1e-4))return v.toExponential(Math.max(0,d-1));return String(+v.toPrecision(d))};
+  const TT=()=>window.V35&&window.V35.TTS;
+  const say=(t,force)=>{try{const T=TT();if(T&&(force||T.on))return T.say(t,{force:!!force,max:600})}catch(e){}return Promise.resolve()};
+  const COL=['#f5c518','#4fc3f7','#ff6b8a','#7bd88f','#b388ff','#ff9f43','#26d0ce','#e056fd','#9ccc65','#ef5350'];
+  const hex2=c=>[parseInt(c.substr(1,2),16),parseInt(c.substr(3,2),16),parseInt(c.substr(5,2),16)];
+  /* ---------- random ---------- */
+  function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+  function gauss(r){let u=0;while(!u)u=r();return Math.sqrt(-2*Math.log(u))*Math.cos(TAU*r())}
+  function shuffle(a,r){for(let i=a.length-1;i>0;i--){const j=Math.floor(r()*(i+1));const t=a[i];a[i]=a[j];a[j]=t}return a}
+
+  /* =====================================================================
+     Prediction (self-contained: this exact function is also exported as code)
+     ===================================================================== */
+  function predictModel(M,inp){
+    if(M.kind==='nb'){
+      var toks=(String(inp).toLowerCase().match(/[a-z0-9']+/g)||[]).filter(function(t){return t.length>1});
+      var sc=M.classes.map(function(c,k){var s=Math.log(M.prior[k]);for(var i=0;i<toks.length;i++){var n=M.counts[k][toks[i]]||0;s+=Math.log((n+1)/(M.total[k]+M.vocab))}return s});
+      var mx=Math.max.apply(null,sc),ex=sc.map(function(s){return Math.exp(s-mx)}),z=ex.reduce(function(a,b){return a+b},0),probs=ex.map(function(e){return e/z}),bi=0;
+      probs.forEach(function(p,i){if(p>probs[bi])bi=i});
+      return {label:M.classes[bi],index:bi,probs:probs,classes:M.classes};
+    }
+    var x=[];
+    M.feats.forEach(function(f,i){var v=inp[i];if(f.type==='cat'){f.cats.forEach(function(c){x.push(String(v)===c?1:0)})}else x.push(((+v)-f.mean)/(f.sd||1))});
+    var L=M.W.length,a=x;
+    for(var l=0;l<L;l++){
+      var nin=M.sizes[l],nout=M.sizes[l+1],z2=new Array(nout);
+      for(var j=0;j<nout;j++){var s=M.b[l][j];for(var i2=0;i2<nin;i2++)s+=M.W[l][j*nin+i2]*a[i2];z2[j]=s}
+      if(l<L-1)a=z2.map(function(v){return M.act==='relu'?Math.max(0,v):M.act==='sigmoid'?1/(1+Math.exp(-v)):Math.tanh(v)});else a=z2;
+    }
+    if(M.target.type==='reg')return {value:a[0]*M.ysd+M.ymean};
+    var m2=Math.max.apply(null,a),e2=a.map(function(v){return Math.exp(v-m2)}),zz=e2.reduce(function(p,q){return p+q},0),pr=e2.map(function(e){return e/zz}),k=0;
+    pr.forEach(function(p,i){if(p>pr[k])k=i});
+    return {label:M.target.classes[k],index:k,probs:pr,classes:M.target.classes};
+  }
+  function exportJSON(M){return JSON.stringify(M,(k,v)=>ArrayBuffer.isView(v)?Array.from(v,x=>+x.toFixed(6)):v)}
+  function exportCode(M,name){
+    const ex=M.kind==='nb'?'predictModel('+JSON.stringify('this is great')+')':'predictModel(['+M.feats.map(f=>f.type==='cat'?JSON.stringify(f.cats[0]):nf(f.mean,4)).join(', ')+'])';
+    return '/* '+(name||'VISION model')+' - trained in the browser by VISION Pack 40. Plain JavaScript, no libraries. */\n'
+      +'const M='+exportJSON(M)+';\n\nfunction predictModelRaw('+'M,inp){'+predictModel.toString().replace(/^function predictModel\(M,inp\)\{/,'').replace(/\}$/,'')+'}\n'
+      +'const predictModel=inp=>predictModelRaw(M,inp);\n\n'
+      +'/* '+(M.kind==='nb'?'input: a string':'input: an array of '+M.feats.length+' values in this order: '+M.feats.map(f=>f.name).join(', '))+' */\n'
+      +'console.log('+ex+');\n';
+  }
+
+  /* =====================================================================
+     Neural network (dense, Adam, softmax or linear output)
+     ===================================================================== */
+  function Net(sizes,act,cls,seed){
+    const r=mulberry(seed||1),L=sizes.length-1;
+    const n={sizes,act,cls,L,W:[],b:[],mW:[],vW:[],mb:[],vb:[],gW:[],gb:[],t:0};
+    for(let l=0;l<L;l++){
+      const nin=sizes[l],nout=sizes[l+1],sc=act==='relu'?Math.sqrt(2/nin):Math.sqrt(1/nin);
+      const W=new Float64Array(nin*nout);for(let i=0;i<W.length;i++)W[i]=gauss(r)*sc;
+      n.W.push(W);n.b.push(new Float64Array(nout));
+      n.mW.push(new Float64Array(W.length));n.vW.push(new Float64Array(W.length));n.mb.push(new Float64Array(nout));n.vb.push(new Float64Array(nout));
+      n.gW.push(new Float64Array(W.length));n.gb.push(new Float64Array(nout));
+    }
+    const A=v=>act==='relu'?(v>0?v:0):act==='sigmoid'?1/(1+Math.exp(-v)):Math.tanh(v);
+    n.forward=function(x){
+      const acts=[x];let a=x;
+      for(let l=0;l<L;l++){
+        const nin=sizes[l],nout=sizes[l+1],W=n.W[l],b=n.b[l],z=new Float64Array(nout);
+        for(let j=0;j<nout;j++){let s=b[j];const o=j*nin;for(let i=0;i<nin;i++)s+=W[o+i]*a[i];z[j]=s}
+        if(l<L-1){for(let j=0;j<nout;j++)z[j]=A(z[j])}
+        acts.push(z);a=z;
+      }
+      if(cls){const o=acts[L];let m=-1e9;for(let k=0;k<o.length;k++)if(o[k]>m)m=o[k];let s=0;const p=new Float64Array(o.length);for(let k=0;k<o.length;k++){p[k]=Math.exp(o[k]-m);s+=p[k]}for(let k=0;k<o.length;k++)p[k]/=s;acts[L]=p}
+      return acts;
+    };
+    n.back=function(acts,y){
+      const o=acts[L];let d=new Float64Array(o.length);
+      if(cls){for(let k=0;k<o.length;k++)d[k]=o[k]-(k===y?1:0)}else d[0]=o[0]-y;
+      for(let l=L-1;l>=0;l--){
+        const a=acts[l],nin=sizes[l],nout=sizes[l+1],gW=n.gW[l],gb=n.gb[l],W=n.W[l];
+        for(let j=0;j<nout;j++){const dj=d[j];gb[j]+=dj;const o2=j*nin;for(let i=0;i<nin;i++)gW[o2+i]+=dj*a[i]}
+        if(l>0){
+          const nd=new Float64Array(nin);
+          for(let i=0;i<nin;i++){let s=0;for(let j=0;j<nout;j++)s+=W[j*nin+i]*d[j];const ai=a[i];nd[i]=s*(act==='relu'?(ai>0?1:0):act==='sigmoid'?ai*(1-ai):1-ai*ai)}
+          d=nd;
+        }
+      }
+    };
+    n.step=function(bs,lr){
+      n.t++;const b1=.9,b2=.999,c1=1-Math.pow(b1,n.t),c2=1-Math.pow(b2,n.t),wd=1e-4;
+      for(let l=0;l<L;l++){
+        const W=n.W[l],g=n.gW[l],m=n.mW[l],v=n.vW[l];
+        for(let i=0;i<W.length;i++){const gi=g[i]/bs+wd*W[i];m[i]=b1*m[i]+(1-b1)*gi;v[i]=b2*v[i]+(1-b2)*gi*gi;W[i]-=lr*(m[i]/c1)/(Math.sqrt(v[i]/c2)+1e-8);g[i]=0}
+        const B=n.b[l],gb=n.gb[l],mb=n.mb[l],vb=n.vb[l];
+        for(let i=0;i<B.length;i++){const gi=gb[i]/bs;mb[i]=b1*mb[i]+(1-b1)*gi;vb[i]=b2*vb[i]+(1-b2)*gi*gi;B[i]-=lr*(mb[i]/c1)/(Math.sqrt(vb[i]/c2)+1e-8);gb[i]=0}
+      }
+    };
+    return n;
+  }
+
+  /* =====================================================================
+     Tables, CSV, analysis
+     ===================================================================== */
+  function parseCSV(txt){
+    txt=String(txt).replace(/\r/g,'').trim();if(!txt)return null;
+    const lines=txt.split('\n').filter(l=>l.trim());
+    /* "label: text" style */
+    const lab=lines.map(l=>l.match(/^\s*([^:,;\t]{1,30}?)\s*:\s*(.+)$/));
+    if(lines.length>=4&&lab.filter(Boolean).length>=lines.length*.85){
+      return {cols:['text','label'],rows:lab.filter(Boolean).map(m=>[m[2].trim(),m[1].trim()]),target:1};
+    }
+    const cnt=ch=>(lines[0].match(new RegExp(ch==='\t'?'\t':'\\'+ch,'g'))||[]).length;
+    let d=',';let best=cnt(',');if(cnt(';')>best){d=';';best=cnt(';')}if(cnt('\t')>best){d='\t';best=cnt('\t')}
+    if(best===0&&lines.length&&/\s{2,}|\s/.test(lines[0])&&lines[0].trim().split(/\s+/).length>1&&lines.every(l=>l.trim().split(/\s+/).length===lines[0].trim().split(/\s+/).length)){d=' '}
+    const rows=lines.map(l=>{
+      if(d===' ')return l.trim().split(/\s+/);
+      const out=[];let cur='',q=false;
+      for(let i=0;i<l.length;i++){const c=l[i];
+        if(q){if(c==='"'){if(l[i+1]==='"'){cur+='"';i++}else q=false}else cur+=c}
+        else if(c==='"')q=true;else if(c===d){out.push(cur.trim());cur=''}else cur+=c}
+      out.push(cur.trim());return out;
+    });
+    const w=Math.max(...rows.map(r=>r.length));
+    if(w<2)return null;
+    const isNum=v=>v!==''&&isFinite(+v);
+    let hdr=false;
+    if(rows.length>1){const r0=rows[0],r1=rows[1];hdr=r0.some(v=>!isNum(v))&&r1.some((v,i)=>isNum(v)&&!isNum(r0[i]))||r0.every(v=>!isNum(v))&&r0.length===w&&new Set(r0).size===r0.length&&rows.slice(1,6).some(r=>r.some(isNum))}
+    if(!hdr&&rows.length>1&&rows[0].every(v=>!isNum(v))&&rows.slice(1).every(r=>r.every(v=>!isNum(v)))&&w===2)hdr=/^(text|label|class|category|message|sentence|review)$/i.test(rows[0][0])||/^(text|label|class|category|message|sentence|review)$/i.test(rows[0][1]);
+    const cols=hdr?rows[0].map((c,i)=>c||('col'+(i+1))):Array.from({length:w},(_,i)=>'col'+(i+1));
+    const body=(hdr?rows.slice(1):rows).filter(r=>r.length===w);
+    if(body.length<4)return null;
+    return {cols,rows:body,target:w-1};
+  }
+  function toCSV(t){
+    const q=v=>{v=String(v);return /[",\n;]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
+    return [t.cols.map(q).join(',')].concat(t.rows.map(r=>r.map(q).join(','))).join('\n');
+  }
+  const looksText=(t,ti)=>{
+    if(t.cols.length!==2)return false;const fi=1-ti;
+    const vals=t.rows.map(r=>String(r[fi]));
+    const nonNum=vals.filter(v=>!isFinite(+v)).length;
+    return nonNum>vals.length*.8&&vals.filter(v=>/\s/.test(v)).length>vals.length*.3;
+  };
+  /* turn a table into a ready-to-train spec; returns {err} when impossible */
+  function analyze(t,opts){
+    opts=opts||{};
+    const ti=opts.target!=null?opts.target:t.target;
+    const notes=[];
+    if(looksText(t,ti)||opts.text){
+      const fi=1-ti,rows=t.rows.filter(r=>String(r[fi]).trim()&&String(r[ti]).trim());
+      const classes=[...new Set(rows.map(r=>String(r[ti]).trim()))].sort();
+      if(classes.length<2)return {err:'Need at least two different labels to learn from.'};
+      if(classes.length>12)return {err:'That many different labels ('+classes.length+') looks like free text, not categories. Pick a different target column.'};
+      return {kind:'nb',cols:t.cols,ti,fi,classes,rows:rows.map(r=>[String(r[fi]),String(r[ti]).trim()]),notes,textName:t.cols[fi],targetName:t.cols[ti]};
+    }
+    const isNum=v=>v!==''&&v!=null&&isFinite(+v);
+    const idx=t.cols.map((_,i)=>i).filter(i=>i!==ti);
+    let rows=t.rows.filter(r=>r.every(v=>String(v).trim()!==''));
+    if(rows.length<t.rows.length)notes.push((t.rows.length-rows.length)+' rows with empty cells were skipped.');
+    const feats=[];
+    idx.forEach(i=>{
+      const vals=rows.map(r=>r[i]);
+      if(vals.filter(isNum).length>=vals.length*.95)feats.push({col:i,name:t.cols[i],type:'num'});
+      else{const cats=[...new Set(vals.map(String))].sort();
+        if(cats.length>20||cats.length>vals.length*.6){notes.push('Column "'+t.cols[i]+'" has too many different words to use as a category, so it was ignored.')}
+        else feats.push({col:i,name:t.cols[i],type:'cat',cats})}
+    });
+    if(!feats.length)return {err:'I could not find any usable input columns.'};
+    rows=rows.filter(r=>feats.every(f=>f.type!=='num'||isNum(r[f.col])));
+    const tv=rows.map(r=>r[ti]);
+    const tnum=tv.every(isNum);
+    let task=opts.task;
+    if(!task){if(!tnum)task='class';else{const u=new Set(tv.map(Number));task=(u.size<=8&&tv.every(v=>Number.isInteger(+v)))?'class':'reg'}}
+    if(task==='reg'&&!tnum)return {err:'The target column "'+t.cols[ti]+'" is not numeric, so I can classify it but not predict a number.'};
+    if(rows.length<8)return {err:'I need at least 8 usable rows to learn from (found '+rows.length+').'};
+    feats.forEach(f=>{if(f.type==='num'){const v=rows.map(r=>+r[f.col]);f.min=Math.min(...v);f.max=Math.max(...v);f.mean=v.reduce((a,b)=>a+b,0)/v.length;f.sd=Math.sqrt(v.reduce((a,b)=>a+(b-f.mean)*(b-f.mean),0)/v.length)||1}});
+    let classes=null;
+    if(task==='class'){classes=[...new Set(tv.map(String))];classes.sort((a,b)=>tnum?(+a-+b):(a<b?-1:a>b?1:0));if(classes.length<2)return {err:'The target has only one value, so there is nothing to learn.'};if(classes.length>20)return {err:'The target has '+classes.length+' different values. Pick a different target column or a numeric one to predict.'}}
+    if(rows.length>4000){notes.push('Large table: using a random sample of 4000 rows.');const r=mulberry(7);rows=shuffle(rows.slice(),r).slice(0,4000)}
+    return {kind:'nn',cols:t.cols,ti,feats,task,classes,rows,notes,targetName:t.cols[ti]};
+  }
+
+  /* =====================================================================
+     Demo data (generated on the spot, seeded so results are repeatable)
+     ===================================================================== */
+  const T2=(r,fx,n,cls)=>{const rows=[];for(let i=0;i<n;i++){const o=fx(i,r);rows.push([+o[0].toFixed(4),+o[1].toFixed(4),o[2]])}return {cols:['x','y',cls||'class'],rows,target:2}};
+  const TEXT={
+    spam:{cols:['text','label'],pairs:[
+      ['spam','WIN a free prize now, click here to claim your reward'],['spam','Congratulations! You have been selected for a free gift card'],['spam','URGENT: your account is suspended, verify your password immediately'],['spam','Cheap pills online, limited offer, buy now and save big'],['spam','You won the lottery! Send your bank details to claim cash'],['spam','Free entry to win a brand new phone, text WIN to 80085'],['spam','Earn money fast from home, no experience needed, click the link'],['spam','Exclusive deal just for you, 90% off, act now before it expires'],['spam','Your package is waiting, pay the small fee here to release it'],['spam','Hot singles in your area want to meet you, click now'],['spam','Claim your free vacation today, limited time offer'],['spam','Get rich quick with this secret investment, guaranteed returns'],
+      ['ham','Are we still meeting for lunch tomorrow at noon?'],['ham','Can you send me the notes from yesterday\'s lecture?'],['ham','Mum says dinner is ready, come downstairs'],['ham','The project meeting moved to 3 pm, see you in the conference room'],['ham','Thanks for helping me with the assignment, I owe you one'],['ham','Don\'t forget to bring your charger when you come over'],['ham','Happy birthday! Hope you have a wonderful day'],['ham','I will be late, the bus is stuck in traffic'],['ham','Did you finish the report, the deadline is on Friday'],['ham','Let\'s watch a movie tonight if you are free'],['ham','Please review the attached document and send feedback'],['ham','What time does the train arrive, I will pick you up']]},
+    sentiment:{cols:['text','label'],pairs:[
+      ['positive','I love this, it works great and I am really happy'],['positive','Absolutely fantastic experience, highly recommend'],['positive','What a wonderful day, everything went perfectly'],['positive','Great quality and very fast delivery, thank you'],['positive','This is amazing, best purchase I have made'],['positive','The staff were friendly and the food was delicious'],['positive','Brilliant movie, I enjoyed every minute'],['positive','Very pleased, excellent value and easy to use'],['positive','Lovely place, beautiful view and great service'],['positive','So good, I would definitely buy it again'],['positive','Superb performance, exceeded my expectations'],['positive','Happy with the result, works perfectly'],
+      ['negative','I hate this, it broke after one day and I am very upset'],['negative','Terrible experience, would not recommend to anyone'],['negative','What an awful day, everything went wrong'],['negative','Poor quality and very slow delivery, total waste of money'],['negative','This is disappointing, the worst purchase I have made'],['negative','The staff were rude and the food was cold and bad'],['negative','Boring movie, I wanted to leave halfway'],['negative','Very unhappy, overpriced and hard to use'],['negative','Dirty place, ugly view and horrible service'],['negative','So bad, I would never buy it again'],['negative','Awful performance, far below my expectations'],['negative','Angry with the result, it does not work at all']]},
+    topic:{cols:['text','label'],pairs:[
+      ['sports','The striker scored twice as the team won the championship match'],['sports','She broke the world record in the 100 metre sprint'],['sports','The coach praised the defence after the football victory'],['sports','Tennis star wins the final in straight sets'],['sports','The basketball team clinched the playoff series last night'],['sports','Marathon runners filled the city streets on Sunday'],['sports','The goalkeeper saved a penalty in the last minute'],['sports','Cricket fans cheered as the batsman hit a century'],
+      ['tech','The new smartphone has a faster processor and a better camera'],['tech','Developers released an update to the operating system'],['tech','The startup launched an artificial intelligence app for programmers'],['tech','Researchers built a quantum computer with more qubits'],['tech','The laptop has a bigger battery and a sharper display'],['tech','Cybersecurity experts warn about a new software vulnerability'],['tech','The company unveiled a robot powered by machine learning'],['tech','Wireless chips make the internet faster for every device'],
+      ['food','Simmer the tomato sauce with garlic and fresh basil'],['food','The bakery sells warm bread and chocolate croissants'],['food','Add a pinch of salt and roast the vegetables until golden'],['food','The restaurant serves spicy noodles and grilled fish'],['food','Whisk the eggs and sugar before folding in the flour'],['food','A creamy soup topped with cheese and crunchy croutons'],['food','Fresh strawberries and cream make a perfect dessert'],['food','Marinate the chicken in yoghurt, lemon and spices']]}
+  };
+  const DEMOS={
+    xor:{title:'XOR (opposite corners)',kind:'classify',desc:'Two inputs; the class is decided by whether x and y have the same sign. No straight line can separate it, so it needs a hidden layer.',cfg:{hidden:[8],act:'tanh',epochs:200,lr:.02},
+      gen:r=>T2(r,()=>{const x=r()*2-1,y=r()*2-1;return [x+gauss(r)*.04,y+gauss(r)*.04,(x*y>0)?'same sign':'opposite sign']},300)},
+    circles:{title:'Circles (ring inside a ring)',kind:'classify',desc:'One class sits in the middle, the other forms a ring around it.',cfg:{hidden:[10],act:'tanh',epochs:200,lr:.02},
+      gen:r=>T2(r,(i)=>{const c=i%2,rad=(c?1:.45)+gauss(r)*.07,a=r()*TAU;return [rad*Math.cos(a),rad*Math.sin(a),c?'outer ring':'inner']},320)},
+    moons:{title:'Two moons',kind:'classify',desc:'Two interleaving half circles.',cfg:{hidden:[10],act:'tanh',epochs:250,lr:.02},
+      gen:r=>T2(r,(i)=>{const c=i%2,a=r()*Math.PI;return c?[1-Math.cos(a)+gauss(r)*.08,.5-Math.sin(a)+gauss(r)*.08,'moon B']:[Math.cos(a)+gauss(r)*.08,Math.sin(a)+gauss(r)*.08,'moon A']},320)},
+    spiral:{title:'Two spirals',kind:'classify',desc:'Two arms winding around each other. A classic test: it needs a deeper network and more training.',cfg:{hidden:[20,20],act:'tanh',epochs:600,lr:.01},
+      gen:r=>T2(r,(i)=>{const c=i%2,t=(Math.floor(i/2)/240)*3.2*Math.PI+.4,rad=t/(3.2*Math.PI)*1.0+.05;const a=t+c*Math.PI;return [rad*Math.cos(a)+gauss(r)*.02,rad*Math.sin(a)+gauss(r)*.02,c?'arm B':'arm A']},480)},
+    blobs:{title:'Three clusters',kind:'classify',desc:'Three blobs of points, three classes.',cfg:{hidden:[8],act:'tanh',epochs:120,lr:.02},
+      gen:r=>{const C=[[-1,-.6],[1,-.5],[0,1.1]],N=['red group','green group','blue group'];return T2(r,(i)=>{const c=i%3;return [C[c][0]+gauss(r)*.45,C[c][1]+gauss(r)*.45,N[c]]},300)}},
+    checker:{title:'Checkerboard',kind:'classify',desc:'Alternating squares, a hard pattern that needs a bigger network.',cfg:{hidden:[24,24],act:'tanh',epochs:700,lr:.02},
+      gen:r=>T2(r,()=>{const x=r()*2-1,y=r()*2-1;return [x,y,((x>0)!==(y>0))?'dark':'light']},450)},
+    iris:{title:'Flower species (iris-like)',kind:'classify',desc:'Four measurements decide which of three species a flower is. Synthetic data generated from the published averages of the classic iris data set, not the original measurements.',cfg:{hidden:[8],act:'tanh',epochs:200,lr:.02},
+      gen:r=>{const S=[['setosa',5.0,.35,3.43,.38,1.46,.17,.25,.1],['versicolor',5.94,.52,2.77,.31,4.26,.47,1.33,.2],['virginica',6.59,.64,2.97,.32,5.55,.55,2.03,.27]],rows=[];
+        for(let i=0;i<150;i++){const s=S[i%3];rows.push([+(s[1]+gauss(r)*s[2]).toFixed(1),+(s[3]+gauss(r)*s[4]).toFixed(1),+Math.max(.8,s[5]+gauss(r)*s[6]).toFixed(1),+Math.max(.1,s[7]+gauss(r)*s[8]).toFixed(1),s[0]])}
+        return {cols:['sepal_length','sepal_width','petal_length','petal_width','species'],rows,target:4}}},
+    student:{title:'Exam pass or fail',kind:'classify',desc:'Hours studied and hours slept predict whether a student passes. Synthetic data with some luck mixed in.',cfg:{hidden:[6],act:'tanh',epochs:150,lr:.02},
+      gen:r=>{const rows=[];for(let i=0;i<240;i++){const h=+(r()*10).toFixed(1),s=+(4+r()*6).toFixed(1),p=1/(1+Math.exp(-(.9*h+.55*s-7.2)));rows.push([h,s,r()<p?'pass':'fail'])}return {cols:['hours_studied','hours_slept','result'],rows,target:2}}},
+    house:{title:'House price',kind:'predict',desc:'Floor area, bedrooms, age and distance to the centre predict the price. Synthetic data from a made-up formula plus noise, so the numbers are illustrative, not real market prices.',cfg:{hidden:[16,16],act:'tanh',epochs:300,lr:.01},
+      gen:r=>{const rows=[];for(let i=0;i<300;i++){const a=Math.round(500+r()*3000),b=1+Math.floor(r()*5),age=Math.floor(r()*50),d=+(r()*30).toFixed(1);rows.push([a,b,age,d,Math.round((60000+110*a+9000*b-1100*age-2600*d+gauss(r)*14000)/100)*100])}return {cols:['area_sqft','bedrooms','age_years','distance_km','price'],rows,target:4}}},
+    sine:{title:'Sine wave',kind:'predict',desc:'Learn y = sin(x) from noisy samples, then predict at points between them.',cfg:{hidden:[16,16],act:'tanh',epochs:400,lr:.01},
+      gen:r=>{const rows=[];for(let i=0;i<160;i++){const x=+(r()*6-3).toFixed(3);rows.push([x,+(Math.sin(x)+gauss(r)*.08).toFixed(3)])}return {cols:['x','y'],rows,target:1}}},
+    temp:{title:'Celsius to Fahrenheit',kind:'predict',desc:'A straight-line relationship: a network with no hidden layer (plain linear regression) can learn it exactly.',cfg:{hidden:[],act:'tanh',epochs:300,lr:.05},
+      gen:r=>{const rows=[];for(let i=0;i<80;i++){const c=+(r()*60-20).toFixed(1);rows.push([c,+(c*1.8+32+gauss(r)*.3).toFixed(1)])}return {cols:['celsius','fahrenheit'],rows,target:1}}},
+    spam:{title:'Spam detector',kind:'text',desc:'Learns which words make a message look like spam. Tiny training set, so treat it as a demo, and add your own examples in the Data box.',cfg:{},gen:()=>({cols:['text','label'],rows:TEXT.spam.pairs.map(p=>[p[1],p[0]]),target:1})},
+    sentiment:{title:'Sentiment (positive or negative)',kind:'text',desc:'Learns positive and negative words from short reviews. Tiny training set: add your own examples in the Data box.',cfg:{},gen:()=>({cols:['text','label'],rows:TEXT.sentiment.pairs.map(p=>[p[1],p[0]]),target:1})},
+    topic:{title:'Topic (sports, tech or food)',kind:'text',desc:'Sorts a sentence into sports, technology or food by the words it contains.',cfg:{},gen:()=>({cols:['text','label'],rows:TEXT.topic.pairs.map(p=>[p[1],p[0]]),target:1})}
+  };
+  const KW=[['xor',/\bxor\b|exclusive or/i],['circles',/\bcircles?\b|\brings?\b|concentric/i],['moons',/\bmoons?\b|crescent/i],['spiral',/spiral/i],['blobs',/\bblobs?\b|\bclusters?\b/i],['checker',/checker/i],
+    ['iris',/\biris\b|flower|petal|species/i],['student',/student|exam|\bpass\b|\bfail\b|study|grade/i],['house',/house|home price|\bprices?\b|\brent\b|real estate|propert/i],['sine',/\bsine?\b|sin\(|\bwave\b/i],['temp',/fahrenheit|celsius|temperature/i],
+    ['spam',/\bspam\b|\bham\b|junk mail|phishing/i],['sentiment',/sentiment|review|positive|negative|\bmood\b|happy or sad|emotion/i],['topic',/\btopics?\b|sports|headline|\bnews\b|categori[sz]e (text|sentences)/i]];
+  const pickDemo=s=>{for(const [k,re] of KW)if(re.test(s))return k;return null};
+
+  /* =====================================================================
+     Learner: holds data, encoding, split, network, metrics
+     ===================================================================== */
+  function Learner(spec,cfg,seed){
+    const L={spec,cfg:Object.assign({hidden:[12],act:'tanh',epochs:200,lr:.02},cfg||{}),seed:seed||11,ep:0,hist:[],trained:false,imp:null};
+    const r=mulberry(L.seed);
+    L.build=function(keepWeights){
+      const sp=spec,idx=shuffle(sp.rows.map((_,i)=>i),mulberry(L.seed)),nte=sp.rows.length>=25?Math.round(sp.rows.length*.2):0;
+      L.te=idx.slice(0,nte);L.tr=idx.slice(nte);L.hasTest=nte>0;if(!nte)L.te=L.tr.slice();
+      if(sp.kind==='nb'){fitNB();return}
+      const nin=sp.feats.reduce((a,f)=>a+(f.type==='cat'?f.cats.length:1),0);
+      const reg=sp.task==='reg';
+      let ym=0,ys=1;
+      if(reg){const v=L.tr.map(i=>+sp.rows[i][sp.ti]);ym=v.reduce((a,b)=>a+b,0)/v.length;ys=Math.sqrt(v.reduce((a,b)=>a+(b-ym)*(b-ym),0)/v.length)||1}
+      L.X=sp.rows.map(row=>{const x=[];sp.feats.forEach(f=>{const v=row[f.col];if(f.type==='cat')f.cats.forEach(c=>x.push(String(v)===c?1:0));else x.push((+v-f.mean)/(f.sd||1))});return Float64Array.from(x)});
+      L.Y=sp.rows.map(row=>reg?(+row[sp.ti]-ym)/ys:sp.classes.indexOf(String(row[sp.ti])));
+      const sizes=[nin].concat(L.cfg.hidden,[reg?1:sp.classes.length]);
+      if(!keepWeights||!L.net){L.net=Net(sizes,L.cfg.act,!reg,L.seed);L.ep=0;L.hist=[];L.trained=false}
+      L.M={kind:'nn',feats:sp.feats.map(f=>({name:f.name,type:f.type,cats:f.cats,mean:f.mean,sd:f.sd,min:f.min,max:f.max})),target:{name:sp.targetName,type:reg?'reg':'class',classes:sp.classes},sizes,act:L.cfg.act,W:L.net.W,b:L.net.b,ymean:ym,ysd:ys};
+    };
+    function fitNB(){
+      const sp=spec,k=sp.classes.length,counts=sp.classes.map(()=>({})),total=sp.classes.map(()=>0),n=sp.classes.map(()=>0),vocab={};
+      const tok=s=>(String(s).toLowerCase().match(/[a-z0-9']+/g)||[]).filter(t=>t.length>1);
+      L.tr.forEach(i=>{const c=sp.classes.indexOf(sp.rows[i][1]);n[c]++;tok(sp.rows[i][0]).forEach(t=>{counts[c][t]=(counts[c][t]||0)+1;total[c]++;vocab[t]=1})});
+      L.M={kind:'nb',classes:sp.classes,prior:n.map(v=>(v+1)/(L.tr.length+k)),counts,total,vocab:Math.max(1,Object.keys(vocab).length),target:{name:sp.targetName,type:'class',classes:sp.classes}};
+      L.trained=true;L.ep=1;
+    }
+    L.epoch=function(lr){
+      const net=L.net,bs=16,ids=shuffle(L.tr.slice(),r);
+      for(let s=0;s<ids.length;s+=bs){const e=Math.min(ids.length,s+bs);for(let j=s;j<e;j++){const i=ids[j];net.back(net.forward(L.X[i]),L.Y[i])}net.step(e-s,lr)}
+    };
+    L.lossOn=function(set){
+      const net=L.net,reg=spec.task==='reg';let loss=0,ok=0;
+      const lim=set.length>800?set.filter((_,i)=>i%Math.ceil(set.length/800)===0):set;
+      lim.forEach(i=>{const o=net.forward(L.X[i])[net.L];if(reg){const d=o[0]-L.Y[i];loss+=d*d}else{loss-=Math.log(Math.max(1e-12,o[L.Y[i]]));let b=0;for(let k=1;k<o.length;k++)if(o[k]>o[b])b=k;if(b===L.Y[i])ok++}});
+      return {loss:loss/lim.length,acc:ok/lim.length};
+    };
+    L.record=function(){const a=L.lossOn(L.tr),b=L.hasTest?L.lossOn(L.te):a;L.hist.push({tl:a.loss,vl:b.loss,ta:a.acc,va:b.acc})};
+    L.predict=inp=>predictModel(L.M,inp);
+    L.rowInput=i=>spec.kind==='nb'?spec.rows[i][0]:spec.feats.map(f=>spec.rows[i][f.col]);
+    L.rowTruth=i=>spec.kind==='nb'?spec.rows[i][1]:(spec.task==='reg'?+spec.rows[i][spec.ti]:String(spec.rows[i][spec.ti]));
+    /* metrics on the held-out rows (or the training rows when the table is tiny) */
+    L.metrics=function(){
+      const sp=spec,set=L.te,out={n:set.length,held:L.hasTest};
+      if(sp.kind==='nn'&&sp.task==='reg'){
+        let se=0,ae=0,st=0,m=0;const tv=set.map(i=>+L.rowTruth(i));m=tv.reduce((a,b)=>a+b,0)/tv.length;const pairs=[];
+        set.forEach((i,j)=>{const p=L.predict(L.rowInput(i)).value,t=tv[j];se+=(p-t)*(p-t);ae+=Math.abs(p-t);st+=(t-m)*(t-m);pairs.push([t,p])});
+        out.rmse=Math.sqrt(se/set.length);out.mae=ae/set.length;out.r2=st>0?1-se/st:0;out.pairs=pairs;return out;
+      }
+      const k=sp.classes.length,cm=Array.from({length:k},()=>new Array(k).fill(0));let ok=0;
+      set.forEach(i=>{const t=sp.classes.indexOf(String(L.rowTruth(i))),p=L.predict(L.rowInput(i)).index;cm[t][p]++;if(t===p)ok++});
+      out.acc=ok/set.length;out.cm=cm;return out;
+    };
+    /* permutation importance: how much worse does the model get when one input is scrambled? */
+    L.importance=function(){
+      if(spec.kind!=='nn'||spec.feats.length<2)return null;
+      const base=L.metrics(),score=m=>spec.task==='reg'?m.r2:m.acc,b0=score(base),rr=mulberry(5),res=[];
+      spec.feats.forEach((f,fi)=>{
+        let drop=0;
+        for(let rep=0;rep<3;rep++){
+          const vals=shuffle(L.te.map(i=>spec.rows[i][f.col]),rr);
+          const saved=L.te.map(i=>spec.rows[i][f.col]);
+          L.te.forEach((i,j)=>{spec.rows[i][f.col]=vals[j]});
+          drop+=b0-score(L.metrics());
+          L.te.forEach((i,j)=>{spec.rows[i][f.col]=saved[j]});
+        }
+        res.push({name:f.name,drop:drop/3});
+      });
+      return res;
+    };
+    L.words=function(){
+      const M=L.M,out=[];
+      M.classes.forEach((c,k)=>{
+        const sc=Object.keys(M.counts[k]).map(w=>{let o=0,ot=0;M.classes.forEach((c2,k2)=>{if(k2!==k){o+=(M.counts[k2][w]||0);ot+=M.total[k2]}});
+          const a=Math.log(((M.counts[k][w]||0)+1)/(M.total[k]+M.vocab)),b=Math.log((o+1)/(ot+M.vocab));return [w,a-b,M.counts[k][w]]}).sort((x,y)=>y[1]-x[1]).slice(0,6);
+        out.push({cls:c,words:sc});
+      });return out;
+    };
+    L.why=function(text){
+      const M=L.M,p=L.predict(text),toks=(String(text).toLowerCase().match(/[a-z0-9']+/g)||[]).filter(t=>t.length>1);
+      const order=p.probs.map((v,i)=>[v,i]).sort((a,b)=>b[0]-a[0]),a=order[0][1],b=order[1]?order[1][1]:a;
+      const contrib=toks.filter((t,i)=>toks.indexOf(t)===i).map(t=>[t,Math.log(((M.counts[a][t]||0)+1)/(M.total[a]+M.vocab))-Math.log(((M.counts[b][t]||0)+1)/(M.total[b]+M.vocab)),(M.counts[a][t]||0)+(M.counts[b][t]||0)]);
+      return {pred:p,known:contrib.filter(c=>c[2]>0).sort((x,y)=>Math.abs(y[1])-Math.abs(x[1])).slice(0,5),unknown:contrib.filter(c=>c[2]===0).map(c=>c[0])};
+    };
+    L.build(false);
+    return L;
+  }
+
+  /* =====================================================================
+     Card UI
+     ===================================================================== */
+  const st=document.createElement('style');st.textContent=`
+  .v40{border:1px solid rgba(79,195,247,.4);border-radius:14px;background:rgba(8,12,20,.94);padding:10px;margin:2px 0;max-width:100%;color:#dcecff}
+  .v40 .h{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap}
+  .v40 .t{font-weight:700;color:#e6f4ff;letter-spacing:.3px}.v40 .k{font-size:11px;color:#7fb4d8;text-transform:uppercase;letter-spacing:1px}
+  .v40 .cap{font-size:13px;color:#dcecff;margin:6px 2px;line-height:1.4}.v40 .cap.dim{color:#8fb0c9;font-size:12px}
+  .v40 canvas{width:100%;display:block;border-radius:10px;background:#050a12;margin-top:6px}
+  .v40 canvas.viz{aspect-ratio:3/2}.v40 canvas.loss{aspect-ratio:600/150}
+  .v40 .row{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0;align-items:center}
+  .v40 select,.v40 input.in,.v40 textarea{background:#0e1826;color:#e6f4ff;border:1px solid rgba(79,195,247,.35);border-radius:8px;padding:6px 8px;font-size:13px}
+  .v40 input.in{flex:1;min-width:90px}.v40 textarea{width:100%;box-sizing:border-box;font-family:ui-monospace,Menlo,monospace;font-size:12px;min-height:110px}
+  .v40 .sm{padding:5px 10px;font-size:12px}
+  .v40 details{font-size:12px;color:#a9c9e0;margin-top:6px}.v40 details summary{cursor:pointer;color:#4fc3f7}
+  .v40 .run{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-top:6px}
+  @media(max-width:520px){.v40 .run{grid-template-columns:1fr}}
+  .v40 .run label{font-size:12px;color:#a9c9e0;display:flex;flex-direction:column;gap:3px}
+  .v40 .run label .l{display:flex;justify-content:space-between;gap:6px}.v40 .run input[type=range]{width:100%}
+  .v40 .run input[type=number]{width:84px;background:#0e1826;color:#e6f4ff;border:1px solid rgba(79,195,247,.35);border-radius:6px;padding:2px 4px;font-size:12px}
+  .v40 .out{background:rgba(79,195,247,.08);border-radius:10px;padding:8px 10px;margin:8px 0}
+  .v40 .out .big{font-size:20px;font-weight:700;color:#fff}
+  .v40 .bar{display:flex;align-items:center;gap:6px;font-size:12px;margin:3px 0}.v40 .bar .n{width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .v40 .bar .b{flex:1;height:9px;background:rgba(255,255,255,.08);border-radius:5px;overflow:hidden}.v40 .bar .b i{display:block;height:100%}
+  .v40 .bar .p{width:44px;text-align:right}
+  .v40 .warn{color:#ffb74d}.v40 .good{color:#7bd88f}.v40 .bad{color:#ff7b7b}
+  .v40 table.cm{border-collapse:collapse;font-size:12px;margin:4px 0}.v40 table.cm td,.v40 table.cm th{padding:3px 7px;text-align:center;border:1px solid rgba(255,255,255,.1)}
+  .v40 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}.v40 .chip{font-size:12px;padding:4px 10px;border:1px solid rgba(79,195,247,.4);border-radius:14px;cursor:pointer;color:#cfe9ff}
+  .v40 .words{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-top:6px}.v40 .words b{display:block;font-size:12px;margin-bottom:2px}.v40 .words span{display:block;font-size:12px;color:#a9c9e0}
+  .v40 pre{white-space:pre-wrap;word-break:break-all;max-height:160px;overflow:auto;background:#050a12;border-radius:8px;padding:6px;font-size:11px}`;
+  document.head.appendChild(st);
+  const CARDS=[];let ACTIVE=null,CID=0;
+  const done40=()=>{try{$$('#log .typing').forEach(x=>x.remove())}catch(e){}};
+  const SK='ml40';
+  const loadSaved=()=>{try{return JSON.parse(store.get(SK,'{}'))||{}}catch(e){return {}}};
+  const putSaved=o=>{try{store.set(SK,JSON.stringify(o));return true}catch(e){return false}};
+  const pct=v=>(v*100).toFixed(v>=.995||v<.005?1:0)+'%';
+  const niceName=(s,fb)=>{s=String(s||'').replace(/\s+/g,' ').trim();return s?s[0].toUpperCase()+s.slice(1):fb};
+
+  function parseArch(s){
+    const o={};let m;
+    if(/\b(no|zero|without)\s+hidden\b|\blinear\b|\blogistic\b|\bperceptron\b/i.test(s))o.hidden=[];
+    else if((m=s.match(/hidden(?:\s*layers?)?\s*(?:=|:|of|with|sizes?)?\s*((?:\d+\s*[,x×\-/]\s*)+\d+)/i)))o.hidden=m[1].split(/[^\d]+/).filter(Boolean).map(Number);
+    else if((m=s.match(/(\d+)\s*(?:hidden\s*)?layers?(?:\s*(?:of|with|each)\s*(\d+))?/i)))o.hidden=Array(clamp(+m[1],0,5)).fill(clamp(+m[2]||12,1,64));
+    else if((m=s.match(/(\d+)\s*(?:hidden\s*)?(?:neurons?|units?|nodes?)/i)))o.hidden=[clamp(+m[1],1,64)];
+    else if(/\b(deep|big|large|bigger)\b/i.test(s))o.hidden=[32,32];
+    else if(/\b(small|tiny|simple)\b/i.test(s))o.hidden=[6];
+    if(o.hidden)o.hidden=o.hidden.map(v=>clamp(v,1,64)).slice(0,5);
+    if((m=s.match(/(\d+)\s*epochs?/i)))o.epochs=clamp(+m[1],1,5000);
+    if(/\brelu\b/i.test(s))o.act='relu';else if(/\bsigmoid\b/i.test(s))o.act='sigmoid';else if(/\btanh\b/i.test(s))o.act='tanh';
+    if((m=s.match(/(?:learning rate|\blr\b)\s*(?:of|=|:|to)?\s*([0-9]*\.?[0-9]+)/i)))o.lr=clamp(+m[1],.0005,.5);
+    return o;
+  }
+
+  function openLearner(L,meta){
+    meta=meta||{};
+    const C={id:++CID,L,meta,running:false,dead:false,lastViz:0,stopAt:0,ep0:0,met:null,imp:null,table:meta.table};
+    const sp=L.spec,isNB=sp.kind==='nb',reg=!isNB&&sp.task==='reg';
+    const el=addMsg('bot v40msg','<div class="v40"><div class="h"><span class="t"></span><span class="k"></span></div><div class="cap dim" data-r="desc"></div>'
+      +'<canvas class="viz" width="600" height="400" data-r="viz"></canvas><div data-r="words"></div>'
+      +'<canvas class="loss" width="600" height="150" data-r="loss"></canvas>'
+      +'<div class="cap" data-r="stat"></div>'
+      +'<div class="row"><button class="btn sm" data-a="train">▶ Train more</button><button class="ghost sm" data-a="stop">⏹ Stop</button><button class="ghost sm" data-a="reset">↺ Start over</button><button class="ghost sm" data-a="rand">🎲 Try an example</button></div>'
+      +'<div class="cap" style="margin-bottom:0"><b>Run your model</b></div><div class="run" data-r="run"></div><div class="out" data-r="out"></div>'
+      +'<details data-r="cfgd"><summary>Network and training settings</summary><div class="row"><label class="k">Hidden layers <input class="in" data-r="hid" placeholder="e.g. 16,16 (empty = none)"></label><label class="k">Activation <select data-r="act"><option>tanh</option><option>relu</option><option>sigmoid</option></select></label></div>'
+      +'<div class="row"><label class="k">Epochs <input class="in" data-r="eps" type="number" min="1" max="5000"></label><label class="k">Learning rate <input class="in" data-r="lr" type="number" step="any"></label><button class="btn sm" data-a="retrain">Retrain with these</button></div><div class="cap dim" data-r="arch"></div></details>'
+      +'<details data-r="datd"><summary>Data (edit or paste your own)</summary><div class="cap dim">Paste a table with a header row (comma, tab or semicolon separated), or lines like <b>spam: win a free prize</b>. The last column is predicted unless you choose another.</div>'
+      +'<div class="row"><label class="k">Predict <select data-r="tcol"></select></label><label class="k">Task <select data-r="task"><option value="">auto</option><option value="class">classify</option><option value="reg">predict a number</option></select></label></div>'
+      +'<textarea data-r="csv" spellcheck="false"></textarea><div class="row"><button class="btn sm" data-a="apply">Train on this data</button><button class="ghost sm" data-a="dlcsv">Download CSV</button></div><div class="cap" data-r="dmsg"></div></details>'
+      +'<details data-r="metd"><summary>How good is it, and why</summary><div data-r="met"></div></details>'
+      +'<details data-r="expd"><summary>Save and export</summary><div class="row"><button class="btn sm" data-a="save">💾 Save in VISION</button><button class="ghost sm" data-a="json">Download model (.json)</button><button class="ghost sm" data-a="code">Show JavaScript code</button><button class="ghost sm" data-a="copy">Copy code</button></div><pre data-r="code" style="display:none"></pre><div class="cap dim" data-r="emsg"></div></details>'
+      +'<div class="row"><input class="in" data-r="cmd" placeholder="Say: run it with 3, 4 · train more · retrain with relu · explain · save model" autocomplete="off"><button class="ghost sm" data-a="go">Do it</button></div></div>');
+    C.el=el;const Q=s=>el.querySelector('[data-r='+s+']');C.Q=Q;
+    el.querySelector('.t').textContent=meta.title||'My model';
+    el.querySelector('.k').textContent=isNB?'Text classifier · Naive Bayes':reg?'Neural network · predicts a number':'Neural network · classifier';
+    Q('desc').textContent=meta.desc||'';
+    if(isNB){Q('loss').style.display='none';el.querySelector('[data-a=train]').style.display='none';el.querySelector('[data-a=stop]').style.display='none';Q('cfgd').style.display='none'}
+    else Q('words').style.display='none';
+    fillSettings(C);fillData(C);buildRun(C);
+    CARDS.push(C);ACTIVE=C;
+    el.onclick=e=>{const b=e.target.closest('[data-a]');if(b){act(C,b.dataset.a);return}const ch=e.target.closest('[data-demo]');if(ch)act(C,'demo:'+ch.dataset.demo)};
+    Q('cmd').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();act(C,'go')}};
+    drawAll(C,true);updateStat(C);
+    if(isNB){finish(C)}else if(meta.noTrain){updateStat(C)}else startTraining(C,L.cfg.epochs);
+    return C;
+  }
+  function fillSettings(C){const L=C.L,Q=C.Q;if(C.L.spec.kind==='nb')return;Q('hid').value=L.cfg.hidden.join(',');Q('act').value=L.cfg.act;Q('eps').value=L.cfg.epochs;Q('lr').value=L.cfg.lr;
+    Q('arch').textContent='Weights: '+L.net.W.reduce((a,w,i)=>a+w.length+L.net.b[i].length,0)+' · layers: '+L.net.sizes.join(' → ')+' · '+L.tr.length+' training rows'+(L.hasTest?', '+L.te.length+' held out for testing':' (too few rows to hold any out, so scores use the training rows)')}
+  function fillData(C){const t=C.table||tableOf(C.L.spec);C.table=t;const Q=C.Q;Q('csv').value=toCSV(t);Q('tcol').innerHTML=t.cols.map((c,i)=>'<option value="'+i+'">'+esc2(c)+'</option>').join('');Q('tcol').value=t.target}
+  function tableOf(sp){if(sp.kind==='nb')return {cols:['text','label'],rows:sp.rows.map(r=>[r[0],r[1]]),target:1};return {cols:sp.cols,rows:sp.rows,target:sp.ti}}
+
+  /* ---------- run panel ---------- */
+  function buildRun(C){
+    const L=C.L,sp=L.spec,run=C.Q('run');
+    if(sp.kind==='nb'){run.style.display='block';run.innerHTML='<textarea data-i="txt" placeholder="Type a sentence for the model to judge…" style="min-height:60px"></textarea>';run.querySelector('textarea').oninput=()=>updateOut(C);return}
+    run.innerHTML=sp.feats.map((f,i)=>{
+      if(f.type==='cat')return '<label><span class="l"><span>'+esc2(f.name)+'</span></span><select data-i="'+i+'">'+f.cats.map(c=>'<option>'+esc2(c)+'</option>').join('')+'</select></label>';
+      const span=(f.max-f.min)||1,lo=f.min-.1*span,hi=f.max+.1*span,isInt=sp.rows.every(r=>Number.isInteger(+r[f.col]));
+      const step=isInt?1:Math.pow(10,Math.floor(Math.log10(span/200)));
+      return '<label><span class="l"><span>'+esc2(f.name)+' <span class="k">('+nf(f.min,3)+' to '+nf(f.max,3)+')</span></span><input type="number" step="any" data-n="'+i+'"></span><input type="range" data-i="'+i+'" min="'+lo+'" max="'+hi+'" step="'+step+'"></label>';
+    }).join('');
+    sp.feats.forEach((f,i)=>{
+      const s=run.querySelector('[data-i="'+i+'"]'),n=run.querySelector('[data-n="'+i+'"]');
+      if(f.type==='cat'){s.onchange=()=>updateOut(C)}
+      else{s.value=f.mean;n.value=nf(+s.value,5);s.oninput=()=>{n.value=nf(+s.value,5);updateOut(C)};n.oninput=()=>{if(n.value!==''&&isFinite(+n.value)){s.value=n.value;updateOut(C)}}}
+    });
+  }
+  function readRun(C){
+    const sp=C.L.spec;
+    if(sp.kind==='nb')return C.Q('run').querySelector('textarea').value;
+    return sp.feats.map((f,i)=>{if(f.type==='cat')return C.Q('run').querySelector('select[data-i="'+i+'"]').value;const n=C.Q('run').querySelector('[data-n="'+i+'"]');return n.value!==''&&isFinite(+n.value)?+n.value:f.mean});
+  }
+  function setRun(C,vals){
+    const sp=C.L.spec;if(sp.kind==='nb'){C.Q('run').querySelector('textarea').value=vals;return}
+    sp.feats.forEach((f,i)=>{const v=vals[i];if(v==null)return;
+      if(f.type==='cat'){const s=C.Q('run').querySelector('select[data-i="'+i+'"]');if(f.cats.includes(String(v)))s.value=String(v)}
+      else{const s=C.Q('run').querySelector('[data-i="'+i+'"]'),n=C.Q('run').querySelector('[data-n="'+i+'"]');s.value=+v;n.value=nf(+v,5)}});
+  }
+  function resultHTML(C,inp,truth){
+    const L=C.L,sp=L.spec;
+    if(sp.kind==='nb'){
+      if(!String(inp).trim())return '<span class="cap dim">Type something above to see the model’s verdict.</span>';
+      const w=L.why(inp),p=w.pred;
+      return '<div class="big" style="color:'+COL[p.index%COL.length]+'">'+esc2(p.label)+' <span style="font-size:13px;color:#a9c9e0">'+pct(p.probs[p.index])+' sure</span></div>'+bars(p,sp.classes)
+        +(w.known.length?'<div class="cap dim">Words that mattered most: '+w.known.map(k=>'<b>'+esc2(k[0])+'</b> ('+(k[1]>0?'points to '+esc2(p.label):'points away')+')').join(', ')+'.</div>':'')
+        +(w.unknown.length?'<div class="cap dim warn">Words it has never seen (ignored): '+esc2(w.unknown.slice(0,8).join(', '))+'.</div>':'')
+        +(truth!=null?'<div class="cap dim">Real label: <b>'+esc2(truth)+'</b> '+(String(truth)===p.label?'<span class="good">✓ correct</span>':'<span class="bad">✗ wrong</span>')+'</div>':'');
+    }
+    const p=L.predict(inp);let warn=[];
+    sp.feats.forEach((f,i)=>{if(f.type==='num'){const span=(f.max-f.min)||1;if(inp[i]<f.min-.05*span||inp[i]>f.max+.05*span)warn.push(f.name)}});
+    const w=warn.length?'<div class="cap dim warn">⚠ '+esc2(warn.join(', '))+' is outside the range the model was trained on, so this answer is a guess beyond its experience.</div>':'';
+    if(sp.task==='reg'){
+      const m=C.met&&C.met.mae!=null?C.met:null;
+      return '<div class="big">'+esc2(sp.targetName)+' ≈ '+nf(p.value,5)+'</div>'+(m?'<div class="cap dim">Typical error on unseen rows: about ±'+nf(m.mae,3)+'</div>':'')+w
+        +(truth!=null?'<div class="cap dim">Real value: <b>'+nf(truth,5)+'</b> (off by '+nf(Math.abs(truth-p.value),3)+')</div>':'');
+    }
+    return '<div class="big" style="color:'+COL[p.index%COL.length]+'">'+esc2(sp.targetName)+': '+esc2(p.label)+' <span style="font-size:13px;color:#a9c9e0">'+pct(p.probs[p.index])+' sure</span></div>'+bars(p,sp.classes)+w
+      +(truth!=null?'<div class="cap dim">Real answer: <b>'+esc2(truth)+'</b> '+(String(truth)===p.label?'<span class="good">✓ correct</span>':'<span class="bad">✗ wrong</span>')+'</div>':'');
+  }
+  const bars=(p,cl)=>cl.map((c,i)=>'<div class="bar"><span class="n">'+esc2(c)+'</span><span class="b"><i style="width:'+(p.probs[i]*100).toFixed(1)+'%;background:'+COL[i%COL.length]+'"></i></span><span class="p">'+pct(p.probs[i])+'</span></div>').join('');
+  function updateOut(C,truth){
+    if(!C.L.trained&&C.L.spec.kind!=='nb'&&C.L.ep<1){C.Q('out').innerHTML='<span class="cap dim">Training… the model will answer in a moment.</span>';return}
+    C.Q('out').innerHTML=resultHTML(C,readRun(C),truth);
+  }
+
+  /* ---------- drawing ---------- */
+  function drawAll(C,final){
+    if(C.dead)return;C.lastViz=performance.now();
+    try{drawViz(C,final);drawLoss(C)}catch(e){console.error('PACK 40 draw',e)}
+  }
+  function mapBox(f){const s=(f.max-f.min)||1;return [f.min-.08*s,f.max+.08*s]}
+  function drawViz(C,final){
+    const L=C.L,sp=L.spec,cv=C.Q('viz'),ctx=cv.getContext('2d'),W=cv.width,H=cv.height;
+    if(sp.kind==='nb'){cv.style.display='none';const ws=L.words();C.Q('words').innerHTML='<div class="cap dim">Words that push a message toward each label (learned from your examples):</div><div class="words">'+ws.map((w,i)=>'<div><b style="color:'+COL[i%COL.length]+'">'+esc2(w.cls)+'</b>'+w.words.slice(0,6).map(x=>'<span>'+esc2(x[0])+'</span>').join('')+'</div>').join('')+'</div>';C.Q('words').style.display='block';return}
+    ctx.fillStyle='#050a12';ctx.fillRect(0,0,W,H);
+    const pad={l:64,r:14,t:14,b:48},pw=W-pad.l-pad.r,ph=H-pad.t-pad.b;
+    ctx.font='24px sans-serif';ctx.fillStyle='#8fb0c9';ctx.textAlign='center';
+    const feats=sp.feats,reg=sp.task==='reg',num=feats.every(f=>f.type==='num');
+    const pts=(xf,yf,colf,test)=>{(test?L.te:L.tr).forEach(i=>{const x=xf(i),y=yf(i);ctx.beginPath();ctx.arc(x,y,test?5:4,0,TAU);if(test){ctx.lineWidth=2;ctx.strokeStyle='#fff';ctx.stroke()}else{ctx.fillStyle=colf(i);ctx.fill();ctx.lineWidth=1;ctx.strokeStyle='rgba(0,0,0,.6)';ctx.stroke()}})};
+    const frame=(xl,yl)=>{ctx.strokeStyle='rgba(255,255,255,.25)';ctx.lineWidth=1;ctx.strokeRect(pad.l,pad.t,pw,ph);ctx.fillStyle='#8fb0c9';ctx.textAlign='center';ctx.font='24px sans-serif';ctx.fillText(xl,pad.l+pw/2,H-12);ctx.save();ctx.translate(22,pad.t+ph/2);ctx.rotate(-Math.PI/2);ctx.fillText(yl,0,0);ctx.restore()};
+    if(num&&feats.length===2){
+      const [x0,x1]=mapBox(feats[0]),[y0,y1]=mapBox(feats[1]);
+      const G=final?84:44,off=document.createElement('canvas');off.width=off.height=G;const og=off.getContext('2d'),im=og.createImageData(G,G);
+      let v0=1e18,v1=-1e18;const vals=[];
+      for(let j=0;j<G;j++)for(let i=0;i<G;i++){
+        const x=x0+(i+.5)/G*(x1-x0),y=y1-(j+.5)/G*(y1-y0),p=L.predict([x,y]),k=(j*G+i)*4;
+        if(reg){vals.push(p.value);v0=Math.min(v0,p.value);v1=Math.max(v1,p.value)}
+        else{let r=0,g=0,b=0;p.probs.forEach((q,c)=>{const h=hex2(COL[c%COL.length]);r+=h[0]*q;g+=h[1]*q;b+=h[2]*q});const a=.18+.5*Math.max.apply(null,p.probs);im.data[k]=r*a+8*(1-a);im.data[k+1]=g*a+12*(1-a);im.data[k+2]=b*a+20*(1-a);im.data[k+3]=255}
+      }
+      if(reg){const tv=L.tr.map(i=>+L.rowTruth(i));v0=Math.min(v0,Math.min.apply(null,tv));v1=Math.max(v1,Math.max.apply(null,tv));vals.forEach((v,n)=>{const t=clamp((v-v0)/((v1-v0)||1),0,1),k=n*4;im.data[k]=30+200*t;im.data[k+1]=40+150*Math.sin(Math.PI*t);im.data[k+2]=200-170*t;im.data[k+3]=255})}
+      og.putImageData(im,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(off,pad.l,pad.t,pw,ph);
+      const X=i=>pad.l+(+sp.rows[i][feats[0].col]-x0)/(x1-x0)*pw,Y=i=>pad.t+(y1-+sp.rows[i][feats[1].col])/(y1-y0)*ph;
+      const cc=i=>{if(reg){const t=clamp((+L.rowTruth(i)-v0)/((v1-v0)||1),0,1);return 'rgb('+(30+200*t|0)+','+(40+150*Math.sin(Math.PI*t)|0)+','+(200-170*t|0)+')'}return COL[sp.classes.indexOf(String(L.rowTruth(i)))%COL.length]};
+      pts(X,Y,cc,false);if(L.hasTest)pts(X,Y,cc,true);frame(feats[0].name,feats[1].name);
+      ctx.textAlign='left';ctx.font='20px sans-serif';
+      if(!reg){sp.classes.forEach((c,i)=>{ctx.fillStyle=COL[i%COL.length];ctx.fillRect(pad.l+8,pad.t+8+i*18,10,10);ctx.fillStyle='#e6f4ff';ctx.fillText(c,pad.l+24,pad.t+17+i*18)})}
+      else{ctx.fillStyle='#e6f4ff';ctx.fillText('colour = '+sp.targetName+' ('+nf(v0,3)+' to '+nf(v1,3)+')',pad.l+8,pad.t+16)}
+      return;
+    }
+    if(num&&feats.length===1){
+      const f=feats[0],[x0,x1]=mapBox(f);
+      const X=x=>pad.l+(x-x0)/(x1-x0)*pw;
+      if(reg){
+        const tv=sp.rows.map(r=>+r[sp.ti]);let y0=Math.min.apply(null,tv),y1=Math.max.apply(null,tv);const s=(y1-y0)||1;y0-=.1*s;y1+=.1*s;const Y=y=>pad.t+(y1-y)/(y1-y0)*ph;
+        pts(i=>X(+sp.rows[i][f.col]),i=>Y(+L.rowTruth(i)),()=>'#4fc3f7',false);if(L.hasTest)pts(i=>X(+sp.rows[i][f.col]),i=>Y(+L.rowTruth(i)),()=>'#fff',true);
+        ctx.beginPath();for(let k=0;k<=160;k++){const x=x0+k/160*(x1-x0),y=clamp(L.predict([x]).value,y0,y1);k?ctx.lineTo(X(x),Y(y)):ctx.moveTo(X(x),Y(y))}
+        ctx.lineWidth=3;ctx.strokeStyle='#f5c518';ctx.stroke();frame(f.name,sp.targetName);
+      }else{
+        sp.classes.forEach((c,ci)=>{ctx.beginPath();for(let k=0;k<=160;k++){const x=x0+k/160*(x1-x0),p=L.predict([x]).probs[ci],y=pad.t+(1-p)*ph;k?ctx.lineTo(X(x),y):ctx.moveTo(X(x),y)}ctx.lineWidth=3;ctx.strokeStyle=COL[ci%COL.length];ctx.stroke()});
+        L.tr.forEach(i=>{const ci=sp.classes.indexOf(String(L.rowTruth(i)));ctx.beginPath();ctx.arc(X(+sp.rows[i][f.col]),pad.t+(ci/(sp.classes.length-1||1))*ph*.96+ph*.02,3.5,0,TAU);ctx.fillStyle=COL[ci%COL.length];ctx.fill()});
+        frame(f.name,'probability of each class');
+      }
+      return;
+    }
+    const m=C.met||L.metrics();
+    if(reg){
+      const pr=m.pairs;let lo=Math.min.apply(null,pr.map(p=>Math.min(p[0],p[1]))),hi=Math.max.apply(null,pr.map(p=>Math.max(p[0],p[1])));const s=(hi-lo)||1;lo-=.05*s;hi+=.05*s;
+      const X=v=>pad.l+(v-lo)/(hi-lo)*pw,Y=v=>pad.t+(hi-v)/(hi-lo)*ph;
+      ctx.beginPath();ctx.moveTo(X(lo),Y(lo));ctx.lineTo(X(hi),Y(hi));ctx.strokeStyle='rgba(245,197,24,.7)';ctx.lineWidth=2;ctx.stroke();
+      pr.forEach(p=>{ctx.beginPath();ctx.arc(X(p[0]),Y(p[1]),4,0,TAU);ctx.fillStyle='#4fc3f7';ctx.fill()});
+      frame('real '+sp.targetName,'predicted');ctx.textAlign='left';ctx.fillStyle='#e6f4ff';ctx.font='20px sans-serif';ctx.fillText('dots on the gold line = perfect predictions ('+(m.held?'unseen':'training')+' rows)',pad.l+8,pad.t+16);
+    }else{
+      const k=sp.classes.length,cw=Math.min(70,pw/(k+1)),x0=pad.l+(pw-cw*k)/2+cw*.3,y0=pad.t+30;
+      ctx.textAlign='center';ctx.font='20px sans-serif';ctx.fillStyle='#8fb0c9';ctx.fillText('Confusion matrix on '+(m.held?'unseen':'training')+' rows (rows = real, columns = predicted)',pad.l+pw/2,pad.t+12);
+      m.cm.forEach((row,i)=>{const tot=row.reduce((a,b)=>a+b,0)||1;row.forEach((v,j)=>{const a=v/tot;ctx.fillStyle=i===j?'rgba(123,216,143,'+(.15+.7*a)+')':'rgba(255,107,107,'+(.1+.8*a)+')';ctx.fillRect(x0+j*cw,y0+i*cw*.7,cw-2,cw*.7-2);ctx.fillStyle='#fff';ctx.textAlign='center';ctx.fillText(v,x0+j*cw+cw/2,y0+i*cw*.7+cw*.4)});
+        ctx.textAlign='right';ctx.fillStyle=COL[i%COL.length];ctx.fillText(String(sp.classes[i]).slice(0,10),x0-6,y0+i*cw*.7+cw*.4)});
+    }
+  }
+  function drawLoss(C){
+    const cv=C.Q('loss');if(C.L.spec.kind==='nb')return;const ctx=cv.getContext('2d'),W=cv.width,H=cv.height,h=C.L.hist;
+    ctx.fillStyle='#050a12';ctx.fillRect(0,0,W,H);ctx.font='20px sans-serif';ctx.textAlign='left';
+    if(h.length<2){ctx.fillStyle='#8fb0c9';ctx.fillText('learning curve appears here',12,H/2);return}
+    const ref=h[Math.min(3,h.length-1)].tl,ymax=Math.max(ref*1.1,1e-6),px=i=>10+i/(h.length-1)*(W-20),py=v=>H-14-clamp(v/ymax,0,1)*(H-34);
+    const line=(k,col)=>{ctx.beginPath();h.forEach((p,i)=>i?ctx.lineTo(px(i),py(p[k])):ctx.moveTo(px(i),py(p[k])));ctx.strokeStyle=col;ctx.lineWidth=2.5;ctx.stroke()};
+    line('tl','#f5c518');if(C.L.hasTest)line('vl','#4fc3f7');
+    const last=h[h.length-1];ctx.fillStyle='#f5c518';ctx.fillText('training loss '+nf(last.tl,3),10,14);if(C.L.hasTest){ctx.fillStyle='#4fc3f7';ctx.fillText('test loss '+nf(last.vl,3),W/2,14)}
+  }
+  function updateStat(C){
+    const L=C.L,sp=L.spec,S=C.Q('stat'),h=L.hist,last=h[h.length-1];
+    if(sp.kind==='nb'){const m=C.met;S.innerHTML='Learned from '+L.tr.length+' examples ('+L.M.vocab+' different words). '+(m?'Accuracy on '+(m.held?m.n+' unseen examples: <b>'+pct(m.acc)+'</b>':'its own examples: <b>'+pct(m.acc)+'</b> (too few to hold any back)')+'.':'');return}
+    let t=C.running?'Training… epoch '+L.ep+' of '+C.stopAt:(L.trained?'Done: '+L.ep+' epochs':'Not trained yet');
+    if(last){t+=' · loss '+nf(last.tl,3);if(sp.task!=='reg')t+=' · accuracy '+pct(L.hasTest?last.va:last.ta)}
+    if(C.met&&!C.running){t+=sp.task==='reg'?' · R² '+nf(C.met.r2,3)+' · typical error ±'+nf(C.met.mae,3):' · '+(C.met.held?'test':'train')+' accuracy '+pct(C.met.acc)}
+    S.textContent=t;
+  }
+  function startTraining(C,epochs){
+    const L=C.L;if(L.spec.kind==='nb')return;
+    C.running=true;C.ep0=L.ep;C.stopAt=L.ep+clamp(epochs,1,5000);C.met=null;updateStat(C);
+    setTimeout(()=>tick(C),0);
+  }
+  function tick(C){
+    if(C.dead||!C.running)return;
+    if(!C.el.isConnected){C.running=false;return}
+    const L=C.L,t0=performance.now();
+    while(L.ep<C.stopAt&&performance.now()-t0<16){
+      const prog=(L.ep-C.ep0)/Math.max(1,C.stopAt-C.ep0);
+      L.epoch(L.cfg.lr*(.1+.9*.5*(1+Math.cos(Math.PI*prog))));L.ep++;
+      if(L.tr.length<=1500||L.ep%4===0||L.ep>=C.stopAt)L.record();
+    }
+    const last=L.hist[L.hist.length-1];
+    if(last&&!isFinite(last.tl)){C.running=false;C.Q('stat').innerHTML='<span class="bad">Training blew up (numbers overflowed). Try a smaller learning rate, e.g. “retrain with learning rate 0.005”.</span>';return}
+    if(performance.now()-C.lastViz>140){drawAll(C,false);updateStat(C)}
+    if(L.ep>=C.stopAt)finish(C);else setTimeout(()=>tick(C),0);
+  }
+  function finish(C){
+    const L=C.L;C.running=false;L.trained=true;
+    try{C.met=L.metrics();C.imp=L.importance()}catch(e){console.error('PACK 40 metrics',e)}
+    drawAll(C,true);updateStat(C);fillMetrics(C);
+    if(!C.exampled){C.exampled=true;example(C)}else updateOut(C);
+    say(summary(C));
+  }
+  function summary(C){
+    const L=C.L,sp=L.spec,m=C.met,nm=C.meta.title||'The model';if(!m)return '';
+    if(sp.kind==='nb')return nm+' is ready. It got '+pct(m.acc)+' right on '+m.n+(m.held?' unseen':'')+' examples. Type a sentence to try it.';
+    if(sp.task==='reg')return nm+' is trained after '+L.ep+' epochs. R squared is '+nf(m.r2,2)+' and the typical error is about '+nf(m.mae,3)+'. Move the sliders to run it.';
+    return nm+' is trained after '+L.ep+' epochs and got '+pct(m.acc)+' right on '+m.n+(m.held?' unseen':'')+' examples. Move the sliders to run it.';
+  }
+  function example(C,pick){
+    const L=C.L,set=L.hasTest?L.te:L.tr,i=pick!=null?pick:set[Math.floor(Math.random()*set.length)];
+    setRun(C,L.rowInput(i));updateOut(C,L.rowTruth(i));
+  }
+  function fillMetrics(C){
+    const L=C.L,sp=L.spec,m=C.met,box=C.Q('met');if(!m){box.innerHTML='';return}
+    let h='<div class="cap">'+(m.held?'Scored on '+m.n+' rows the model never trained on.':'Table too small to hold rows back, so these scores use the training rows and are optimistic.')+'</div>';
+    if(sp.kind==='nn'&&sp.task==='reg')h+='<div class="cap">R² = <b>'+nf(m.r2,3)+'</b> (1 is perfect, 0 is no better than guessing the average) · typical error = <b>'+nf(m.mae,3)+'</b> · RMSE = '+nf(m.rmse,3)+'</div>';
+    else{h+='<div class="cap">Accuracy = <b>'+pct(m.acc)+'</b>. Always guessing the most common class would score '+pct(Math.max.apply(null,m.cm.map(r=>r.reduce((a,b)=>a+b,0)))/m.n)+'.</div>';
+      h+='<table class="cm"><tr><th></th>'+sp.classes.map(c=>'<th>'+esc2(c)+'</th>').join('')+'</tr>'+m.cm.map((r,i)=>'<tr><th style="color:'+COL[i%COL.length]+'">'+esc2(sp.classes[i])+'</th>'+r.map((v,j)=>'<td style="background:'+(i===j?'rgba(123,216,143,.2)':v?'rgba(255,107,107,.25)':'transparent')+'">'+v+'</td>').join('')+'</tr>').join('')+'</table><div class="cap dim">Rows = real answer, columns = model’s answer.</div>'}
+    if(C.imp){const mx=Math.max.apply(null,C.imp.map(x=>Math.max(0,x.drop)))||1;
+      h+='<div class="cap"><b>Which inputs matter?</b> (how much the score drops when that input is scrambled)</div>'+C.imp.slice().sort((a,b)=>b.drop-a.drop).map(x=>'<div class="bar"><span class="n">'+esc2(x.name)+'</span><span class="b"><i style="width:'+(Math.max(0,x.drop)/mx*100).toFixed(0)+'%;background:#4fc3f7"></i></span><span class="p">'+nf(x.drop,2)+'</span></div>').join('')}
+    box.innerHTML=h;
+  }
+
+  /* ---------- card actions ---------- */
+  function readCfg(C){
+    const Q=C.Q,o={};
+    const hs=Q('hid').value.trim();o.hidden=hs?hs.split(/[^\d]+/).filter(Boolean).map(Number).map(v=>clamp(v,1,64)).slice(0,5):[];
+    o.act=Q('act').value;o.epochs=clamp(+Q('eps').value||200,1,5000);o.lr=clamp(+Q('lr').value||.02,.0005,.5);return o;
+  }
+  function rebuild(C,cfg,msg){
+    C.running=false;const L=C.L;Object.assign(L.cfg,cfg);L.build(false);C.met=null;C.imp=null;C.exampled=false;
+    fillSettings(C);buildRun(C);drawAll(C,true);updateStat(C);fillMetrics(C);
+    if(L.spec.kind==='nb'){finish(C)}else startTraining(C,L.cfg.epochs);
+    if(msg)say(msg);
+  }
+  function applyData(C){
+    const Q=C.Q,msg=Q('dmsg'),t=parseCSV(Q('csv').value);
+    if(!t){msg.innerHTML='<span class="bad">I could not read that as a table. It needs a header row, at least two columns and at least 4 rows.</span>';return}
+    const same=t.cols.length===C.table.cols.length&&t.cols.every((c,i)=>c===C.table.cols[i]);
+    let tcol=same?+Q('tcol').value:t.target;if(tcol>=t.cols.length)tcol=t.cols.length-1;
+    const spec=analyze(t,{target:tcol,task:Q('task').value||undefined});
+    if(spec.err){msg.innerHTML='<span class="bad">'+esc2(spec.err)+'</span>';return}
+    const cfg=readCfg(C),old=C.L;
+    C.L=Learner(spec,spec.kind==='nn'?{hidden:cfg.hidden,act:cfg.act,epochs:cfg.epochs,lr:cfg.lr}:{},old.seed);
+    t.target=tcol;C.table=t;fillData(C);
+    msg.innerHTML=(spec.notes.length?'<span class="warn">'+esc2(spec.notes.join(' '))+'</span> ':'')+'Training on '+spec.rows.length+' rows.';
+    kindUI(C,spec);rebuild(C,{},null);
+  }
+  function kindUI(C,spec){const isNB=spec.kind==='nb',reg=!isNB&&spec.task==='reg';
+    C.el.querySelector('.k').textContent=isNB?'Text classifier · Naive Bayes':reg?'Neural network · predicts a number':'Neural network · classifier';
+    C.Q('loss').style.display=isNB?'none':'block';C.Q('cfgd').style.display=isNB?'none':'block';C.Q('viz').style.display=isNB?'none':'block';C.Q('words').style.display=isNB?'block':'none';
+    C.el.querySelector('[data-a=train]').style.display=C.el.querySelector('[data-a=stop]').style.display=isNB?'none':'';}
+  function dl(name,txt,type){try{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:type||'application/json'}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500);return true}catch(e){return false}}
+  const fname=C=>String(C.meta.title||'vision-model').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'vision-model';
+  function saveModel(C){
+    const L=C.L,all=loadSaved(),id=C.meta.saveId||('m'+Date.now().toString(36));C.meta.saveId=id;
+    all[id]={id,name:C.meta.title||'My model',desc:C.meta.desc||'',csv:toCSV(C.table),target:C.table.target,task:L.spec.task||null,cfg:L.cfg,seed:L.seed,ep:L.ep,model:L.spec.kind==='nn'?JSON.parse(exportJSON(L.M)):null,ts:Date.now()};
+    const ok=putSaved(all);C.Q('emsg').textContent=ok?'Saved. Say “my models” any time to open it again.':'Could not save (browser storage is full or blocked). Use “Download model” instead.';return ok;
+  }
+  const codeOf=C=>exportCode(C.L.M,C.meta.title);
+  function act(C,a){
+    const Q=C.Q,L=C.L;
+    if(a.startsWith('demo:')){const r=makeDemo(a.slice(5));if(r)openLearner(r.L,r.meta);return}
+    switch(a){
+      case 'train':if(!C.running){const c=readCfg(C);L.cfg.lr=c.lr;startTraining(C,Math.max(50,Math.round(L.cfg.epochs/2)))}break;
+      case 'stop':if(C.running){C.running=false;finish(C)}break;
+      case 'reset':rebuild(C,{},'Starting over with fresh random weights.');break;
+      case 'retrain':rebuild(C,readCfg(C));break;
+      case 'rand':example(C);break;
+      case 'apply':applyData(C);break;
+      case 'dlcsv':dl(fname(C)+'.csv',toCSV(C.table),'text/csv');break;
+      case 'save':saveModel(C);break;
+      case 'json':if(dl(fname(C)+'.json',exportJSON(L.M)))Q('emsg').textContent='Downloaded. It holds the weights and the input scaling, so any program can reload it.';break;
+      case 'code':{const p=Q('code');p.textContent=codeOf(C);p.style.display='block';C.el.querySelector('[data-r=expd]').open=true;break}
+      case 'copy':{const c=codeOf(C),p=Q('code');p.textContent=c;p.style.display='block';
+        const fail=()=>{Q('emsg').textContent='Copy was blocked by the browser. The code is shown above, so select it and copy it by hand.'};
+        try{navigator.clipboard.writeText(c).then(()=>{Q('emsg').textContent='Copied: plain JavaScript with the trained weights inside.'},fail)}catch(e){fail()}break}
+      case 'go':{const v=Q('cmd').value.trim();if(v){Q('cmd').value='';if(!command(C,v))addMsg('bot','<div class="cap">I did not catch that. Try: run it with 3, 4 · train more · retrain with 2 hidden layers · explain · save model · copy code.</div>')}break}
+    }
+  }
+  /* chat / command-box control of an open model */
+  function parseInputs(C,s){
+    const sp=C.L.spec;
+    if(sp.kind==='nb'){const m=s.match(/["“'‘]([^"”’]{2,})["”'’]\s*$/)||s.match(/["“]([^"”]{2,})["”]/)||s.match(/(?:on|for|with|:)\s+(.+)$/i);return m?m[1].trim():null}
+    const vals=sp.feats.map(()=>null);let any=false;
+    sp.feats.forEach((f,i)=>{
+      const nm=f.name.toLowerCase().replace(/[^a-z0-9_ ]/g,'').replace(/[_ ]+/g,'[_ ]?');
+      if(!nm)return;
+      const m=s.match(new RegExp('(?:^|[^a-z0-9])'+nm+'\\s*(?:=|:|is|of|at|to)?\\s*(-?\\d*\\.?\\d+|[a-z][\\w-]*)','i'));
+      if(m){if(f.type==='cat'){const c=f.cats.find(c=>c.toLowerCase()===m[1].toLowerCase());if(c){vals[i]=c;any=true}}else if(isFinite(+m[1])){vals[i]=+m[1];any=true}}
+    });
+    if(!any){
+      const nums=(s.match(/-?\d*\.?\d+/g)||[]).map(Number);
+      const numF=sp.feats.map((f,i)=>[f,i]).filter(x=>x[0].type==='num');
+      if(nums.length&&nums.length<=numF.length){numF.forEach((x,k)=>{vals[x[1]]=nums[k];any=true})}
+      sp.feats.forEach((f,i)=>{if(f.type==='cat'){const w=s.toLowerCase().split(/[^a-z0-9_-]+/);const c=f.cats.find(c=>w.includes(c.toLowerCase()));if(c){vals[i]=c;any=true}}});
+    }
+    return any?vals:null;
+  }
+  function command(C,s){
+    s=s.trim();const L=C.L,sp=L.spec;
+    const RUN=/^(?:please\s+)?(?:run|test|try|predict|use|classify|check|score|judge|evaluate)\b/i;
+    if(RUN.test(s)||/^\s*(?:with|for|if)\s+[\d"“'a-z]/i.test(s)&&/\d|["“]/.test(s)){
+      const body=s.replace(RUN,'').replace(/^\s*(?:it|the model|this|that)\b/i,'').replace(/^\s*(?:with|on|for)\b/i,'').trim();
+      const v=body?parseInputs(C,body):null;
+      if(v==null){if(!body||/\bexample\b/i.test(body)){example(C);return true}return false}
+      const cur=sp.kind==='nb'?v:readRun(C).map((x,i)=>v[i]!=null?v[i]:x);
+      setRun(C,cur);updateOut(C);
+      const inp=readRun(C),p=L.predict(inp),txt=sp.kind==='nb'?'“'+inp+'” looks like '+p.label+' ('+pct(p.probs[p.index])+' sure).':sp.task==='reg'?sp.targetName+' ≈ '+nf(p.value,5)+'.':sp.targetName+': '+p.label+' ('+pct(p.probs[p.index])+' sure).';
+      addMsg('bot','<div class="cap"><b>'+esc2(txt)+'</b></div>');say(txt);return true;
+    }
+    if(/\bre-?train\b/i.test(s)||/^(?:please\s+)?(?:start over|reset|rebuild|train again)\b/i.test(s)){
+      const o=parseArch(s);if(sp.kind==='nb'||(/\b(start over|reset)\b/i.test(s)&&!Object.keys(o).length)){rebuild(C,{},null);return true}
+      rebuild(C,o,'Retraining'+(o.hidden?' with '+(o.hidden.length?o.hidden.length+' hidden layer'+(o.hidden.length>1?'s':'')+' of '+o.hidden.join(', '):'no hidden layer'):'')+'.');return true}
+    if(/\b(train|training|epochs)\b/i.test(s)&&/\b(more|again|longer|continue|keep)\b/i.test(s)){
+      if(sp.kind==='nb'){say('That model fits instantly, so there is nothing more to train. Add examples in the Data box.');return true}
+      const mm=s.match(/(\d+)\s*(?:more\s*)?epochs?/i);if(!C.running)startTraining(C,mm?+mm[1]:Math.max(100,Math.round(L.cfg.epochs/2)));return true}
+    if(/^(stop|pause|halt)\b/i.test(s)&&C.running){C.running=false;finish(C);return true}
+    if(/^(?:please\s+)?(?:save|keep|store)\b/i.test(s)){const ok=saveModel(C),t=ok?'Saved. Say “my models” to open it later.':'I could not save it: browser storage is full or blocked.';addMsg('bot','<div class="cap">'+t+'</div>');say(t);return true}
+    if(/\b(copy|show|give me|export|get)\b.*\b(code|javascript|js|script)\b/i.test(s)){act(C,/copy/i.test(s)?'copy':'code');return true}
+    if(/\b(download|export)\b.*\b(model|json|weights)\b/i.test(s)||/^export\b/i.test(s)){act(C,'json');return true}
+    if(/\b(accuracy|how good|how well|metrics?|r2|r squared)\b/i.test(s)&&C.met){const t=summary(C);addMsg('bot','<div class="cap">'+esc2(t)+'</div>');say(t);C.el.querySelector('[data-r=metd]').open=true;return true}
+    if(/^(?:please\s+)?(?:explain|why|which (?:input|feature)|what matters|how does (?:it|this|the model) work)/i.test(s)){
+      let t;
+      if(sp.kind==='nb'){const ws=L.words();t='It counts how often each word appeared under each label and multiplies those odds together. Strongest clues: '+ws.map(w=>w.cls+': '+w.words.slice(0,4).map(x=>x[0]).join(', ')).join('. ')+'.'}
+      else if(C.imp){const o=C.imp.slice().sort((a,b)=>b.drop-a.drop);t='Scrambling "'+o[0].name+'" hurts the model most'+(o.length>1?', then "'+o[1].name+'"':'')+'. It is '+(L.cfg.hidden.length?'a neural network ('+L.net.sizes.join(' → ')+')':'a single-layer linear model')+', trained by gradient descent (Adam) on '+L.tr.length+' rows.'}
+      else t='It is '+(L.cfg.hidden.length?'a neural network ('+L.net.sizes.join(' → ')+')':'a linear model')+' trained by gradient descent on '+L.tr.length+' rows. With only one or two inputs, the picture above shows everything it learned.';
+      addMsg('bot','<div class="cap">'+esc2(t)+'</div>');say(t);C.el.querySelector('[data-r=metd]').open=true;return true}
+    return false;
+  }
+
+  /* =====================================================================
+     Making models from requests
+     ===================================================================== */
+  function makeDemo(k,over,titleOver){
+    const d=DEMOS[k];if(!d)return null;
+    const table=d.gen(mulberry(42)),spec=analyze(table);if(spec.err)return null;
+    const cfg=Object.assign({},d.cfg,over||{});
+    return {L:Learner(spec,cfg,11),meta:{title:titleOver||d.title,desc:d.desc,table,demo:k}};
+  }
+  function topicOf(s){
+    let m=s.match(/\b(?:predict(?:s|ing)?|classif(?:y|ies|ying)|detect(?:s|ing)?|recogni[sz]e[s]?|estimate[s]?|forecast(?:s|ing)?)\s+(?:the\s+|my\s+|whether\s+|if\s+)?(.{3,50}?)(?:\s+(?:from|using|based|with|given|in|on)\b.*)?$/i);
+    return m?niceName(m[1].replace(/[.!?]+$/,''),null):null;
+  }
+  function fromTable(t,s,title){
+    let ti=t.target;
+    const low=s.toLowerCase();
+    t.cols.forEach((c,i)=>{if(c.length>1&&new RegExp('\\b(?:predict|classify|forecast|estimate|detect)\\w*\\s+(?:the\\s+|my\\s+)?(?:'+c.toLowerCase().replace(/[^a-z0-9_ ]/g,'')+')\\b','i').test(low))ti=i});
+    t.target=ti;
+    const spec=analyze(t,{target:ti,task:/\bpredict a number|regress|forecast|how much\b/i.test(s)?'reg':undefined});
+    if(spec.err)return {err:spec.err};
+    const o=parseArch(s),cfg=spec.kind==='nn'?Object.assign({hidden:[Math.min(16,Math.max(6,spec.feats.length*3))],act:'tanh',epochs:spec.rows.length>1000?150:300,lr:.02},o):{};
+    return {L:Learner(spec,cfg,11),meta:{title:title||('Model for '+spec.targetName),desc:spec.notes.join(' ')+(spec.notes.length?' ':'')+'Trained on your table: '+spec.rows.length+' rows, predicting “'+spec.targetName+'”.',table:t}};
+  }
+  function openSetup(title,hint){
+    const el=addMsg('bot v40msg','<div class="v40"><div class="h"><span class="t"></span><span class="k">AI model maker</span></div>'
+      +'<div class="cap" data-r="d"></div><div class="chips">'+Object.keys(DEMOS).map(k=>'<span class="chip" data-demo="'+k+'">'+esc2(DEMOS[k].title)+'</span>').join('')+'</div>'
+      +'<div class="cap dim">Or paste your own examples. A model can only learn from data, so give it a table with a header row (the last column is what it should predict), or text lines like <b>spam: win a free prize</b>.</div>'
+      +'<textarea data-r="csv" spellcheck="false" placeholder="area,bedrooms,price\n850,2,210000\n1200,3,305000\n…"></textarea><div class="row"><button class="btn sm" data-a="build">Build and train</button></div><div class="cap" data-r="m"></div></div>');
+    el.querySelector('.t').textContent=title||'What should the model learn?';
+    el.querySelector('[data-r=d]').textContent=hint||'Pick a ready-made problem, or give me your data.';
+    el.onclick=e=>{
+      const ch=e.target.closest('[data-demo]');
+      if(ch){const r=makeDemo(ch.dataset.demo);if(r)openLearner(r.L,r.meta);return}
+      if(e.target.closest('[data-a=build]')){
+        const m=el.querySelector('[data-r=m]'),t=parseCSV(el.querySelector('[data-r=csv]').value);
+        if(!t){m.innerHTML='<span class="bad">I could not read that as a table: it needs a header row, two or more columns and at least 4 rows.</span>';return}
+        const r=fromTable(t,title||'',title&&!/^what should/i.test(title)?title:null);
+        if(r.err){m.innerHTML='<span class="bad">'+esc2(r.err)+'</span>';return}
+        m.textContent='';openLearner(r.L,r.meta)}
+    };
+    return el;
+  }
+  function savedCard(){
+    const all=loadSaved(),ids=Object.keys(all).sort((a,b)=>all[b].ts-all[a].ts);
+    const el=addMsg('bot v40msg','<div class="v40"><div class="h"><span class="t">Your saved models</span><span class="k">AI model maker</span></div><div data-r="l"></div></div>');
+    const draw=()=>{const a=loadSaved(),ii=Object.keys(a).sort((x,y)=>a[y].ts-a[x].ts);
+      el.querySelector('[data-r=l]').innerHTML=ii.length?ii.map(i=>'<div class="row"><span class="cap" style="flex:1;margin:0"><b>'+esc2(a[i].name)+'</b> <span class="k">'+new Date(a[i].ts).toLocaleDateString()+'</span></span><button class="btn sm" data-o="'+i+'">Open</button><button class="ghost sm" data-d="'+i+'">Delete</button></div>').join(''):'<div class="cap dim">Nothing saved yet. Open a model and say “save model”.</div>'};
+    draw();
+    el.onclick=e=>{const o=e.target.closest('[data-o]'),d=e.target.closest('[data-d]');
+      if(o){const r=restore(o.dataset.o);if(r){openLearner(r.L,r.meta);finishRestore(r)}}
+      if(d){const a=loadSaved();delete a[d.dataset.d];putSaved(a);draw()}};
+    return ids.length;
+  }
+  let lastOpened=null;
+  function restore(id){
+    const e=loadSaved()[id];if(!e)return null;
+    const t=parseCSV(e.csv);if(!t)return null;t.target=e.target;
+    const spec=analyze(t,{target:e.target,task:e.task||undefined});if(spec.err)return null;
+    const L=Learner(spec,e.cfg,e.seed);let ok=false;
+    if(spec.kind==='nn'&&e.model&&e.model.sizes.join()===L.net.sizes.join()&&e.model.W.length===L.net.W.length){
+      try{e.model.W.forEach((w,i)=>L.net.W[i].set(w));e.model.b.forEach((b,i)=>L.net.b[i].set(b));L.ep=e.ep||0;L.trained=true;ok=true}catch(x){ok=false}}
+    return {L,meta:{title:e.name,desc:e.desc,table:t,saveId:id,noTrain:ok},restored:ok};
+  }
+  function finishRestore(r){
+    const C=CARDS[CARDS.length-1];
+    if(!r.restored&&C.L.spec.kind==='nn'){return}
+    if(C&&C.L.spec.kind==='nn'){C.L.trained=true;finish(C)}
+  }
+
+  /* =====================================================================
+     Chat routing
+     ===================================================================== */
+  const MAKE=/\b(make|build|create|train|generate|develop|design|teach|fit|set up)\b/i,
+        NOUN=/\b(model|classifier|neural[- ]?net(?:work)?s?|network|predictor|regress(?:or|ion)|machine[- ]learning|ml|ai|a\.i\.)\b/i,
+        CUE=/classif|predict|regress|neural|machine[- ]learn|\bml\b|\bai\b|\blearn|train|detect|recogni|forecast|sentiment|spam|estimat|tell\b.*\bapart/i,
+        NOT=/\b3[- ]?d\b|model of\b|molecul|\batoms?\b|periodic|reaction|crystal|\bgears?\b|polytope|tesseract|surface/i;
+  function wantsML(first){
+    if(NOT.test(first))return false;
+    if(!MAKE.test(first)||!NOUN.test(first))return false;
+    return CUE.test(first)||!!pickDemo(first);
+  }
+  async function chat40(s){
+    const first=s.split('\n')[0];
+    if(/\b(saved|trained)\s+(?:ai\s+|ml\s+|neural\s+)?models\b|\b(?:my|list|show)\s+(?:ai|ml)\s+models\b/i.test(first)&&/\b(my|list|show|open|see|what)\b/i.test(first)){done40();const n=savedCard();say(n?'Here are your saved models.':'You have no saved models yet.');return true}
+    if((m=first.match(/^open\s+(?:my\s+)?(?:model\s+)?(.{2,40})$/i))){
+      const all=loadSaved(),q=m[1].toLowerCase().replace(/\bmodel\b/g,'').trim(),id=Object.keys(all).find(i=>q&&all[i].name.toLowerCase().includes(q));
+      if(id){done40();const r=restore(id);if(r){openLearner(r.L,r.meta);finishRestore(r);return true}}
+    }
+    if(wantsML(first)){
+      done40();
+      const hasData=s.split('\n').filter(l=>l.trim()).length>=5;
+      if(hasData){
+        const rest=s.split('\n').slice(1).join('\n'),t=parseCSV(rest)||parseCSV(s);
+        if(t){const r=fromTable(t,first);if(r.err){addMsg('bot','<div class="cap bad">'+esc2(r.err)+'</div>');return true}openLearner(r.L,r.meta);say('Training a model on your table now.');return true}
+      }
+      const k=pickDemo(first);
+      if(k){const o=parseArch(first),r=makeDemo(k,o);if(r){openLearner(r.L,r.meta);say('Making '+r.meta.title+'. Watch it learn, then run it with your own numbers.');return true}}
+      const topic=topicOf(first);
+      openSetup(topic?topic+' model':null,topic?'I can build a '+topic.toLowerCase()+' model, but it has to learn from examples. Paste a table of examples below, or try a ready-made problem.':null);
+      say('I need examples to learn from. Paste a table, or pick a ready-made problem.');return true;
+    }
+    if(ACTIVE&&ACTIVE.el&&ACTIVE.el.isConnected&&s.length<200){
+      const kids=[...log.children],i=kids.indexOf(ACTIVE.el),rank=i<0?999:kids.length-1-i;
+      if(rank<=6&&command(ACTIVE,s)){done40();return true}
+    }
+    return false;
+  }
+  let m;
+  const _route40=route;
+  route=async function(t){
+    const s=String(t).trim();
+    try{if(s.length<20000&&await chat40(s))return true}catch(e){console.error('PACK 40',e);done40();botSay('⚠ '+(e.message||e),{silent:true});return true}
+    return _route40(t);
+  };
+  /* delegated handler for the setup card is attached per element; the model card handles its own clicks */
+  window.V40={version:40,make:(k,o)=>{const r=makeDemo(k,o);return r&&openLearner(r.L,r.meta)},fromCSV:(txt,title)=>{const t=parseCSV(txt);if(!t)return {err:'unreadable'};const r=fromTable(t,title||'');return r.err?r:openLearner(r.L,r.meta)},
+    predictModel,exportJSON,exportCode,parseCSV,analyze,Learner,demos:DEMOS,cards:CARDS,parseArch,pickDemo,command,restore};
+  console.log('PACK 40 loaded: AI Model Maker ('+Object.keys(DEMOS).length+' ready-made problems)');
+})()}catch(e){console.error('PACK 40 failed:',e)}
 </script>
 </body>
 </html>
