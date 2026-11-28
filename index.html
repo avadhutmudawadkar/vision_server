@@ -14307,6 +14307,868 @@ try{(function(){
     predictModel,exportJSON,exportCode,parseCSV,analyze,Learner,demos:DEMOS,cards:CARDS,parseArch,pickDemo,command,restore};
   console.log('PACK 40 loaded: AI Model Maker ('+Object.keys(DEMOS).length+' ready-made problems)');
 })()}catch(e){console.error('PACK 40 failed:',e)}
+/* ================= PACK 41: Teach by Webcam + Model to App ================= */
+/* Paste AFTER Pack 40, before the closing script tag. Free, runs in your browser, nothing is uploaded.                                           */
+/*  Say: "teach vision with my webcam", "train an image classifier", "tell thumbs up from thumbs down with my camera".                            */
+/*  Then hold the record button for each class, press Train, and watch it recognise things live.                                                  */
+/*  Any Pack 40 model or camera model: say "make an app from this model" (or press the button) to get one shareable .html file.                   */
+try{(function(){
+  if(window.__pack41)return;window.__pack41=1;
+  const esc2=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const nf=(v,d)=>{if(!isFinite(v))return '–';d=d==null?4:d;const a=Math.abs(v);if(a!==0&&(a>=1e7||a<1e-4))return v.toExponential(Math.max(0,d-1));return String(+v.toPrecision(d))};
+  const pct=v=>(v*100).toFixed(v>=.995||v<.005?1:0)+'%';
+  const TT=()=>window.V35&&window.V35.TTS;
+  const say=(t,force)=>{try{const T=TT();if(T&&(force||T.on))return T.say(t,{force:!!force,max:400})}catch(e){}return Promise.resolve()};
+  const COL=['#f5c518','#4fc3f7','#ff6b8a','#7bd88f','#b388ff','#ff9f43','#26d0ce','#e056fd'];
+  function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+  function gauss(r){let u=0;while(!u)u=r();return Math.sqrt(-2*Math.log(u))*Math.cos(6.283185307179586*r())}
+  function shuffle(a,r){for(let i=a.length-1;i>0;i--){const j=Math.floor(r()*(i+1));const t=a[i];a[i]=a[j];a[j]=t}return a}
+
+  /* ---------- self-contained functions (also copied into exported apps) ---------- */
+  function imgFeatures(rgb,ox,oy){
+    var S=20,N=16,out=new Array(N*N*3),s=0,s2=0,k=0,x,y,c,i,v;
+    for(y=0;y<N;y++)for(x=0;x<N;x++){i=((y+oy)*S+x+ox)*3;for(c=0;c<3;c++){v=rgb[i+c]/255;out[k++]=v;s+=v;s2+=v*v}}
+    var n=out.length,m=s/n,sd=Math.sqrt(Math.max(1e-6,s2/n-m*m));
+    for(k=0;k<n;k++)out[k]=(out[k]-m)/sd;
+    return out;
+  }
+  function predictImg(M,x){
+    var L=M.W.length,a=x,l,j,i,s,z;
+    for(l=0;l<L;l++){
+      var nin=M.sizes[l],nout=M.sizes[l+1];z=new Array(nout);
+      for(j=0;j<nout;j++){s=M.b[l][j];for(i=0;i<nin;i++)s+=M.W[l][j*nin+i]*a[i];z[j]=s}
+      a=l<L-1?z.map(function(v){return Math.tanh(v)}):z;
+    }
+    var mx=Math.max.apply(null,a),ex=a.map(function(v){return Math.exp(v-mx)}),zz=ex.reduce(function(p,q){return p+q},0),pr=ex.map(function(e){return e/zz}),k=0;
+    pr.forEach(function(p,i2){if(p>pr[k])k=i2});
+    return {label:M.classes[k],index:k,probs:pr,classes:M.classes};
+  }
+  function grabFrame(video,ctx){
+    var w=video.videoWidth,h=video.videoHeight;if(!w||!h)return null;
+    var s=Math.min(w,h);ctx.drawImage(video,(w-s)/2,(h-s)/2,s,s,0,0,20,20);
+    var d=ctx.getImageData(0,0,20,20).data,out=new Uint8Array(1200),i;
+    for(i=0;i<400;i++){out[i*3]=d[i*4];out[i*3+1]=d[i*4+1];out[i*3+2]=d[i*4+2]}
+    return out;
+  }
+
+  /* ---------- small dense net (same maths as Pack 40, softmax output) ---------- */
+  function Net(sizes,seed){
+    const r=mulberry(seed||1),L=sizes.length-1,n={sizes,L,W:[],b:[],mW:[],vW:[],mb:[],vb:[],gW:[],gb:[],t:0};
+    for(let l=0;l<L;l++){const nin=sizes[l],nout=sizes[l+1],sc=Math.sqrt(1/nin),W=new Float64Array(nin*nout);for(let i=0;i<W.length;i++)W[i]=gauss(r)*sc;
+      n.W.push(W);n.b.push(new Float64Array(nout));n.mW.push(new Float64Array(W.length));n.vW.push(new Float64Array(W.length));n.mb.push(new Float64Array(nout));n.vb.push(new Float64Array(nout));n.gW.push(new Float64Array(W.length));n.gb.push(new Float64Array(nout))}
+    n.forward=function(x){
+      const acts=[x];let a=x;
+      for(let l=0;l<L;l++){const nin=sizes[l],nout=sizes[l+1],W=n.W[l],b=n.b[l],z=new Float64Array(nout);
+        for(let j=0;j<nout;j++){let s=b[j];const o=j*nin;for(let i=0;i<nin;i++)s+=W[o+i]*a[i];z[j]=l<L-1?Math.tanh(s):s}
+        acts.push(z);a=z}
+      const o=acts[L];let m=-1e9;for(let k=0;k<o.length;k++)if(o[k]>m)m=o[k];let s=0;const p=new Float64Array(o.length);for(let k=0;k<o.length;k++){p[k]=Math.exp(o[k]-m);s+=p[k]}for(let k=0;k<o.length;k++)p[k]/=s;acts[L]=p;return acts};
+    n.back=function(acts,y){
+      let d=Float64Array.from(acts[L]);d[y]-=1;
+      for(let l=L-1;l>=0;l--){const a=acts[l],nin=sizes[l],nout=sizes[l+1],gW=n.gW[l],gb=n.gb[l],W=n.W[l];
+        for(let j=0;j<nout;j++){const dj=d[j];gb[j]+=dj;const o2=j*nin;for(let i=0;i<nin;i++)gW[o2+i]+=dj*a[i]}
+        if(l>0){const nd=new Float64Array(nin);for(let i=0;i<nin;i++){let s=0;for(let j=0;j<nout;j++)s+=W[j*nin+i]*d[j];nd[i]=s*(1-a[i]*a[i])}d=nd}}};
+    n.step=function(bs,lr){
+      n.t++;const b1=.9,b2=.999,c1=1-Math.pow(b1,n.t),c2=1-Math.pow(b2,n.t),wd=1e-4;
+      for(let l=0;l<L;l++){const W=n.W[l],g=n.gW[l],m=n.mW[l],v=n.vW[l];
+        for(let i=0;i<W.length;i++){const gi=g[i]/bs+wd*W[i];m[i]=b1*m[i]+(1-b1)*gi;v[i]=b2*v[i]+(1-b2)*gi*gi;W[i]-=lr*(m[i]/c1)/(Math.sqrt(v[i]/c2)+1e-8);g[i]=0}
+        const B=n.b[l],gb=n.gb[l],mb=n.mb[l],vb=n.vb[l];
+        for(let i=0;i<B.length;i++){const gi=gb[i]/bs;mb[i]=b1*mb[i]+(1-b1)*gi;vb[i]=b2*vb[i]+(1-b2)*gi*gi;B[i]-=lr*(mb[i]/c1)/(Math.sqrt(vb[i]/c2)+1e-8);gb[i]=0}}};
+    return n;
+  }
+  const modelJSON=M=>JSON.stringify(M,(k,v)=>ArrayBuffer.isView(v)?Array.from(v,x=>+x.toFixed(5)):v);
+  const plain=M=>JSON.parse(modelJSON(M));
+
+  /* ---------- css ---------- */
+  const st=document.createElement('style');st.textContent=`
+  .v41{border:1px solid rgba(123,216,143,.4);border-radius:14px;background:rgba(8,14,12,.94);padding:10px;margin:2px 0;max-width:100%;color:#e2f5e8}
+  .v41 .h{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap}.v41 .t{font-weight:700;color:#ecfff1}.v41 .k{font-size:11px;color:#86c796;text-transform:uppercase;letter-spacing:1px}
+  .v41 .cap{font-size:13px;margin:6px 2px;line-height:1.4}.v41 .cap.dim{color:#9cc3a7;font-size:12px}
+  .v41 .cam{position:relative;margin-top:6px;border-radius:10px;overflow:hidden;background:#030806;aspect-ratio:4/3;max-height:280px}
+  .v41 video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);display:block}
+  .v41 .ov{position:absolute;left:8px;top:8px;right:8px;font-weight:700;font-size:20px;color:#fff;text-shadow:0 1px 6px #000;pointer-events:none}
+  .v41 .sq{position:absolute;left:50%;top:50%;width:75%;aspect-ratio:1;transform:translate(-50%,-50%);border:2px dashed rgba(255,255,255,.35);border-radius:8px;pointer-events:none}
+  .v41 .row{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0;align-items:center}
+  .v41 .cr{display:flex;gap:6px;align-items:center;margin:5px 0;flex-wrap:wrap}
+  .v41 input.in,.v41 select{background:#0b1a12;color:#e2f5e8;border:1px solid rgba(123,216,143,.35);border-radius:8px;padding:6px 8px;font-size:13px}.v41 input.in{flex:1;min-width:90px}
+  .v41 .rec{user-select:none;touch-action:none;padding:7px 12px;border-radius:18px;border:1px solid #ff6b8a;color:#ffd5de;background:rgba(255,107,138,.12);font-size:12px;cursor:pointer}.v41 .rec.on{background:#ff3d63;color:#fff}
+  .v41 .sm{padding:5px 10px;font-size:12px}.v41 .n{font-size:12px;color:#9cc3a7;min-width:64px}
+  .v41 .out{background:rgba(123,216,143,.08);border-radius:10px;padding:8px 10px;margin:8px 0}.v41 .big{font-size:20px;font-weight:700;color:#fff}
+  .v41 .bar{display:flex;align-items:center;gap:6px;font-size:12px;margin:3px 0}.v41 .bar .nm{width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .v41 .bar .b{flex:1;height:9px;background:rgba(255,255,255,.08);border-radius:5px;overflow:hidden}.v41 .bar .b i{display:block;height:100%}.v41 .bar .p{width:44px;text-align:right}
+  .v41 .warn{color:#ffb74d}.v41 .bad{color:#ff7b7b}.v41 .good{color:#7bd88f}
+  .v41 details{font-size:12px;color:#9cc3a7;margin-top:6px}.v41 details summary{cursor:pointer;color:#7bd88f}
+  .v41 iframe{width:100%;height:420px;border:1px solid rgba(255,255,255,.15);border-radius:10px;background:#fff;margin-top:6px}`;
+  document.head.appendChild(st);
+
+  /* =====================================================================
+     Webcam teaching card
+     ===================================================================== */
+  const CARDS=[];let CID=0,ACTIVE=null;
+  const done41=()=>{try{$$('#log .typing').forEach(x=>x.remove())}catch(e){}};
+  const gctx=(()=>{const c=document.createElement('canvas');c.width=c.height=20;return c.getContext('2d',{willReadFrequently:true})})();
+  const bars=(p,cl)=>cl.map((c,i)=>'<div class="bar"><span class="nm">'+esc2(c)+'</span><span class="b"><i style="width:'+(p[i]*100).toFixed(1)+'%;background:'+COL[i%COL.length]+'"></i></span><span class="p">'+pct(p[i])+'</span></div>').join('');
+
+  function openCam(o){
+    o=o||{};
+    const names=(o.classes&&o.classes.length>=2?o.classes:['Class A','Class B']).slice(0,8);
+    const C={id:++CID,classes:names.map(n=>({name:n,s:[]})),model:null,stream:null,training:false,hidden:o.hidden||24,epochs:o.epochs||70,smooth:[],lastLabel:null,dead:false,title:o.title||'Camera model',override:null};
+    const el=addMsg('bot v41msg','<div class="v41"><div class="h"><span class="t"></span><span class="k">image classifier · trains in your browser</span></div>'
+      +'<div class="cap dim">1) Start the camera. 2) Hold a record button while you show that thing inside the dashed square (30 to 60 frames is plenty; move it around a little). 3) Press Train. Frames never leave your device.</div>'
+      +'<div class="cam"><video playsinline muted autoplay></video><div class="sq"></div><div class="ov" data-r="ov"></div></div>'
+      +'<div class="row"><button class="btn sm" data-a="cam">📷 Start camera</button><button class="btn sm" data-a="train">🧠 Train</button><button class="ghost sm" data-a="clear">Clear all frames</button></div>'
+      +'<div data-r="cls"></div><div class="row"><button class="ghost sm" data-a="add">+ Add a class</button></div>'
+      +'<div class="out" data-r="out"><span class="cap dim">Record at least 2 classes, then train.</span></div><div class="cap" data-r="stat"></div>'
+      +'<details><summary>Settings</summary><div class="row"><label class="k">Hidden units <input class="in" type="number" min="4" max="64" data-r="hid"></label><label class="k">Epochs <input class="in" type="number" min="10" max="400" data-r="eps"></label></div></details>'
+      +'<div class="row"><button class="ghost sm" data-a="app">🌐 Make a mini app</button><button class="ghost sm" data-a="save">💾 Save</button><button class="ghost sm" data-a="json">Download model</button></div>'
+      +'<div class="cap dim" data-r="msg"></div><div data-r="prev"></div></div>');
+    C.el=el;const Q=s=>el.querySelector('[data-r='+s+']');C.Q=Q;C.video=el.querySelector('video');
+    el.querySelector('.t').textContent=C.title;Q('hid').value=C.hidden;Q('eps').value=C.epochs;
+    CARDS.push(C);ACTIVE=C;renderClasses(C);
+    el.onclick=e=>{const b=e.target.closest('[data-a]');if(b)act(C,b.dataset.a);const x=e.target.closest('[data-clr]');if(x){C.classes[+x.dataset.clr].s=[];renderClasses(C)}};
+    el.addEventListener('pointerdown',e=>{const r=e.target.closest('[data-rec]');if(r){e.preventDefault();startRec(C,+r.dataset.rec,r)}});
+    ['pointerup','pointercancel','pointerleave'].forEach(ev=>el.addEventListener(ev,e=>{if(C.rec&&(ev!=='pointerleave'||e.target.closest('[data-rec]')))stopRec(C)},true));
+    if(o.model){C.model=o.model;C.classes=o.model.classes.map(n=>({name:n,s:[]}));renderClasses(C);Q('stat').textContent='Loaded a saved camera model. Start the camera to run it.';liveOut(C,null)}
+    return C;
+  }
+  function renderClasses(C){
+    C.Q('cls').innerHTML=C.classes.map((c,i)=>'<div class="cr"><span style="width:10px;height:10px;border-radius:3px;background:'+COL[i%COL.length]+'"></span><input class="in" data-nm="'+i+'" value="'+esc2(c.name)+'" maxlength="24"><span class="n">'+c.s.length+' frames</span><button class="rec" data-rec="'+i+'">● hold to record</button><button class="ghost sm" data-clr="'+i+'" title="delete this class\'s frames">✕</button></div>').join('');
+    C.Q('cls').querySelectorAll('[data-nm]').forEach(inp=>inp.oninput=()=>{C.classes[+inp.dataset.nm].name=inp.value||('Class '+(+inp.dataset.nm+1))});
+  }
+  function frameOf(C){return C.override?C.override():grabFrame(C.video,gctx)}
+  function capture(C,i){
+    const f=frameOf(C);if(!f)return false;const c=C.classes[i];if(!c)return false;
+    c.s.push(f);if(c.s.length>240)c.s.shift();
+    const n=C.Q('cls').querySelectorAll('.n')[i];if(n)n.textContent=c.s.length+' frames';return true;
+  }
+  function startRec(C,i,btn){
+    if(C.rec)return;if(!C.stream&&!C.override){C.Q('msg').textContent='Start the camera first.';return}
+    btn.classList.add('on');C.rec={i,btn,t:setInterval(()=>capture(C,i),110)};capture(C,i);
+  }
+  function stopRec(C){if(!C.rec)return;clearInterval(C.rec.t);C.rec.btn.classList.remove('on');C.rec=null}
+  async function startCam(C){
+    const Q=C.Q;
+    if(C.stream)return true;
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){Q('msg').innerHTML='<span class="bad">This browser cannot open a camera here (it needs https or localhost).</span>';return false}
+    try{
+      C.stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false});
+      C.video.srcObject=C.stream;await C.video.play().catch(()=>{});
+      Q('msg').textContent='';C.el.querySelector('[data-a=cam]').textContent='📷 Camera on';
+      if(!C.liveT)C.liveT=setInterval(()=>live(C),170);
+      return true;
+    }catch(e){
+      Q('msg').innerHTML='<span class="bad">'+(/denied|NotAllowed|Permission/i.test(e.name+e.message)?'Camera permission was refused. Allow it in the browser’s address bar and press Start again.':/NotFound|Devices/i.test(e.name+e.message)?'No camera was found on this device.':'Could not start the camera: '+esc2(e.message||e.name))+'</span>';
+      return false;
+    }
+  }
+  function stopCam(C){if(C.stream){C.stream.getTracks().forEach(t=>t.stop());C.stream=null}}
+  function liveOut(C,p){
+    const M=C.model;if(!M)return;
+    if(!p){C.Q('out').innerHTML='<span class="cap dim">Model ready. Show something to the camera.</span>';return}
+    C.Q('ov').textContent=p.label+'  '+pct(p.probs[p.index]);
+    C.Q('out').innerHTML='<div class="big" style="color:'+COL[p.index%COL.length]+'">'+esc2(p.label)+' <span style="font-size:13px;color:#9cc3a7">'+pct(p.probs[p.index])+' sure</span></div>'+bars(p.probs,M.classes);
+  }
+  function live(C){
+    if(C.dead||!C.el.isConnected){clearInterval(C.liveT);stopCam(C);C.dead=true;return}
+    if(!C.model||C.training||C.rec)return;
+    const f=frameOf(C);if(!f)return;
+    const p=predictImg(C.model,imgFeatures(f,2,2));
+    C.smooth.push(p.probs);if(C.smooth.length>4)C.smooth.shift();
+    const avg=p.probs.map((_,k)=>C.smooth.reduce((a,b)=>a+b[k],0)/C.smooth.length);let bi=0;avg.forEach((v,k)=>{if(v>avg[bi])bi=k});
+    const q={label:C.model.classes[bi],index:bi,probs:avg,classes:C.model.classes};
+    liveOut(C,q);
+    if(q.label!==C.lastLabel&&avg[bi]>.8){C.lastLabel=q.label;try{window.dispatchEvent(new CustomEvent('vision:cam',{detail:{label:q.label,prob:avg[bi],card:C.id}}))}catch(e){}}
+  }
+  /* ---------- training ---------- */
+  function train(C){
+    if(C.training)return;
+    const ok=C.classes.filter(c=>c.s.length>=3);
+    if(ok.length<2){C.Q('stat').innerHTML='<span class="warn">I need at least 2 classes with 3 or more frames each. Record a few more.</span>';return}
+    C.classes.forEach(c=>{if(c.s.length&&c.s.length<3)C.Q('stat').innerHTML='<span class="warn">“'+esc2(c.name)+'” has fewer than 3 frames, so it was left out.</span>'});
+    const names=ok.map(c=>c.name),k=names.length,H=clamp(+C.Q('hid').value||24,4,64),E=clamp(+C.Q('eps').value||70,10,400);
+    const tr=[],te=[];
+    ok.forEach((c,ci)=>{const n=c.s.length,hold=n>=10?Math.max(2,Math.round(n*.2)):0;c.s.forEach((f,j)=>{(j>=n-hold?te:tr).push([f,ci])})});
+    const net=Net([768,H,k],7),r=mulberry(3);C.training=true;C.smooth=[];let ep=0;const hist=[];
+    const t0all=performance.now();
+    const tick=()=>{
+      if(C.dead||!C.el.isConnected){C.training=false;return}
+      const t0=performance.now();
+      while(ep<E&&performance.now()-t0<16){
+        const lr=.005*(.1+.9*.5*(1+Math.cos(Math.PI*ep/E))),ids=shuffle(tr.map((_,i)=>i),r);let loss=0;
+        for(let s=0;s<ids.length;s+=16){const e=Math.min(ids.length,s+16);
+          for(let j=s;j<e;j++){const [f,y]=tr[ids[j]],ox=Math.floor(r()*5),oy=Math.floor(r()*5),a=net.forward(imgFeatures(f,ox,oy));loss-=Math.log(Math.max(1e-9,a[net.L][y]));net.back(a,y)}
+          net.step(e-s,lr)}
+        hist.push(loss/tr.length);ep++;
+      }
+      C.Q('stat').textContent='Training… epoch '+ep+' of '+E+' · loss '+nf(hist[hist.length-1],3);
+      if(ep<E)return setTimeout(tick,0);
+      const M={kind:'img',size:16,classes:names,sizes:[768,H,k],act:'tanh',W:net.W,b:net.b};
+      C.model=M;C.training=false;
+      const acc=set=>{let c=0;set.forEach(([f,y])=>{if(predictImg(M,imgFeatures(f,2,2)).index===y)c++});return set.length?c/set.length:null};
+      const ta=acc(tr),va=acc(te);C.acc={train:ta,test:va,n:te.length};
+      C.Q('stat').innerHTML='Trained in '+((performance.now()-t0all)/1000).toFixed(1)+' s on '+tr.length+' frames. Accuracy on your frames: <b>'+pct(ta)+'</b>. '
+        +(va==null?'<span class="warn">Record 10+ frames per class so I can test it on frames it has not seen.</span>':'On '+te.length+' held-out frames (the last ones you recorded of each class): <b>'+pct(va)+'</b>. Held-out frames come from the same sessions as the training ones, so real-world accuracy with new lighting or backgrounds will be lower.');
+      liveOut(C,null);say('Trained. Show something to the camera.');
+    };
+    setTimeout(tick,0);
+  }
+  /* ---------- actions ---------- */
+  function dl(name,txt,type){try{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:type||'application/json'}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500);return true}catch(e){return false}}
+  const slug=s=>String(s||'model').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'model';
+  function act(C,a){
+    const Q=C.Q;
+    switch(a){
+      case 'cam':startCam(C);break;
+      case 'train':train(C);break;
+      case 'clear':C.classes.forEach(c=>c.s=[]);renderClasses(C);break;
+      case 'add':if(C.classes.length<8){C.classes.push({name:'Class '+String.fromCharCode(65+C.classes.length),s:[]});renderClasses(C)}break;
+      case 'save':{if(!C.model){Q('msg').textContent='Train first.';break}try{const all=JSON.parse(store.get('cam41','{}')||'{}');all[slug(C.title)]={name:C.title,model:plain(C.model),ts:Date.now()};store.set('cam41',JSON.stringify(all));Q('msg').textContent='Saved. Say “open my camera model” to load it later.'}catch(e){Q('msg').textContent='Could not save (browser storage full or blocked). Use Download instead.'}break}
+      case 'json':if(!C.model)Q('msg').textContent='Train first.';else if(dl(slug(C.title)+'.json',modelJSON(C.model)))Q('msg').textContent='Downloaded.';break;
+      case 'app':makeApp(C);break;
+    }
+  }
+
+  /* =====================================================================
+     Model to app: one self-contained, shareable .html file
+     ===================================================================== */
+  function appMain(){
+    var COL=['#f5c518','#4fc3f7','#ff6b8a','#7bd88f','#b388ff','#ff9f43','#26d0ce','#e056fd'];
+    var $=function(s){return document.querySelector(s)};
+    var inEl=$('#in'),outEl=$('#out'),nb=M.kind==='nb';
+    function nf(v){var a=Math.abs(v);return a!==0&&(a>=1e7||a<1e-4)?v.toExponential(3):String(+v.toPrecision(5))}
+    function pct(v){return (v*100).toFixed(v>=.995||v<.005?1:0)+'%'}
+    function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+    var ctrls=[];
+    if(nb){inEl.innerHTML='<textarea id="t" placeholder="Type something for the model to judge…"></textarea>';$('#t').oninput=render}
+    else M.feats.forEach(function(f){
+      var d=document.createElement('label');
+      if(f.type==='cat'){
+        d.innerHTML='<span>'+esc(f.name)+'</span><select>'+f.cats.map(function(c){return '<option>'+esc(c)+'</option>'}).join('')+'</select>';
+        var s=d.querySelector('select');s.onchange=render;ctrls.push(function(){return s.value});
+      }else{
+        var sp=(f.max-f.min)||1,lo=f.min-.1*sp,hi=f.max+.1*sp;
+        d.innerHTML='<span class="l"><span>'+esc(f.name)+' <small>('+nf(f.min)+' to '+nf(f.max)+')</small></span><input type="number" step="any"></span><input type="range" min="'+lo+'" max="'+hi+'" step="'+(sp/400)+'">';
+        var r=d.querySelector('input[type=range]'),n=d.querySelector('input[type=number]');r.value=f.mean;n.value=nf(f.mean);
+        r.oninput=function(){n.value=nf(+r.value);render()};
+        n.oninput=function(){if(n.value!==''&&isFinite(+n.value)){r.value=n.value;render()}};
+        ctrls.push(function(){return n.value!==''&&isFinite(+n.value)?+n.value:f.mean});
+      }
+      inEl.appendChild(d);
+    });
+    function render(){
+      var inp=nb?$('#t').value:ctrls.map(function(g){return g()}),h='';
+      if(nb&&!String(inp).trim()){outEl.innerHTML='<small>Type something above.</small>';return}
+      var p=predictModel(M,inp);
+      if(p.value!==undefined){
+        h='<div class="big">'+esc(M.target.name)+' ≈ '+nf(p.value)+'</div>'+(META.mae?'<small>Typical error on unseen examples: about ±'+nf(META.mae)+'</small>':'');
+      }else{
+        h='<div class="big" style="color:'+COL[p.index%COL.length]+'">'+esc(p.label)+' <small>'+pct(p.probs[p.index])+' sure</small></div>'+p.classes.map(function(c,i){return '<div class="bar"><span class="nm">'+esc(c)+'</span><span class="b"><i style="width:'+(p.probs[i]*100).toFixed(1)+'%;background:'+COL[i%COL.length]+'"></i></span><span class="p">'+pct(p.probs[i])+'</span></div>'}).join('');
+      }
+      if(!nb){var bad=[];M.feats.forEach(function(f,i){if(f.type==='num'){var sp=(f.max-f.min)||1;if(inp[i]<f.min-.05*sp||inp[i]>f.max+.05*sp)bad.push(f.name)}});if(bad.length)h+='<small class="warn">⚠ '+esc(bad.join(', '))+' is outside what the model was trained on, so treat this as a guess.</small>'}
+      outEl.innerHTML=h;
+    }
+    render();
+  }
+  function imageAppMain(){
+    var COL=['#f5c518','#4fc3f7','#ff6b8a','#7bd88f','#b388ff','#ff9f43','#26d0ce','#e056fd'];
+    var $=function(s){return document.querySelector(s)};
+    var video=$('video'),outEl=$('#out'),msg=$('#msg'),cv=document.createElement('canvas');cv.width=cv.height=20;
+    var ctx=cv.getContext('2d',{willReadFrequently:true}),hist=[],started=false;
+    function pct(v){return (v*100).toFixed(v>=.995||v<.005?1:0)+'%'}
+    function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+    $('#start').onclick=function(){
+      if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){msg.textContent='This page needs https (or localhost) to use the camera.';return}
+      navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:false}).then(function(s){
+        video.srcObject=s;return video.play();
+      }).then(function(){started=true;msg.textContent='';$('#start').style.display='none'}).catch(function(e){msg.textContent='Camera problem: '+(e&&e.message||e)});
+    };
+    setInterval(function(){
+      if(!started)return;var f=grabFrame(video,ctx);if(!f)return;
+      var p=predictImg(M,imgFeatures(f,2,2));hist.push(p.probs);if(hist.length>4)hist.shift();
+      var avg=p.probs.map(function(_,k){return hist.reduce(function(a,b){return a+b[k]},0)/hist.length}),bi=0;avg.forEach(function(v,k){if(v>avg[bi])bi=k});
+      outEl.innerHTML='<div class="big" style="color:'+COL[bi%COL.length]+'">'+esc(M.classes[bi])+' <small>'+pct(avg[bi])+' sure</small></div>'+M.classes.map(function(c,i){return '<div class="bar"><span class="nm">'+esc(c)+'</span><span class="b"><i style="width:'+(avg[i]*100).toFixed(1)+'%;background:'+COL[i%COL.length]+'"></i></span><span class="p">'+pct(avg[i])+'</span></div>'}).join('');
+    },170);
+  }
+  const srcOf=f=>f.toString()+'\n';
+  const safeJSON=v=>JSON.stringify(v,(k,x)=>ArrayBuffer.isView(x)?Array.from(x,y=>+y.toFixed(5)):x).replace(/</g,'\\u003c').split(String.fromCharCode(8232)).join('\\u2028').split(String.fromCharCode(8233)).join('\\u2029');
+  function appHTML(M,meta){
+    const img=M.kind==='img';
+    const css='*{box-sizing:border-box}body{margin:0;background:#0b0f16;color:#e8eefc;font:16px/1.45 system-ui,sans-serif}main{max-width:560px;margin:0 auto;padding:20px 16px 40px}h1{font-size:22px;margin:0 0 4px}p.d{color:#9fb0cc;margin:0 0 16px;font-size:14px}'
+      +'label{display:block;margin:12px 0}label .l{display:flex;justify-content:space-between;gap:8px;align-items:center}label small,small{color:#9fb0cc;font-size:12px}input[type=range]{width:100%}input[type=number],select,textarea{background:#131b29;color:#e8eefc;border:1px solid #2b3a55;border-radius:8px;padding:6px 8px;font-size:14px}input[type=number]{width:110px}select,textarea{width:100%}textarea{min-height:90px}'
+      +'#out{background:#121c2c;border-radius:12px;padding:12px 14px;margin-top:18px}.big{font-size:24px;font-weight:700}.big small{font-size:14px}.bar{display:flex;gap:8px;align-items:center;font-size:13px;margin:5px 0}.bar .nm{width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bar .b{flex:1;height:10px;background:#1f2b40;border-radius:6px;overflow:hidden}.bar .b i{display:block;height:100%}.bar .p{width:48px;text-align:right}.warn{display:block;color:#ffb74d;margin-top:6px}'
+      +'video{width:100%;border-radius:12px;background:#000;aspect-ratio:4/3;object-fit:cover;transform:scaleX(-1)}button{background:#4fc3f7;color:#04121c;border:0;border-radius:10px;padding:10px 16px;font-size:15px;font-weight:600;margin:10px 0;cursor:pointer}footer{margin-top:26px;color:#6f819f;font-size:12px}';
+    const body=img?'<video playsinline muted></video><button id="start">📷 Start camera</button><div id="msg"><small></small></div><div id="out"><small>Press start, then show something to the camera.</small></div>':'<div id="in"></div><div id="out"></div>';
+    const js='const M='+safeJSON(M)+';\nconst META='+safeJSON(meta)+';\n'+(img?srcOf(imgFeatures)+srcOf(predictImg)+srcOf(grabFrame):srcOf(window.V40.predictModel))+'('+(img?imageAppMain:appMain).toString()+')();';
+    return '<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+esc2(meta.title)+'</title><style>'+css+'</style></head><body><main><h1>'+esc2(meta.title)+'</h1><p class="d">'+esc2(meta.desc||'')+'</p>'+body
+      +'<footer>Made with VISION. A small model trained in the browser; it can be wrong, especially outside the examples it learned from. Everything runs on your device.</footer></main><scr'+'ipt>'+js+'</scr'+'ipt></body></html>';
+  }
+  function metaOf(C){
+    if(C.model)return {title:C.title,desc:'Show something to your camera and the model says which of '+C.model.classes.length+' things it thinks it is ('+C.model.classes.join(', ')+').'};
+    const sp=C.L.spec,m=C.met||{};
+    return {title:C.meta.title||'My model',desc:(C.meta.desc||'')+' '+(sp.rows.length?'Trained on '+sp.rows.length+' examples.':''),mae:m.mae||0,acc:m.acc||0};
+  }
+  function makeApp(C){
+    const M=C.model||(C.L&&C.L.M);
+    if(!M||(C.L&&!C.L.trained&&C.L.spec.kind!=='nb')){addMsg('bot','<div class="cap">Train the model first, then I can turn it into an app.</div>');return null}
+    const meta=metaOf(C),html=appHTML(M,meta),name=slug(meta.title)+'-app.html';
+    const el=addMsg('bot v41msg','<div class="v41"><div class="h"><span class="t">Mini app ready</span><span class="k">'+esc2(name)+' · '+Math.round(html.length/1024)+' KB</span></div>'
+      +'<div class="cap">One self-contained page: no server, no libraries. Upload it anywhere (GitHub Pages, Netlify Drop, a USB stick) or open it on your phone. '+(M.kind==='img'?'The camera needs https or localhost.':'')+'</div>'
+      +'<div class="row"><button class="btn sm" data-a="dl">⬇ Download .html</button><button class="ghost sm" data-a="pv">👁 Preview here</button><button class="ghost sm" data-a="tab">↗ Open in new tab</button></div><div data-r="p"></div></div>');
+    el.onclick=e=>{const b=e.target.closest('[data-a]');if(!b)return;
+      if(b.dataset.a==='dl')dl(name,html,'text/html');
+      if(b.dataset.a==='pv'){const p=el.querySelector('[data-r=p]');p.innerHTML='<iframe sandbox="allow-scripts allow-same-origin" allow="camera"></iframe>';p.firstChild.srcdoc=html}
+      if(b.dataset.a==='tab'){try{const u=URL.createObjectURL(new Blob([html],{type:'text/html'}));const w=window.open(u,'_blank');if(!w)el.querySelector('.cap').textContent='The browser blocked the new tab. Use Download instead.'}catch(x){}}};
+    say('Your app is ready. Download it or preview it here.');
+    return {el,html,name};
+  }
+  /* add a button to every Pack 40 card */
+  function decorate(){
+    if(!window.V40)return;
+    window.V40.cards.forEach(C=>{
+      if(!C.el||C.el.querySelector('.v41btn'))return;
+      const row=C.el.querySelector('[data-r=expd] .row');if(!row)return;
+      const b=document.createElement('button');b.className='ghost sm v41btn';b.textContent='🌐 Make a mini app';b.dataset.a41='app';
+      b.onclick=e=>{e.stopPropagation();makeApp(C)};row.appendChild(b);
+    });
+  }
+  try{new MutationObserver(decorate).observe(document.getElementById('log')||document.body,{childList:true,subtree:true});decorate()}catch(e){}
+
+  /* =====================================================================
+     Chat routing
+     ===================================================================== */
+  function pickCard(){
+    const kids=[...log.children];let best=null,br=99;
+    const all=[].concat((window.V40&&window.V40.cards)||[],CARDS);
+    all.forEach(C=>{if(!C.el||!C.el.isConnected)return;const i=kids.indexOf(C.el),rank=i<0?999:kids.length-1-i;if(rank<br){br=rank;best=C}});
+    return br<=8?best:null;
+  }
+  function classNames(s){
+    let m=s.match(/\b(?:tell|distinguish|separate|recogni[sz]e|detect|classify|sort)\s+(.{2,40}?)\s+(?:from|vs\.?|versus|and|or)\s+(.{2,40}?)(?:\s+(?:and|or)\s+(.{2,30}?))?(?:\s+(?:using|with|on|by|via|through|from)\b.*)?$/i);
+    if(!m)m=s.match(/(?:^|\s)([\w ]{2,24}?)\s+(?:vs\.?|versus)\s+([\w ]{2,24}?)(?:\s+(?:using|with|on)\b.*)?$/i);
+    if(m){const c=m.slice(1).filter(Boolean).map(x=>x.replace(/\b(?:my|the|a|an)\b\s*/gi,'').replace(/[.!?,]+$/,'').trim()).filter(x=>x&&!/\b(camera|webcam)\b/i.test(x));return c.map(x=>x[0].toUpperCase()+x.slice(1)).slice(0,4)}
+    return null;
+  }
+  const CAMWORD=/\b(web ?cam|camera|my face|gestures?|hand signs?|image classifier|picture classifier|photo classifier|visual classifier)\b/i;
+  async function chat41(s){
+    const first=s.split('\n')[0];
+    if(/\b(open|load|restore|use)\b.*\b(my|saved)\b.*\b(camera|webcam|image)\b.*\bmodel/i.test(first)){
+      done41();let all={};try{all=JSON.parse(store.get('cam41','{}')||'{}')}catch(e){}
+      const ids=Object.keys(all).sort((a,b)=>all[b].ts-all[a].ts);
+      if(!ids.length){addMsg('bot','<div class="cap">You have no saved camera models yet. Train one and press Save.</div>');return true}
+      const e=all[ids[0]];openCam({title:e.name,model:e.model});say('Opened '+e.name+'.');return true}
+    if(/\b(make|turn|build|create|export|generate|convert|package)\b/i.test(first)&&/\b(app|web ?app|web ?page|webpage|mini[- ]app|website|html page|standalone)\b/i.test(first)&&/\b(model|this|it|that|classifier|predictor)\b/i.test(first)&&!/\b3[- ]?d\b/i.test(first)){
+      const C=pickCard();if(C){done41();makeApp(C);return true}
+      if(/\bmodel|classifier|predictor\b/i.test(first)){done41();addMsg('bot','<div class="cap">Open or train a model first (for example “make a spam classifier”), then say “make an app from this model”.</div>');return true}
+    }
+    if(CAMWORD.test(first)&&/\b(teach|train|learn|recogni[sz]e|classif|tell\b|distinguish|detect|image classifier|model)\b/i.test(first)&&(/\b(make|build|create|train|teach|let me|can you|i want|help me|show me how)\b/i.test(first)||/classifier/i.test(first))&&!/\b3[- ]?d\b|physics|simulat/i.test(first)){
+      done41();const cn=classNames(first);
+      const C=openCam({classes:cn,title:cn?cn.join(' vs ')+' detector':'Camera model'});
+      say('Let’s teach me with your camera. Start the camera, hold each record button while showing that thing, then press train.');return true}
+    const A=pickCard();
+    if(A&&A.classes&&A.el.isConnected&&s.length<90){
+      if(/^(?:please\s+)?(?:start|turn on|open|enable)\s+(?:the\s+|my\s+)?(?:camera|webcam)/i.test(s)){done41();startCam(A);return true}
+      if(/^(?:please\s+)?(?:train|start training|learn)(?:\s+(?:it|the model|this|now))?[.!]?$/i.test(s)){done41();train(A);return true}
+      let m;if((m=s.match(/^add (?:a )?class(?: called| named)?\s+(.{1,24})$/i))&&A.classes.length<8){done41();A.classes.push({name:m[1].trim(),s:[]});renderClasses(A);return true}
+    }
+    return false;
+  }
+  const _route41=route;
+  route=async function(t){
+    const s=String(t).trim();
+    try{if(s.length<2000&&await chat41(s))return true}catch(e){console.error('PACK 41',e);done41();botSay('⚠ '+(e.message||e),{silent:true});return true}
+    return _route41(t);
+  };
+  window.V41={version:41,open:openCam,cards:CARDS,imgFeatures,predictImg,grabFrame,appHTML,makeApp,classNames,train,capture,live,startCam,Net,pickCard};
+  console.log('PACK 41 loaded: webcam teach + model-to-app');
+})()}catch(e){console.error('PACK 41 failed:',e)}
+   /* ================= PACK 42: Physics Sandbox + Evolution Lab ================= */
+/* Paste AFTER Pack 41 (or 40), before the closing script tag. No libraries, works offline.                                                          */
+/*  Physics: "simulate a double pendulum", "show the three-body figure eight", "two suns with a planet", "mass on a spring with resonance",         */
+/*           "projectile with air resistance", "planet orbit with eccentricity 0.6", "double pendulum on the moon".                                */
+/*  Evolution: "evolve agents that balance a pole", "evolve flappy birds", "evolve creatures that find food".                                      */
+try{(function(){
+  if(window.__pack42)return;window.__pack42=1;
+  const TAU=Math.PI*2,DEG=Math.PI/180;
+  const esc2=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const nf=(v,d)=>{if(!isFinite(v))return '–';d=d==null?4:d;const a=Math.abs(v);if(a!==0&&(a>=1e7||a<1e-4))return v.toExponential(Math.max(0,d-1));return String(+v.toPrecision(d))};
+  const TT=()=>window.V35&&window.V35.TTS;
+  const say=(t,force)=>{try{const T=TT();if(T&&(force||T.on))return T.say(t,{force:!!force,max:500})}catch(e){}return Promise.resolve()};
+  function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+  function gauss(r){let u=0;while(!u)u=r();return Math.sqrt(-2*Math.log(u))*Math.cos(TAU*r())}
+  const done42=()=>{try{$$('#log .typing').forEach(x=>x.remove())}catch(e){}};
+  const raf=window.requestAnimationFrame?f=>requestAnimationFrame(f):f=>setTimeout(()=>f(performance.now()),16);
+  const st=document.createElement('style');st.textContent=`
+  .v42{border:1px solid rgba(255,159,67,.45);border-radius:14px;background:rgba(18,10,4,.94);padding:10px;margin:2px 0;max-width:100%;color:#ffeedd}
+  .v42 .h{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap}.v42 .t{font-weight:700;color:#fff3e4}.v42 .k{font-size:11px;color:#d9a46c;text-transform:uppercase;letter-spacing:1px}
+  .v42 .cap{font-size:13px;margin:6px 2px;line-height:1.4}.v42 .cap.dim{color:#d6b58f;font-size:12px}
+  .v42 canvas{width:100%;display:block;border-radius:10px;background:#07040a;margin-top:6px}.v42 canvas.m{aspect-ratio:3/2}.v42 canvas.p{aspect-ratio:600/170}
+  .v42 .row{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0;align-items:center}
+  .v42 .sl{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px}@media(max-width:520px){.v42 .sl{grid-template-columns:1fr}}
+  .v42 .sl label{font-size:12px;color:#e8c9a0;display:flex;flex-direction:column;gap:2px}.v42 .sl label b{color:#ff9f43;font-weight:600}.v42 input[type=range]{width:100%}
+  .v42 select{background:#1c1008;color:#ffeedd;border:1px solid rgba(255,159,67,.4);border-radius:8px;padding:5px 8px;font-size:13px}
+  .v42 .sm{padding:5px 10px;font-size:12px}.v42 .chip{font-size:12px;padding:4px 10px;border:1px solid rgba(255,159,67,.45);border-radius:14px;cursor:pointer}.v42 .chip.on{background:rgba(255,159,67,.25);color:#fff}
+  .v42 .info{font-size:12px;color:#ffd9a8;margin:6px 2px;line-height:1.5}.v42 .good{color:#7bd88f}.v42 .warn{color:#ffb74d}.v42 .bad{color:#ff7b7b}
+  .v42 input.in{background:#1c1008;color:#ffeedd;border:1px solid rgba(255,159,67,.4);border-radius:8px;padding:6px 8px;font-size:13px;flex:1;min-width:120px}`;
+  document.head.appendChild(st);
+  const PC=['#ff9f43','#4fc3f7','#ff6b8a','#7bd88f','#b388ff'];
+  /* ---------- generic ODE helper ---------- */
+  function rk4(f,y,t,dt){
+    const n=y.length,k1=f(y,t),y2=new Array(n),y3=new Array(n),y4=new Array(n),o=new Array(n);
+    for(let i=0;i<n;i++)y2[i]=y[i]+.5*dt*k1[i];const k2=f(y2,t+dt/2);
+    for(let i=0;i<n;i++)y3[i]=y[i]+.5*dt*k2[i];const k3=f(y3,t+dt/2);
+    for(let i=0;i<n;i++)y4[i]=y[i]+dt*k3[i];const k4=f(y4,t+dt);
+    for(let i=0;i<n;i++)o[i]=y[i]+dt/6*(k1[i]+2*k2[i]+2*k3[i]+k4[i]);return o;
+  }
+  const series=()=>({x:[],y:[],push(a,b){this.x.push(a);this.y.push(b);if(this.x.length>1500){this.x.shift();this.y.shift()}}});
+  function plotLines(ctx,W,H,S,opt){
+    ctx.fillStyle='#07040a';ctx.fillRect(0,0,W,H);
+    const pad={l:54,r:10,t:22,b:22};let x0=1e18,x1=-1e18,y0=opt.ymin!=null?opt.ymin:1e18,y1=opt.ymax!=null?opt.ymax:-1e18;
+    S.forEach(s=>{s.d.x.forEach(v=>{x0=Math.min(x0,v);x1=Math.max(x1,v)});if(opt.ymin==null||opt.ymax==null)s.d.y.forEach(v=>{if(isFinite(v)){if(opt.ymin==null)y0=Math.min(y0,v);if(opt.ymax==null)y1=Math.max(y1,v)}})});
+    if(!isFinite(x0)||x1<=x0){ctx.fillStyle='#d6b58f';ctx.font='22px sans-serif';ctx.fillText(opt.title||'',10,26);return}
+    if(opt.xmin!=null)x0=opt.xmin;if(opt.xmax!=null)x1=opt.xmax;
+    if(y1-y0<1e-12){y1=y0+1}const X=v=>pad.l+(v-x0)/(x1-x0)*(W-pad.l-pad.r),Y=v=>H-pad.b-(v-y0)/(y1-y0)*(H-pad.t-pad.b);
+    ctx.strokeStyle='rgba(255,255,255,.15)';ctx.lineWidth=1;ctx.strokeRect(pad.l,pad.t,W-pad.l-pad.r,H-pad.t-pad.b);
+    ctx.font='18px sans-serif';ctx.fillStyle='#d6b58f';ctx.textAlign='left';ctx.fillText(opt.title||'',pad.l,16);
+    ctx.textAlign='right';ctx.fillText(nf(y1,3),pad.l-4,pad.t+10);ctx.fillText(nf(y0,3),pad.l-4,H-pad.b);ctx.textAlign='center';ctx.fillText(nf(x0,3)+' → '+nf(x1,3)+(opt.xl?' '+opt.xl:''),pad.l+(W-pad.l-pad.r)/2,H-4);
+    S.forEach(s=>{ctx.beginPath();s.d.x.forEach((v,i)=>{const px=X(v),py=Y(clamp(s.d.y[i],y0,y1));i?ctx.lineTo(px,py):ctx.moveTo(px,py)});ctx.strokeStyle=s.c;ctx.lineWidth=s.w||2.5;if(s.dash)ctx.setLineDash(s.dash);ctx.stroke();ctx.setLineDash([])});
+  }
+  const trailDraw=(ctx,pts,col)=>{const n=pts.length;for(let i=1;i<n;i++){ctx.strokeStyle=col+Math.round(255*i/n*.8).toString(16).padStart(2,'0');ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke()}};
+  const SIMS={};
+
+  /* ---------- 1. double pendulum (twin copy shows the butterfly effect) ---------- */
+  SIMS.dpend={title:'Double pendulum',domain:'Chaos',
+    desc:'Two rods, exact equations of motion, integrated with a 4th-order Runge–Kutta step. The faint twin starts one millionth of a radian away: watch the gap explode. With friction at 0, total energy stays constant, and the readout checks that.',
+    params:[{id:'th1',label:'Angle 1 (°)',min:-180,max:180,step:1,v:120},{id:'th2',label:'Angle 2 (°)',min:-180,max:180,step:1,v:-10},{id:'l2',label:'Length of rod 2',min:.3,max:2,step:.05,v:1},{id:'m2',label:'Mass of bob 2',min:.2,max:3,step:.05,v:1},{id:'g',label:'Gravity (m/s²)',min:1,max:30,step:.01,v:9.81},{id:'damp',label:'Friction',min:0,max:.5,step:.01,v:0}],
+    make(p){
+      const m1=1,m2=p.m2,l1=1,l2=p.l2,g=p.g,c=p.damp;
+      const f=y=>{const [a,w1,b,w2]=y,d=a-b,den=2*m1+m2-m2*Math.cos(2*d);
+        const a1=(-g*(2*m1+m2)*Math.sin(a)-m2*g*Math.sin(a-2*b)-2*Math.sin(d)*m2*(w2*w2*l2+w1*w1*l1*Math.cos(d)))/(l1*den)-c*w1;
+        const a2=(2*Math.sin(d)*(w1*w1*l1*(m1+m2)+g*(m1+m2)*Math.cos(a)+w2*w2*l2*m2*Math.cos(d)))/(l2*den)-c*w2;return [w1,a1,w2,a2]};
+      const E=y=>{const [a,w1,b,w2]=y,d=a-b;return .5*(m1+m2)*l1*l1*w1*w1+.5*m2*l2*l2*w2*w2+m2*l1*l2*w1*w2*Math.cos(d)-(m1+m2)*g*l1*Math.cos(a)-m2*g*l2*Math.cos(b)};
+      let y=[p.th1*DEG,0,p.th2*DEG,0],y2=[p.th1*DEG+1e-6,0,p.th2*DEG,0],t=0;const E0=E(y);let maxDrift=0;
+      const tr=[],tr2=[],sep=series();
+      const S={dt:.002,rate:1,t:()=>t,
+        step(){y=rk4(f,y,t,S.dt);y2=rk4(f,y2,t,S.dt);t+=S.dt;const dr=Math.abs((E(y)-E0)/(Math.abs(E0)||1));if(dr>maxDrift)maxDrift=dr;
+          if(Math.round(t/S.dt)%25===0){sep.push(t,Math.log10(Math.max(1e-12,Math.hypot(y[0]-y2[0],y[2]-y2[2]))))}},
+        draw(ctx,W,H){
+          ctx.fillStyle='#07040a';ctx.fillRect(0,0,W,H);const sc=Math.min(W*.42,H*.4)/(l1+l2),ox=W/2,oy=H*.4;
+          const pos=Y=>{const x1=ox+sc*l1*Math.sin(Y[0]),y1=oy+sc*l1*Math.cos(Y[0]);return [x1,y1,x1+sc*l2*Math.sin(Y[2]),y1+sc*l2*Math.cos(Y[2])]};
+          const a=pos(y),b=pos(y2);tr.push([a[2],a[3]]);tr2.push([b[2],b[3]]);if(tr.length>260){tr.shift();tr2.shift()}
+          trailDraw(ctx,tr2,'#4fc3f7');trailDraw(ctx,tr,'#ff9f43');
+          const rod=(q,col,al)=>{ctx.globalAlpha=al;ctx.strokeStyle=col;ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(ox,oy);ctx.lineTo(q[0],q[1]);ctx.lineTo(q[2],q[3]);ctx.stroke();[[q[0],q[1],9+4*m1],[q[2],q[3],9+4*m2]].forEach(b2=>{ctx.beginPath();ctx.arc(b2[0],b2[1],b2[2],0,TAU);ctx.fillStyle=col;ctx.fill()});ctx.globalAlpha=1};
+          rod(b,'#4fc3f7',.45);rod(a,'#ff9f43',1);ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(ox,oy,5,0,TAU);ctx.fill();
+          ctx.font='20px sans-serif';ctx.fillStyle='#ffd9a8';ctx.fillText('orange: your pendulum   blue: twin, 0.000001 rad apart',10,H-12)},
+        plot(ctx,W,H){plotLines(ctx,W,H,[{d:sep,c:'#4fc3f7'}],{title:'gap between the two pendulums, log10(radians)',xl:'s',ymin:-7,ymax:1})},
+        info(){const s=sep.y.length?sep.y[sep.y.length-1]:-6;return 'Time '+t.toFixed(1)+' s · gap '+nf(Math.pow(10,s),2)+' rad · '+(c===0?'energy drift <b class="'+(maxDrift<1e-6?'good':'warn')+'">'+nf(maxDrift,2)+'</b> (relative, should stay near zero)':'friction is on, so energy leaks away')},
+        check(){return {maxDrift,t}}};
+      return S;
+    }};
+
+  /* ---------- 2. driven damped pendulum ---------- */
+  SIMS.pend={title:'Driven pendulum',domain:'Chaos',
+    desc:'One rod, pushed back and forth by a periodic force and slowed by friction. With the classic settings (friction 0.5, push 1.2, frequency 2/3) the motion never repeats. The right-hand picture shows angle against angular speed.',
+    params:[{id:'th0',label:'Start angle (°)',min:-179,max:179,step:1,v:60},{id:'damp',label:'Friction',min:0,max:1.5,step:.01,v:0},{id:'A',label:'Push strength',min:0,max:2,step:.01,v:0},{id:'W',label:'Push frequency',min:.2,max:3,step:.01,v:.667},{id:'g',label:'g / length (1/s²)',min:.5,max:30,step:.01,v:1}],
+    make(p){
+      const f=(y,t)=>[y[1],-p.g*Math.sin(y[0])-p.damp*y[1]+p.A*Math.cos(p.W*t)];
+      const E=y=>.5*y[1]*y[1]+p.g*(1-Math.cos(y[0]));
+      let y=[p.th0*DEG,0],t=0;const E0=E(y);let maxDrift=0;const ph=[];const ts=series();
+      const S={dt:.005,rate:1,t:()=>t,
+        step(){y=rk4(f,y,t,S.dt);t+=S.dt;if(p.damp===0&&p.A===0){maxDrift=Math.max(maxDrift,Math.abs((E(y)-E0)/(E0||1)))}
+          if(Math.round(t/S.dt)%4===0){ts.push(t,y[0]/DEG);let a=((y[0]+Math.PI)%TAU+TAU)%TAU-Math.PI;ph.push([a,y[1]]);if(ph.length>2600)ph.shift()}},
+        draw(ctx,W,H){
+          ctx.fillStyle='#07040a';ctx.fillRect(0,0,W,H);const L=Math.min(W*.2,H*.34),ox=W*.27,oy=H*.28;
+          ctx.strokeStyle='rgba(255,255,255,.15)';ctx.beginPath();ctx.arc(ox,oy,L,0,TAU);ctx.stroke();
+          const bx=ox+L*Math.sin(y[0]),by=oy+L*Math.cos(y[0]);ctx.strokeStyle='#ff9f43';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(ox,oy);ctx.lineTo(bx,by);ctx.stroke();ctx.fillStyle='#ff9f43';ctx.beginPath();ctx.arc(bx,by,14,0,TAU);ctx.fill();
+          const px=W*.56,pw=W*.4,py=H*.08,ph2=H*.84;ctx.strokeStyle='rgba(255,255,255,.2)';ctx.strokeRect(px,py,pw,ph2);
+          const wmax=Math.max(2.5,...ph.map(q=>Math.abs(q[1])));
+          ctx.fillStyle='#d6b58f';ctx.font='18px sans-serif';ctx.fillText('angle (−π…π) →',px+4,py+ph2-6);ctx.fillText('speed ↑',px+4,py+16);
+          ctx.fillStyle='rgba(255,159,67,.65)';ph.forEach(q=>ctx.fillRect(px+(q[0]+Math.PI)/TAU*pw,py+ph2/2-q[1]/wmax*ph2/2,2.5,2.5));
+          ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(px+((((y[0]+Math.PI)%TAU)+TAU)%TAU)/TAU*pw,py+ph2/2-y[1]/wmax*ph2/2,5,0,TAU);ctx.fill()},
+        plot(ctx,W,H){plotLines(ctx,W,H,[{d:ts,c:'#ff9f43'}],{title:'angle over time (°)',xl:'s'})},
+        info(){return 'Time '+t.toFixed(1)+' s · angle '+(y[0]/DEG).toFixed(1)+'° · '+(p.damp===0&&p.A===0?'energy drift <b class="'+(maxDrift<1e-6?'good':'warn')+'">'+nf(maxDrift,2)+'</b>':p.A>0?'driven: try friction 0.5, push 1.2 for chaos':'friction slows it to rest')},
+        check(){return {maxDrift,y}}};
+      return S;
+    }};
+
+  /* ---------- 3. gravity: three bodies ---------- */
+  SIMS.nbody={title:'Three-body gravity',domain:'Orbital mechanics',
+    desc:'Newtonian gravity between three bodies, integrated with a symplectic leapfrog step (energy errors stay bounded). The figure-eight is the famous periodic solution found by Chenciner and Montgomery in 2000: three equal masses chase each other along one curve. Nudge it and it falls apart.',
+    choices:[{id:'preset',label:'Scenario',v:'eight',opts:[['eight','Figure-eight (three equal masses)'],['suns','Two suns + a planet'],['chaos','Random chaos']]}],
+    params:[{id:'perturb',label:'Nudge body 3 (×0.001)',min:0,max:50,step:.5,v:0},{id:'planetR',label:'Planet distance (two suns)',min:1.3,max:4,step:.05,v:2.2}],
+    make(p,c){
+      const G=1;let m,x,v;
+      if(c.preset==='suns'){m=[1,1,.001];const r=p.planetR,vp=Math.sqrt(2*G/r);x=[[-.5,0],[.5,0],[r,0]];v=[[0,-Math.sqrt(G*1/(2*1))],[0,Math.sqrt(G*1/(2*1))],[0,vp]]}
+      else if(c.preset==='chaos'){const r=mulberry(Math.round(p.perturb*1000)+5);m=[1,1,1];x=[0,1,2].map(()=>[gauss(r)*.8,gauss(r)*.8]);v=[0,1,2].map(()=>[gauss(r)*.35,gauss(r)*.35]);
+        const px=v.reduce((a,b)=>a+b[0],0)/3,py=v.reduce((a,b)=>a+b[1],0)/3;v.forEach(q=>{q[0]-=px;q[1]-=py})}
+      else{m=[1,1,1];x=[[.97000436,-.24308753],[-.97000436,.24308753],[0,0]];const a=.466203685,b=.43236573;v=[[a,b],[a,b],[-2*a,-2*b]];x[2][0]+=p.perturb*.001}
+      const x0=x.map(q=>q.slice());let t=0;const N=3,tr=[[],[],[]];
+      const acc=()=>{const a=[[0,0],[0,0],[0,0]];for(let i=0;i<N;i++)for(let j=0;j<N;j++)if(i!==j){const dx=x[j][0]-x[i][0],dy=x[j][1]-x[i][1],r2=dx*dx+dy*dy+1e-8,ir=G*m[j]/(r2*Math.sqrt(r2));a[i][0]+=dx*ir;a[i][1]+=dy*ir}return a};
+      const En=()=>{let T=0,U=0;for(let i=0;i<N;i++){T+=.5*m[i]*(v[i][0]*v[i][0]+v[i][1]*v[i][1]);for(let j=i+1;j<N;j++)U-=G*m[i]*m[j]/Math.hypot(x[i][0]-x[j][0],x[i][1]-x[j][1])}return T+U};
+      const E0=En();let maxDrift=0,a=acc(),view=1.4,es=series();
+      const S={dt:.001,rate:1,t:()=>t,
+        step(){const h=S.dt;for(let i=0;i<N;i++){v[i][0]+=.5*h*a[i][0];v[i][1]+=.5*h*a[i][1];x[i][0]+=h*v[i][0];x[i][1]+=h*v[i][1]}a=acc();for(let i=0;i<N;i++){v[i][0]+=.5*h*a[i][0];v[i][1]+=.5*h*a[i][1]}t+=h;
+          if(Math.round(t/h)%50===0){const dr=Math.abs((En()-E0)/Math.abs(E0));if(dr>maxDrift)maxDrift=dr;es.push(t,Math.log10(Math.max(1e-14,dr)))}},
+        draw(ctx,W,H){
+          ctx.fillStyle='#07040a';ctx.fillRect(0,0,W,H);let mx=.8;x.forEach(q=>{mx=Math.max(mx,Math.abs(q[0])*1.15,Math.abs(q[1])*1.5)});view+=(mx-view)*.04;
+          const sc=Math.min(W/2,H/2)/view*.92,cx=W/2,cy=H/2;
+          x.forEach((q,i)=>{tr[i].push([cx+q[0]*sc,cy-q[1]*sc]);if(tr[i].length>420)tr[i].shift();trailDraw(ctx,tr[i],PC[i])});
+          x.forEach((q,i)=>{ctx.beginPath();ctx.arc(cx+q[0]*sc,cy-q[1]*sc,m[i]<.01?5:12,0,TAU);ctx.fillStyle=PC[i];ctx.fill()})},
+        plot(ctx,W,H){plotLines(ctx,W,H,[{d:es,c:'#7bd88f'}],{title:'energy error, log10 (lower is better)',xl:'time units'})},
+        info(){let P=[0,0];for(let i=0;i<N;i++){P[0]+=m[i]*v[i][0];P[1]+=m[i]*v[i][1]}
+          const d0=Math.hypot(x[0][0]-x0[0][0],x[0][1]-x0[0][1]);
+          return 'Time '+t.toFixed(2)+' · energy drift <b class="'+(maxDrift<1e-4?'good':'warn')+'">'+nf(maxDrift,2)+'</b> · total momentum '+nf(Math.hypot(P[0],P[1]),2)+(c.preset==='eight'?' · one lap takes 6.3259 time units; distance of body 1 from its start: '+nf(d0,2):'')},
+        check(){return {x,x0,t,maxDrift}}};
+      return S;
+    }};
+
+  /* ---------- 4. mass on a spring (checked against the exact solution) ---------- */
+  SIMS.spring={title:'Mass on a spring',domain:'Oscillations',
+    desc:'A mass on a spring with friction and an optional periodic push. With no push, the numerical result is compared with the exact formula x(t) = e^(−γt)(x₀ cos ω_d t + (γx₀/ω_d) sin ω_d t), and the largest difference is shown. Set the push frequency near the natural one to see resonance.',
+    params:[{id:'m',label:'Mass (kg)',min:.2,max:5,step:.05,v:1},{id:'k',label:'Spring stiffness (N/m)',min:1,max:60,step:.5,v:16},{id:'c',label:'Friction (kg/s)',min:0,max:6,step:.05,v:.4},{id:'F0',label:'Push amplitude (N)',min:0,max:20,step:.1,v:0},{id:'W',label:'Push frequency (rad/s)',min:.5,max:12,step:.05,v:4},{id:'x0',label:'Start stretch (m)',min:-2,max:2,step:.05,v:1}],
+    make(p){
+      const w0=Math.sqrt(p.k/p.m),gam=p.c/(2*p.m),zeta=gam/w0,wd=w0*Math.sqrt(Math.max(0,1-zeta*zeta));
+      const f=(y,t)=>[y[1],(-p.k*y[0]-p.c*y[1]+p.F0*Math.cos(p.W*t))/p.m];
+      const exact=t=>zeta<1?Math.exp(-gam*t)*(p.x0*Math.cos(wd*t)+(gam*p.x0/wd)*Math.sin(wd*t)):NaN;
+      let y=[p.x0,0],t=0,maxErr=0;const xs=series(),ex=series();
+      const S={dt:.002,rate:1,t:()=>t,
+        step(){y=rk4(f,y,t,S.dt);t+=S.dt;if(p.F0===0&&zeta<1)maxErr=Math.max(maxErr,Math.abs(y[0]-exact(t)));
+          if(Math.round(t/S.dt)%10===0){xs.push(t,y[0]);ex.push(t,p.F0===0&&zeta<1?exact(t):NaN);while(xs.x.length>1&&xs.x[xs.x.length-1]-xs.x[0]>14){xs.x.shift();xs.y.shift();ex.x.shift();ex.y.shift()}}},
+        draw(ctx,W,H){
+          ctx.fillStyle='#07040a';ctx.fillRect(0,0,W,H);const wall=40,cy=H/2,sc=W*.2,px=W*.5+y[0]*sc;
+          ctx.fillStyle='#555';ctx.fillRect(wall-12,cy-60,12,120);ctx.strokeStyle='#ff9f43';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(wall,cy);const x1=px-45,n=14;for(let i=0;i<=n;i++){const q=wall+(x1-wall)*i/n;ctx.lineTo(q,cy+(i===0||i===n?0:(i%2?-24:24)))}ctx.lineTo(px-45,cy);ctx.stroke();
+          ctx.fillStyle='#ff9f43';ctx.fillRect(px-45,cy-45,90,90);ctx.fillStyle='#07040a';ctx.font='24px sans-serif';ctx.textAlign='center';ctx.fillText(p.m+' kg',px,cy+8);ctx.textAlign='left';
+          ctx.strokeStyle='rgba(255,255,255,.25)';ctx.setLineDash([6,6]);ctx.beginPath();ctx.moveTo(W/2,cy-80);ctx.lineTo(W/2,cy+80);ctx.stroke();ctx.setLineDash([]);
+          ctx.fillStyle='#d6b58f';ctx.font='19px sans-serif';ctx.fillText('natural frequency ω₀ = '+nf(w0,3)+' rad/s (period '+nf(TAU/w0,3)+' s)',10,H-14)},
+        plot(ctx,W,H){const sr=[{d:xs,c:'#ff9f43'}];if(p.F0===0&&zeta<1)sr.push({d:ex,c:'#ffffff',w:1.5,dash:[5,6]});plotLines(ctx,W,H,sr,{title:'stretch x (m): orange = simulated'+(p.F0===0&&zeta<1?', white dashes = exact formula':''),xl:'s'})},
+        info(){const ss=p.F0>0?p.F0/p.m/Math.sqrt(Math.pow(w0*w0-p.W*p.W,2)+Math.pow(2*gam*p.W,2)):0;
+          return 'Time '+t.toFixed(1)+' s · '+(zeta<1?'underdamped (ζ='+nf(zeta,2)+')':'overdamped or critical (ζ='+nf(zeta,2)+')')+(p.F0===0&&zeta<1?' · largest gap from the exact formula <b class="'+(maxErr<1e-6?'good':'warn')+'">'+nf(maxErr,2)+' m</b>':p.F0>0?' · steady swing size predicted by theory: '+nf(ss,3)+' m (the peak is near ω₀ when friction is small)':'')},
+        check(){return {maxErr,y,t,w0}}};
+      return S;
+    }};
+
+  /* ---------- 5. projectile with drag ---------- */
+  SIMS.proj={title:'Projectile with air resistance',domain:'Mechanics',
+    desc:'A ball launched at an angle, with and without air drag (force proportional to speed squared). White dashes are the textbook vacuum parabola. The lower graph scans every launch angle: with no drag the best angle is exactly 45°, with drag it drops.',
+    params:[{id:'v0',label:'Launch speed (m/s)',min:2,max:60,step:.5,v:30},{id:'ang',label:'Angle (°)',min:5,max:85,step:1,v:45},{id:'k',label:'Drag (1/m)',min:0,max:.05,step:.0005,v:.01},{id:'h0',label:'Start height (m)',min:0,max:30,step:.5,v:0},{id:'g',label:'Gravity (m/s²)',min:1.6,max:25,step:.01,v:9.81}],
+    make(p){
+      const traj=(ang,k)=>{const f=y=>{const s=Math.hypot(y[2],y[3]);return [y[2],y[3],-k*s*y[2],-p.g-k*s*y[3]]};let y=[0,p.h0,p.v0*Math.cos(ang*DEG),p.v0*Math.sin(ang*DEG)],t=0;const dt=.004,pts=[[0,p.h0,0]];
+        for(let i=0;i<40000;i++){const n=rk4(f,y,t,dt);t+=dt;if(n[1]<0){const q=y[1]/(y[1]-n[1]);pts.push([y[0]+q*(n[0]-y[0]),0,t-dt+q*dt]);break}y=n;pts.push([y[0],y[1],t])}return pts};
+      const path=traj(p.ang,p.k),vac=traj(p.ang,0),R=path[path.length-1][0],T=path[path.length-1][2];
+      const rng=[],ang=[];for(let a=1;a<=89;a+=1){ang.push(a);rng.push(traj(a,p.k).slice(-1)[0][0])}
+      let bi=0;rng.forEach((r,i)=>{if(r>rng[bi])bi=i});const best=ang[bi];
+      const rv=p.h0===0?p.v0*p.v0*Math.sin(2*p.ang*DEG)/p.g:NaN;
+      let t=0;const apex=path.reduce((a,q)=>Math.max(a,q[1]),0),rs=series(),rv2=series();ang.forEach((a,i)=>{rs.push(a,rng[i])});
+      if(p.k>0){const z=series();for(let a=1;a<=89;a+=1)z.push(a,traj(a,0).slice(-1)[0][0]);Object.assign(rv2,z)}
+      const S={dt:.01,rate:1,t:()=>t,loop:true,
+        step(){t+=S.dt;if(t>T+1)t=0},
+        draw(ctx,W,H){
+          ctx.fillStyle='#07040a';ctx.fillRect(0,0,W,H);const xm=Math.max(R,vac[vac.length-1][0],1)*1.08,ym=Math.max(apex,vac.reduce((a,q)=>Math.max(a,q[1]),0),1)*1.2,sc=Math.min((W-60)/xm,(H-50)/ym),ox=30,oy=H-26;
+          ctx.strokeStyle='rgba(255,255,255,.3)';ctx.beginPath();ctx.moveTo(0,oy);ctx.lineTo(W,oy);ctx.stroke();
+          const line=(pts,col,w,dash)=>{ctx.beginPath();pts.forEach((q,i)=>{const px=ox+q[0]*sc,py=oy-q[1]*sc;i?ctx.lineTo(px,py):ctx.moveTo(px,py)});ctx.strokeStyle=col;ctx.lineWidth=w;if(dash)ctx.setLineDash(dash);ctx.stroke();ctx.setLineDash([])};
+          line(vac,'rgba(255,255,255,.7)',1.5,[6,6]);line(path,'#ff9f43',3);
+          let q=path[0];for(const pt of path){if(pt[2]<=t)q=pt;else break}
+          ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(ox+q[0]*sc,oy-q[1]*sc,9,0,TAU);ctx.fill();
+          ctx.fillStyle='#d6b58f';ctx.font='19px sans-serif';ctx.fillText('range '+nf(R,4)+' m',ox+R*sc-40,oy-8)},
+        plot(ctx,W,H){const sr=[{d:rs,c:'#ff9f43'}];if(p.k>0)sr.push({d:rv2,c:'#ffffff',w:1.5,dash:[5,6]});plotLines(ctx,W,H,sr,{title:'range (m) for every launch angle: orange = with drag'+(p.k>0?', white = vacuum':''),xl:'°'})},
+        info(){return 'Range <b>'+nf(R,4)+' m</b> · highest point '+nf(apex,3)+' m · flight time '+nf(T,3)+' s · best angle for range ≈ <b>'+best+'°</b>'+(p.k===0&&p.h0===0?' (theory: exactly 45°; formula range v²sin2θ/g = '+nf(rv,4)+' m)':'')},
+        check(){return {R,T,best,rv,apex}}};
+      return S;
+    }};
+
+  /* ---------- 6. planet orbit (Kepler) ---------- */
+  SIMS.kepler={title:'Planet orbit (Kepler’s laws)',domain:'Orbital mechanics',
+    desc:'One planet around a heavy sun (GM = 1, semi-major axis 1). The shaded wedges are swept in equal time slices; they have equal area (Kepler’s second law). The measured period is checked against T = 2π·a^(3/2).',
+    params:[{id:'e',label:'Eccentricity (0 = circle)',min:0,max:.95,step:.01,v:.6},{id:'a',label:'Semi-major axis a',min:.5,max:2,step:.05,v:1}],
+    make(p){
+      const GM=1,a=p.a,e=p.e,r0=a*(1-e),vp=Math.sqrt(GM*(1+e)/(a*(1-e)));
+      let x=[r0,0],v=[0,vp],t=0;const T0=TAU*Math.pow(a,1.5),h0=r0*vp,E0=.5*vp*vp-GM/r0;let maxE=0,maxL=0,lastAng=0,laps=0,tcross=[],tr=[];
+      const acc=()=>{const r=Math.hypot(x[0],x[1]),k=-GM/(r*r*r);return [k*x[0],k*x[1]]};let ac=acc();
+      const slices=[],sl=T0/12;let sliceStart=0,sliceBase=null;
+      const S={dt:.001,rate:1,t:()=>t,
+        step(){const h=S.dt;v[0]+=.5*h*ac[0];v[1]+=.5*h*ac[1];const px=x[1];x[0]+=h*v[0];x[1]+=h*v[1];ac=acc();v[0]+=.5*h*ac[0];v[1]+=.5*h*ac[1];t+=h;
+          if(px<0&&x[1]>=0&&x[0]>0){tcross.push(t-h*x[1]/(x[1]-px))}
+          if(Math.round(t/h)%100===0){const r=Math.hypot(x[0],x[1]),E=.5*(v[0]*v[0]+v[1]*v[1])-GM/r,L=x[0]*v[1]-x[1]*v[0];maxE=Math.max(maxE,Math.abs((E-E0)/Math.abs(E0)));maxL=Math.max(maxL,Math.abs((L-h0)/h0))}
+          if(sliceBase===null){sliceBase=[x[0],x[1]];sliceStart=t;slices.push({pts:[[x[0],x[1]]]})}
+          const cur=slices[slices.length-1];if(Math.round(t/h)%20===0)cur.pts.push([x[0],x[1]]);if(t-sliceStart>=sl){cur.pts.push([x[0],x[1]]);sliceBase=null;if(slices.length>12)slices.shift()}},
+        draw(ctx,W,H){
+          ctx.fillStyle='#07040a';ctx.fillRect(0,0,W,H);const sc=Math.min(W,H*1.4)*.2/a,cx=W*.5-a*e*sc*.5*2,cy=H/2;
+          ctx.strokeStyle='rgba(255,255,255,.18)';ctx.beginPath();for(let i=0;i<=120;i++){const th=i/120*TAU,r=a*(1-e*e)/(1+e*Math.cos(th));i?ctx.lineTo(cx+r*Math.cos(th)*sc,cy-r*Math.sin(th)*sc):ctx.moveTo(cx+r*Math.cos(th)*sc,cy-r*Math.sin(th)*sc)}ctx.stroke();
+          slices.forEach((s,i)=>{if(s.pts.length<2)return;ctx.fillStyle=PC[i%2]+'55';ctx.beginPath();ctx.moveTo(cx,cy);s.pts.forEach(q=>ctx.lineTo(cx+q[0]*sc,cy-q[1]*sc));ctx.closePath();ctx.fill()});
+          ctx.fillStyle='#ffd54f';ctx.beginPath();ctx.arc(cx,cy,14,0,TAU);ctx.fill();ctx.fillStyle='#4fc3f7';ctx.beginPath();ctx.arc(cx+x[0]*sc,cy-x[1]*sc,8,0,TAU);ctx.fill()},
+        plot(ctx,W,H){ctx.fillStyle='#07040a';ctx.fillRect(0,0,W,H);ctx.fillStyle='#ffd9a8';ctx.font='22px sans-serif';
+          const T=tcross.length>=2?tcross[tcross.length-1]-tcross[tcross.length-2]:null;
+          ctx.fillText('Period predicted by Kepler: T = 2π·a^1.5 = '+nf(T0,5),14,40);ctx.fillText('Period measured from the simulation: '+(T?nf(T,5):'(needs one full lap)'),14,76);
+          ctx.fillText('Equal-time wedges: each one has area ½·L·Δt = '+nf(.5*h0*sl,4),14,112);ctx.fillText('Speed now '+nf(Math.hypot(v[0],v[1]),3)+' · distance '+nf(Math.hypot(x[0],x[1]),3),14,148)},
+        info(){return 'Time '+t.toFixed(2)+' · energy drift <b class="'+(maxE<1e-5?'good':'warn')+'">'+nf(maxE,2)+'</b> · angular-momentum drift <b class="'+(maxL<1e-5?'good':'warn')+'">'+nf(maxL,2)+'</b>'},
+        check(){return {tcross,T0,maxE,maxL,sl,h0,slices}}};
+      return S;
+    }};
+
+  /* =====================================================================
+     Physics card
+     ===================================================================== */
+  const PCARDS=[];let PID=0;
+  function openSim(id,over){
+    over=over||{};const sim=SIMS[id];if(!sim)return null;
+    const P={};sim.params.forEach(q=>P[q.id]=q.v);Object.assign(P,over.params||{});
+    const Cc={};(sim.choices||[]).forEach(c=>Cc[c.id]=c.v);Object.assign(Cc,over.choices||{});
+    const C={id:++PID,sim,sid:id,P,Cc,speed:1,paused:false,acc:0,last:performance.now(),dead:false,frames:0,lastInfo:0};
+    const el=addMsg('bot v42msg','<div class="v42"><div class="h"><span class="t"></span><span class="k"></span></div><div class="cap dim" data-r="d"></div>'
+      +'<canvas class="m" width="600" height="400" data-r="cv"></canvas><canvas class="p" width="600" height="170" data-r="pl"></canvas><div class="info" data-r="info"></div>'
+      +'<div class="row"><button class="btn sm" data-a="pause">⏸ Pause</button><button class="ghost sm" data-a="reset">↺ Restart</button><label class="k">Speed <select data-r="sp"><option value="0.25">0.25×</option><option value="1" selected>1×</option><option value="3">3×</option><option value="10">10×</option></select></label></div>'
+      +'<div class="row" data-r="ch"></div><div class="sl" data-r="sl"></div>'
+      +'<div class="row"><input class="in" data-r="cmd" placeholder="Say: set gravity to 1.6 · on the moon · pause · faster · restart" autocomplete="off"><button class="ghost sm" data-a="go">Do it</button></div></div>');
+    C.el=el;const Q=s=>el.querySelector('[data-r='+s+']');C.Q=Q;
+    el.querySelector('.t').textContent=sim.title;el.querySelector('.k').textContent=sim.domain+' · live simulation';Q('d').textContent=sim.desc;
+    (sim.choices||[]).forEach(c=>{const l=document.createElement('label');l.className='k';l.innerHTML=esc2(c.label)+' <select data-c="'+c.id+'">'+c.opts.map(o=>'<option value="'+o[0]+'">'+esc2(o[1])+'</option>').join('')+'</select>';Q('ch').appendChild(l);const s=l.querySelector('select');s.value=Cc[c.id];s.onchange=()=>{Cc[c.id]=s.value;rebuild(C)}});
+    Q('sl').innerHTML=sim.params.map(q=>'<label><span>'+esc2(q.label)+' <b data-v="'+q.id+'"></b></span><input type="range" min="'+q.min+'" max="'+q.max+'" step="'+q.step+'" data-p="'+q.id+'"></label>').join('');
+    sim.params.forEach(q=>{const inp=Q('sl').querySelector('[data-p='+q.id+']'),b=Q('sl').querySelector('[data-v='+q.id+']');inp.value=P[q.id];b.textContent=nf(P[q.id],4);inp.oninput=()=>{P[q.id]=+inp.value;b.textContent=nf(P[q.id],4);rebuild(C)}});
+    Q('sp').onchange=()=>{C.speed=+Q('sp').value};
+    el.onclick=e=>{const b=e.target.closest('[data-a]');if(!b)return;
+      if(b.dataset.a==='pause'){C.paused=!C.paused;b.textContent=C.paused?'▶ Play':'⏸ Pause'}
+      if(b.dataset.a==='reset')rebuild(C);
+      if(b.dataset.a==='go'){const v=Q('cmd').value.trim();Q('cmd').value='';if(v&&!simCommand(C,v))addMsg('bot','<div class="cap">I did not catch that. Try “set gravity to 1.6”, “on the moon”, “faster”, “pause”, “restart”.</div>')}};
+    Q('cmd').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();el.querySelector('[data-a=go]').click()}};
+    C.S=sim.make(P,Cc);PCARDS.push(C);ACTIVE_P=C;
+    C.advance=sec=>{const n=Math.round(sec/C.S.dt);for(let i=0;i<n;i++)C.S.step()};
+    C.render=()=>{C.S.draw(C.Q('cv').getContext('2d'),600,400);C.S.plot(C.Q('pl').getContext('2d'),600,170);C.Q('info').innerHTML=C.S.info()};
+    const frame=now=>{
+      if(C.dead||!el.isConnected){C.dead=true;return}
+      const dt=Math.min(.05,(now-C.last)/1000);C.last=now;
+      if(!C.paused){C.acc+=dt*C.speed*(C.S.rate||1);let n=Math.floor(C.acc/C.S.dt);if(n>5000){n=5000;C.acc=0}else C.acc-=n*C.S.dt;for(let i=0;i<n;i++)C.S.step()}
+      const g=C.Q('cv').getContext('2d');C.S.draw(g,600,400);
+      if(C.frames++%3===0)C.S.plot(C.Q('pl').getContext('2d'),600,170);
+      if(now-C.lastInfo>200){C.lastInfo=now;C.Q('info').innerHTML=C.S.info()}
+      raf(frame);
+    };
+    C.render();raf(frame);
+    return C;
+  }
+  let ACTIVE_P=null;
+  function rebuild(C){C.S=C.sim.make(C.P,C.Cc);C.acc=0;C.render()}
+  const PLACES={moon:1.62,mars:3.71,jupiter:24.8,earth:9.81,venus:8.87,saturn:10.4,pluto:.62,sun:274};
+  function simCommand(C,s){
+    let m;const sim=C.sim,hasG=sim.params.some(q=>q.id==='g');
+    if((m=s.match(/^(?:(?:try|put it|do it|run it|simulate it|now)\s+)?(?:on|at|in)\s+(?:the\s+)?(moon|mars|jupiter|earth|venus|saturn|pluto|sun)\b[.!]?$/i))&&hasG){const g=PLACES[m[1].toLowerCase()];setParam(C,'g',g);C.Q('d').scrollIntoView&&0;say('Gravity on '+m[1]+' is '+g+' metres per second squared.');return true}
+    if((m=s.match(/\bset\s+(?:the\s+)?(.+?)\s+(?:to|=|at)\s+(-?[\d.]+)/i))){
+      const key=m[1].toLowerCase(),q=sim.params.find(q=>q.label.toLowerCase().includes(key)||q.id.toLowerCase()===key||(key==='gravity'&&q.id==='g')||(key==='friction'&&/damp|^c$/.test(q.id))||(key==='angle'&&/ang|th/.test(q.id))||(key==='speed'&&q.id==='v0')||(key==='drag'&&q.id==='k')||(key==='mass'&&/^m/.test(q.id)));
+      if(q){setParam(C,q.id,+m[2]);return true}}
+    if(/^(?:please\s+)?(pause|stop|freeze)\b/i.test(s)){C.paused=true;C.el.querySelector('[data-a=pause]').textContent='▶ Play';return true}
+    if(/^(?:please\s+)?(play|resume|continue|go)\b/i.test(s)){C.paused=false;C.el.querySelector('[data-a=pause]').textContent='⏸ Pause';return true}
+    if(/^(?:please\s+)?(?:restart|reset|replay|(?:run|do) (?:it )?again)\b/i.test(s)){rebuild(C);return true}
+    if(/^(?:please\s+)?(?:go |play |run )?(?:faster|slower|speed up|slow down|slow[- ]?mo)\b/i.test(s)){const o=[.25,1,3,10],i=o.indexOf(C.speed),n=clamp(i+(/slow/i.test(s)?-1:1),0,3);C.speed=o[n];C.Q('sp').value=o[n];return true}
+    if(/^(?:please\s+)?(?:explain|why|what (?:is|happens))(?:\s+(?:this|that|it|here|happening))?\??$/i.test(s)){addMsg('bot','<div class="cap">'+esc2(C.sim.desc)+'</div>');say(C.sim.desc);return true}
+    return false;
+  }
+  function setParam(C,id,v){const q=C.sim.params.find(q=>q.id===id);if(!q)return;v=clamp(v,q.min,q.max);C.P[id]=v;const inp=C.Q('sl').querySelector('[data-p='+id+']');inp.value=v;C.Q('sl').querySelector('[data-v='+id+']').textContent=nf(v,4);rebuild(C)}
+
+  /* ---------- parsing a request into a simulation ---------- */
+  const PRULES=[
+    {id:'dpend',re:/double[- ]pendulum|chaotic pendulum|butterfly effect|compound pendulum/i},
+    {id:'pend',re:/\bpendulum\b/i},
+    {id:'nbody',re:/three[- ]bod(y|ies)|3[- ]bod(y|ies)|figure[- ]?(8|eight)|two suns|binary stars?|n[- ]body|circumbinary/i},
+    {id:'spring',re:/\bspring\b|harmonic oscillator|resonance|\boscillator\b/i},
+    {id:'proj',re:/projectile|cannon ?ball|air (resistance|drag)|throw(ing)? a (ball|rock|stone)|trajectory|ballistic/i},
+    {id:'kepler',re:/kepler|elliptical orbit|orbit of (a|the) planet|planet(ary)? orbit|orbital period|satellite orbit/i}
+  ];
+  const PVERB=/\b(simulate|simulation|show|visuali[sz]e|build|make|create|run|animate|model|plot|explore|demonstrate|illustrate|play with|let me see|see|watch|open)\b/i;
+  function simOpts(id,s){
+    const params={},choices={};let m;
+    const g=(s.match(/\b(?:on|at|in)\s+(?:the\s+)?(moon|mars|jupiter|venus|saturn|pluto)\b/i)||[])[1];if(g&&SIMS[id].params.some(q=>q.id==='g'))params.g=PLACES[g.toLowerCase()];
+    if(id==='pend'&&/chaos|chaotic|driven|forced/i.test(s)){params.damp=.5;params.A=1.2;params.W=.667}
+    if(id==='pend'&&/damp|friction/i.test(s)&&!params.damp)params.damp=.3;
+    if(id==='nbody'){if(/two suns|binary|circumbinary|planet/i.test(s))choices.preset='suns';else if(/chaos|chaotic|random|unstable/i.test(s))choices.preset='chaos'}
+    if(id==='spring'&&/resonan|driven|forced|push/i.test(s)){params.F0=4;params.W=4;params.c=.4}
+    if(id==='proj'){if((m=s.match(/(?:angle|at)\s*(?:of\s*)?(\d+)\s*(?:°|deg)/i)))params.ang=+m[1];if((m=s.match(/(?:speed|velocity)\s*(?:of\s*)?(\d+(?:\.\d+)?)/i)))params.v0=+m[1];if(/no (air|drag)|vacuum|without (air|drag)/i.test(s))params.k=0}
+    if(id==='kepler'&&(m=s.match(/eccentricity\s*(?:of\s*)?(0?\.\d+|\d)/i)))params.e=clamp(+m[1],0,.95);
+    if(id==='kepler'&&/\bcircular\b/i.test(s))params.e=0;
+    if(id==='kepler'&&/\b(very |highly )?eccentric\b/i.test(s)&&params.e==null)params.e=.8;
+    return {params,choices};
+  }
+  function chat42p(s){
+    const first=s.split('\n')[0];
+    if(/\b3[- ]?d model|molecul|\batoms?\b|crystal/i.test(first))return false;
+    for(const R of PRULES){
+      if(R.re.test(first)&&(PVERB.test(first)||/^[a-z0-9 .\-]{3,60}$/i.test(first))){
+        if(R.id==='spring'&&/\bspring (break|semester|sale|roll|onion)|coil spring mattress/i.test(first))return false;
+        if(R.id==='proj'&&/\bpredict|machine|model that\b/i.test(first))return false;
+        done42();const o=simOpts(R.id,first),C=openSim(R.id,o);say(SIMS[R.id].title+'. Drag the sliders to change the physics.');return C;
+      }
+    }
+    return false;
+  }
+
+  /* =====================================================================
+     Evolution lab: neuroevolution (genetic algorithm on small neural networks)
+     ===================================================================== */
+  function CartPole(seed){
+    const r=mulberry(seed);let x=(r()-.5)*1.6,xd=(r()-.5)*1,th=(r()-.5)*.3,thd=(r()-.5)*1.2,steps=0,done=false;
+    const g=9.8,mc=1,mp=.1,tm=mc+mp,l=.5,pml=mp*l,tau=.02;
+    return {max:500,nin:4,done:()=>done,steps:()=>steps,score:()=>steps,
+      obs:()=>[x/2.4,xd/2,th/.21,thd/2],
+      step(o){const F=o[0]>0?10:-10,c=Math.cos(th),s=Math.sin(th),tmp=(F+pml*thd*thd*s)/tm,ta=(g*s-c*tmp)/(l*(4/3-mp*c*c/tm)),xa=tmp-pml*ta*c/tm;
+        x+=tau*xd;xd+=tau*xa;th+=tau*thd;thd+=tau*ta;steps++;if(Math.abs(x)>2.4||Math.abs(th)>.2094||steps>=500)done=true},
+      draw(ctx,W,H){ctx.fillStyle='#07040a';ctx.fillRect(0,0,W,H);const sc=W/6,cx=W/2+x*sc,cy=H*.62;
+        ctx.strokeStyle='#555';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(W/2-2.4*sc,cy+22);ctx.lineTo(W/2+2.4*sc,cy+22);ctx.stroke();
+        ctx.fillStyle='#ff9f43';ctx.fillRect(cx-36,cy-14,72,36);ctx.strokeStyle='#fff';ctx.lineWidth=7;ctx.beginPath();ctx.moveTo(cx,cy-14);ctx.lineTo(cx+Math.sin(th)*190,cy-14-Math.cos(th)*190);ctx.stroke();
+        ctx.fillStyle='#ffd9a8';ctx.font='22px sans-serif';ctx.fillText('balanced for '+(steps*tau).toFixed(1)+' s of 10 s',12,30)}};
+  }
+  function Flappy(seed){
+    const r=mulberry(seed),Hh=400,bx=80,gap=120,spacing=170,pw=50;let y=200,vy=0,t=0,done=false,pipes=[],px0=420,passed=0;
+    const addPipe=()=>{pipes.push({x:(pipes.length?pipes[pipes.length-1].x+spacing:px0),c:110+r()*180})};for(let i=0;i<4;i++)addPipe();
+    const next=()=>pipes.find(p=>p.x+pw/2>bx-10)||pipes[0];
+    return {max:3000,nin:4,done:()=>done,score:()=>t+passed*50,steps:()=>t,passed:()=>passed,
+      obs(){const p=next();return [y/Hh,vy/10,(p.x-bx)/spacing,(p.c-y)/200]},
+      step(o){if(o[0]>0)vy=-7;vy+=.45;y+=vy;t++;pipes.forEach(p=>p.x-=3);if(pipes[0].x<-pw){pipes.shift();addPipe();passed++}
+        const p=next();if(y<5||y>Hh-5||(Math.abs(p.x-bx)<pw/2+10&&Math.abs(y-p.c)>gap/2-10))done=true;if(t>=3000)done=true},
+      draw(ctx,W,H){ctx.fillStyle='#0a1020';ctx.fillRect(0,0,W,H);const sx=W/480,sy=H/Hh;pipes.forEach(p=>{ctx.fillStyle='#3a8f4f';ctx.fillRect((p.x-pw/2)*sx,0,pw*sx,(p.c-gap/2)*sy);ctx.fillRect((p.x-pw/2)*sx,(p.c+gap/2)*sy,pw*sx,H)});
+        ctx.fillStyle='#ffd54f';ctx.beginPath();ctx.arc(bx*sx,y*sy,12*sx,0,TAU);ctx.fill();ctx.fillStyle='#ffd9a8';ctx.font='22px sans-serif';ctx.fillText('pipes passed: '+passed,12,30)}};
+  }
+  function Forager(seed){
+    const r=mulberry(seed),S=400;let x=S/2,y=S/2,hd=r()*TAU,eaten=0,t=0,done=false;const food=Array.from({length:4},()=>[r()*S,r()*S]);const trail=[];
+    const wr=d=>{d%=S;if(d>S/2)d-=S;if(d<-S/2)d+=S;return d};
+    const nearest=()=>{let bi=0,bd=1e9;food.forEach((f,i)=>{const dx=wr(f[0]-x),dy=wr(f[1]-y),d=Math.hypot(dx,dy);if(d<bd){bd=d;bi=i}});const f=food[bi],dx=wr(f[0]-x),dy=wr(f[1]-y);return {i:bi,d:bd,a:Math.atan2(dy,dx)-hd}};
+    return {max:600,nin:3,done:()=>done,score:()=>eaten,steps:()=>t,
+      obs(){const n=nearest();return [Math.sin(n.a),Math.cos(n.a),Math.min(1,n.d/200)]},
+      step(o){hd+=Math.tanh(o[0])*.09;x=(x+Math.cos(hd)*4+S)%S;y=(y+Math.sin(hd)*4+S)%S;t++;if(t%3===0){trail.push([x,y]);if(trail.length>90)trail.shift()}
+        const n=nearest();if(n.d<9){eaten++;food[n.i]=[r()*S,r()*S]}if(t>=600)done=true},
+      draw(ctx,W,H){ctx.fillStyle='#07100a';ctx.fillRect(0,0,W,H);const k=Math.min(W,H)/S,ox=(W-S*k)/2;
+        food.forEach(f=>{ctx.fillStyle='#7bd88f';ctx.beginPath();ctx.arc(ox+f[0]*k,f[1]*k,7*k+2,0,TAU);ctx.fill()});
+        ctx.strokeStyle='rgba(255,159,67,.4)';ctx.lineWidth=2;ctx.beginPath();trail.forEach((q,i)=>{const px=ox+q[0]*k,py=q[1]*k;i&&Math.hypot(px-ox-trail[i-1][0]*k,py-trail[i-1][1]*k)<40?ctx.lineTo(px,py):ctx.moveTo(px,py)});ctx.stroke();
+        ctx.save();ctx.translate(ox+x*k,y*k);ctx.rotate(hd);ctx.fillStyle='#ff9f43';ctx.beginPath();ctx.moveTo(14,0);ctx.lineTo(-9,8);ctx.lineTo(-9,-8);ctx.closePath();ctx.fill();ctx.restore();
+        ctx.fillStyle='#ffd9a8';ctx.font='22px sans-serif';ctx.fillText('food eaten: '+eaten,12,30)}};
+  }
+  const TASKS={
+    cartpole:{title:'Balance a pole',make:CartPole,hidden:6,solve:500,unit:'steps',desc:'A cart can push left or right. A pole is balanced on it, and it falls unless the network reacts in time. Fitness = how many 20 ms steps the pole stays up (500 steps = 10 seconds = solved).'},
+    flappy:{title:'Flappy bird',make:Flappy,hidden:6,solve:5400,unit:'points',desc:'A bird that can only flap or not flap must thread gaps between pipes. Fitness = frames survived plus 50 points per pipe passed (surviving all 3000 frames, about 53 pipes, scores about 5650 and counts as solved).'},
+    forager:{title:'Find the food',make:Forager,hidden:5,solve:null,unit:'food',desc:'A creature that can only steer, moving at constant speed, must eat as much of the green food as it can in 600 steps. Its only senses are the direction and distance to the nearest food.'}
+  };
+  function netLen(nin,h){return nin*h+h+h+1}
+  function netOut(g,nin,h,x){
+    let o=g[nin*h+h+h];const b1=nin*h,w2=nin*h+h;
+    for(let j=0;j<h;j++){let s=g[b1+j];for(let i=0;i<nin;i++)s+=g[j*nin+i]*x[i];o+=g[w2+j]*Math.tanh(s)}
+    return [o];
+  }
+  function runEp(task,genome,seed){const T=TASKS[task],env=T.make(seed);while(!env.done()){env.step(netOut(genome,env.nin,T.hidden,env.obs()))}return env.score()}
+  function GA(task,N,seed,pm,sig){
+    const T=TASKS[task],env0=T.make(1),nin=env0.nin,L=netLen(nin,T.hidden),r=mulberry(seed);
+    const G={task,N,pm,sig,gen:0,hist:[],pop:[],fit:[],best:null,bestFit:0,solvedAt:null,seed};
+    for(let i=0;i<N;i++){const g=new Float64Array(L);for(let k=0;k<L;k++)g[k]=gauss(r)*.8;G.pop.push(g)}
+    G.evaluate=()=>{const s=seed*131+G.gen*7919;const ne=task==='cartpole'?4:2;G.fit=G.pop.map(g=>{let a=0;for(let e=0;e<ne;e++)a+=runEp(task,g,s+e);return a/ne});
+      let bi=0;G.fit.forEach((f,i)=>{if(f>G.fit[bi])bi=i});G.best=G.pop[bi];G.bestFit=G.fit[bi];
+      const mean=G.fit.reduce((a,b)=>a+b,0)/N;G.hist.push({best:G.fit[bi],mean,gen:G.gen});
+      if(T.solve&&G.solvedAt==null&&G.fit[bi]>=T.solve-1)G.solvedAt=G.gen;return G.fit[bi]};
+    G.breed=()=>{
+      const idx=G.fit.map((f,i)=>i).sort((a,b)=>G.fit[b]-G.fit[a]),E=Math.max(2,Math.round(G.N*.08)),np=[];
+      for(let i=0;i<E;i++)np.push(G.pop[idx[i]]);
+      const tour=()=>{let b=idx[Math.floor(r()*Math.ceil(G.N/2))];for(let k=0;k<2;k++){const c=idx[Math.floor(r()*Math.ceil(G.N/2))];if(G.fit[c]>G.fit[b])b=c}return G.pop[b]};
+      while(np.length<G.N){const a=tour(),b=tour(),c=new Float64Array(L);for(let k=0;k<L;k++){c[k]=r()<.5?a[k]:b[k];if(r()<G.pm)c[k]+=gauss(r)*G.sig}np.push(c)}
+      G.pop=np;G.gen++;
+    };
+    G.step=()=>{G.evaluate();G.breed()};
+    return G;
+  }
+  const ECARDS=[];let EID=0,ACTIVE_E=null;
+  function openEvo(task,over){
+    over=over||{};task=TASKS[task]?task:'cartpole';
+    const C={id:++EID,task,N:over.N||48,pm:.12,sig:.25,paused:false,speed:'fast',dead:false,seed:over.seed||5,replay:null,hold:0,lastRep:0,rscore:0};
+    const el=addMsg('bot v42msg','<div class="v42"><div class="h"><span class="t">Evolution lab</span><span class="k">neuroevolution · genetic algorithm</span></div><div class="row" data-r="tk"></div><div class="cap dim" data-r="d"></div>'
+      +'<canvas class="m" width="600" height="400" data-r="cv"></canvas><canvas class="p" width="600" height="170" data-r="pl"></canvas><div class="info" data-r="info"></div>'
+      +'<div class="row"><button class="btn sm" data-a="pause">⏸ Pause</button><button class="ghost sm" data-a="next">⏭ One generation</button><button class="ghost sm" data-a="reset">↺ New population</button><label class="k">Speed <select data-r="sp"><option value="slow">1 gen/s</option><option value="med">5 gen/s</option><option value="fast" selected>as fast as possible</option></select></label></div>'
+      +'<div class="sl"><label><span>Population <b data-v="N"></b></span><input type="range" min="16" max="120" step="2" data-p="N"></label><label><span>Mutation chance per gene <b data-v="pm"></b></span><input type="range" min="0.01" max="0.5" step="0.01" data-p="pm"></label><label><span>Mutation size <b data-v="sig"></b></span><input type="range" min="0.02" max="1" step="0.01" data-p="sig"></label></div>'
+      +'<div class="cap dim">How it works: each “creature” is a tiny neural network whose weights are its genes. Every generation all of them play; the best survive unchanged, the rest are children made by mixing two good parents and randomly nudging some genes. No one tells the networks how to play, and there is no gradient descent.</div></div>');
+    C.el=el;const Q=s=>el.querySelector('[data-r='+s+']');C.Q=Q;
+    Q('tk').innerHTML=Object.keys(TASKS).map(k=>'<span class="chip" data-t="'+k+'">'+esc2(TASKS[k].title)+'</span>').join('');
+    ['N','pm','sig'].forEach(k=>{const inp=el.querySelector('[data-p='+k+']'),b=el.querySelector('[data-v='+k+']');inp.value=C[k];b.textContent=C[k];inp.oninput=()=>{C[k]=+inp.value;b.textContent=C[k];if(k==='pm'||k==='sig'){C.GA.pm=C.pm;C.GA.sig=C.sig}}; inp.onchange=()=>{if(k==='N')resetEvo(C)}});
+    Q('sp').onchange=()=>{C.speed=Q('sp').value};
+    el.onclick=e=>{const t=e.target.closest('[data-t]');if(t){C.task=t.dataset.t;resetEvo(C);return}
+      const b=e.target.closest('[data-a]');if(!b)return;
+      if(b.dataset.a==='pause'){C.paused=!C.paused;b.textContent=C.paused?'▶ Resume':'⏸ Pause'}
+      if(b.dataset.a==='next'){C.GA.step();newReplay(C);draw(C)}
+      if(b.dataset.a==='reset')resetEvo(C)};
+    C.gens=n=>{for(let i=0;i<n;i++)C.GA.step();newReplay(C);draw(C)};
+    resetEvo(C);ECARDS.push(C);ACTIVE_E=C;
+    C.lastGen=0;
+    const frame=now=>{
+      if(C.dead||!el.isConnected){C.dead=true;return}
+      if(!C.paused){
+        if(C.speed==='fast'){const t0=performance.now();let n=0;while(performance.now()-t0<9&&n<40){C.GA.step();n++}if(n)newReplay(C,true)}
+        else{const gap=C.speed==='slow'?1000:200;if(now-C.lastGen>gap){C.lastGen=now;C.GA.step();newReplay(C,true)}}
+      }
+      stepReplay(C);draw(C,now);raf(frame);
+    };
+    raf(frame);
+    return C;
+  }
+  function resetEvo(C){
+    const T=TASKS[C.task];C.GA=GA(C.task,C.N,C.seed,C.pm,C.sig);C.GA.evaluate();C.replay=null;newReplay(C);
+    C.Q('d').textContent=T.desc;C.el.querySelectorAll('[data-t]').forEach(c=>c.classList.toggle('on',c.dataset.t===C.task));draw(C);
+  }
+  function newReplay(C,soft){
+    const G=C.GA;if(!G||!G.best)return;if(soft&&C.replay&&!C.replay.env.done()&&(C.rage||0)<90)return;C.rage=0;
+    const T=TASKS[C.task];C.replay={env:T.make(900+G.gen*13),g:G.best,gen:G.gen};C.hold=0;
+  }
+  function stepReplay(C){
+    const R=C.replay;if(!R)return;const T=TASKS[C.task];
+    if(R.env.done()){C.rscore=R.env.score();if(++C.hold>40){newReplay(C)}return}
+    C.rage=(C.rage||0)+1;const k=C.task==='forager'?2:1;for(let i=0;i<k&&!R.env.done();i++)R.env.step(netOut(R.g,R.env.nin,T.hidden,R.env.obs()));
+  }
+  function draw(C){
+    const R=C.replay,G=C.GA;if(!R||!G)return;
+    R.env.draw(C.Q('cv').getContext('2d'),600,400);
+    const h=G.hist,b=series(),m=series(),T=TASKS[C.task];h.forEach(p=>{b.push(p.gen,p.best);m.push(p.gen,p.mean)});
+    const S=[{d:m,c:'#4fc3f7'},{d:b,c:'#ff9f43'}];plotLines(C.Q('pl').getContext('2d'),600,170,S,{title:'score per generation: orange = best, blue = average ('+T.unit+')',xl:'generations',ymin:0});
+    const last=h[h.length-1];
+    C.Q('info').innerHTML='Generation <b>'+G.gen+'</b> · best <b>'+nf(last.best,4)+'</b> · average '+nf(last.mean,4)+(T.solve?(G.solvedAt!=null?' · <b class="good">solved at generation '+G.solvedAt+'</b>':' · target '+T.solve):'')+' · replaying the champion of generation '+R.gen;
+  }
+  function evoCommand(C,s){
+    let m;
+    if((m=s.match(/^(?:please\s+)?(?:switch|change|try|use)\b.*\b(pole|balance|cart|flappy|bird|food|forage|creature)/i))){const k=/pole|balance|cart/i.test(m[1])?'cartpole':/flappy|bird/i.test(m[1])?'flappy':'forager';C.task=k;resetEvo(C);return true}
+    if(/^(?:please\s+)?(pause|stop|freeze)\b/i.test(s)){C.paused=true;C.el.querySelector('[data-a=pause]').textContent='▶ Resume';return true}
+    if(/^(?:please\s+)?(resume|continue|play|go|keep (?:going|evolving))\b/i.test(s)){C.paused=false;C.el.querySelector('[data-a=pause]').textContent='⏸ Pause';return true}
+    if(/\bnext generation\b|\bone (more )?generation\b/i.test(s)){C.GA.step();newReplay(C);draw(C);return true}
+    if(/\b(reset|start over|new population|restart)\b/i.test(s)){resetEvo(C);return true}
+    if(/\b(more mutation|mutate more)\b/i.test(s)){C.pm=clamp(C.pm*1.5,.01,.5);C.GA.pm=C.pm;return true}
+    return false;
+  }
+  const EVRE=/\b(teach|train)\b.*\b(creatures?|agents?|bots?|robots?|birds?)\b.*\b(walk|balance|fly|flap|find|forage|survive|run|hunt)|\b(evol(ve|ution|utionary|ving)|genetic algorithm|neuroevolution|natural selection|survival of the fittest)\b|\bagents? (that )?learn|\bcreatures? (that )?learn|\bself[- ]?learning (agents|creatures|bots?)\b|\blearn(s|ing)? to (balance|fly|flap|walk|find|forage|survive)\b|\breinforcement learning\b/i;
+  function chat42e(s){
+    const first=s.split('\n')[0];
+    if(!EVRE.test(first)||/\b3[- ]?d model|molecul|\batoms?\b|\bdna\b|\bspecies\b.*\bhistory|theory of evolution|darwin|explain evolution|biological/i.test(first))return false;
+    if(!/\b(make|build|create|evolve|simulate|show|run|train|teach|let me|watch|see|start|demo|play|open|try)\b/i.test(first)&&!/^[a-z0-9 \-]{3,60}$/i.test(first))return false;
+    let k='cartpole';if(/pole|balanc|cart/i.test(first))k='cartpole';else if(/flappy|bird|fly|flap/i.test(first))k='flappy';else if(/food|forag|eat|creature|ant|bug|snake|find|hunt/i.test(first))k='forager';
+    done42();const walk=/\bwalk|run\b|runner|legs|biped/i.test(first)&&!/flap|bird|food|pole/.test(first);
+    const C=openEvo(k,{});
+    say((walk?'Walking needs a full body-physics simulator, which this lab does not have yet, so here are three simpler skills instead. ':'')+'Watch the creatures learn: each generation the best survive and breed.');
+    if(walk)addMsg('bot','<div class="cap">Walking creatures need a physics engine with joints and friction, which this pack does not include. The lab above evolves three other skills (balancing a pole, flying through gaps, finding food) using the same method. Pick one with the chips on the card.</div>');
+    return C;
+  }
+
+  /* =====================================================================
+     Chat routing
+     ===================================================================== */
+  async function chat42(s){
+    if(chat42e(s))return true;
+    if(chat42p(s))return true;
+    const kids=[...log.children];
+    const rank=C=>{if(!C||!C.el||!C.el.isConnected)return 999;const i=kids.indexOf(C.el);return i<0?999:kids.length-1-i};
+    if(s.length<150){
+      const rp=rank(ACTIVE_P),re=rank(ACTIVE_E);
+      if(re<=6&&re<=rp&&evoCommand(ACTIVE_E,s)){done42();return true}
+      if(rp<=6&&simCommand(ACTIVE_P,s)){done42();return true}
+    }
+    return false;
+  }
+  const _route42=route;
+  route=async function(t){
+    const s=String(t).trim();
+    try{if(s.length<1500&&await chat42(s))return true}catch(e){console.error('PACK 42',e);done42();botSay('⚠ '+(e.message||e),{silent:true});return true}
+    return _route42(t);
+  };
+  window.V42={version:42,sims:SIMS,openSim,openEvo,cards:PCARDS,evo:ECARDS,GA,TASKS,runEp,rk4,simOpts,chat42p,chat42e,simCommand};
+  console.log('PACK 42 loaded: physics sandbox ('+Object.keys(SIMS).length+' simulations) + evolution lab ('+Object.keys(TASKS).length+' tasks)');
+})()}catch(e){console.error('PACK 42 failed:',e)}
 </script>
 </body>
 </html>
